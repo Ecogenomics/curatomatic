@@ -1,0 +1,33 @@
+[project]
+name = "curatomatic"
+version = "0.0.1"
+dependencies = [
+    "dendropy",
+    "tqdm",
+    "typer>=0.12.5"
+]
+requires-python = ">=3.8"
+authors = [
+    { name = "Aaron Mussig", email = "aaronmussig@gmail.com" }
+]
+maintainers = [
+    { name = "Aaron Mussig", email = "aaronmussig@gmail.com" }
+]
+description = "Semi-automatic curation of decorated phylogenetic trees."
+readme = "README.md"
+license = { file = "LICENSE" }
+keywords = ["phylogenetics", "tree", "curation", "taxonomy", "curate"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python"
+]
+
+[project.urls]
+Homepage = "https://github.com/Ecogenomics/curatomatic"
+Repository = "https://github.com/Ecogenomics/curatomatic.git"
+"Bug Tracker" = "https://github.com/Ecogenomics/curatomatic/issues"
+Changelog = "https://github.com/Ecogenomics/curatomatic/blob/main/CHANGELOG.md"
+
+[project.scripts]
+spam-cli = "curatomatic:__main__.app"
+
