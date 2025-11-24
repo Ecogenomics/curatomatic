@@ -14,6 +14,10 @@ python -m pip install dendropy tqdm typer
 
 Then, clone the repository into a directory.
 
+```shell
+git clone https://github.com/Ecogenomics/curatomatic.git
+```
+
 ## Running
 
 ### Help
@@ -42,10 +46,16 @@ The following arguments are optional:
 
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level.
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95.0)
-- `--meta PATH` = File containing unique identifiers for novel rank creation.
+- `--meta PATH` = File containing unique identifiers for novel rank creation (must be supplied for curating new releases).
 
-Note: The format for `--meta` should be a TSV file that contains a header row with `accession`, `ncbi_wgs_formatted` (optional), `gtdb_taxonomy` (optional).
-See `example/meta.tsv
+#### Metadata file (--meta):
+
+The format for `--meta` should be a TSV file that contains a header row with `accession`, `ncbi_wgs_formatted` (optional), `gtdb_taxonomy` (optional).
+See `example/meta.tsv`. Additional columns can be present but will be ignored.
+
+This file should come from the GTDB pre-release database and be updated with species clustering information,
+e.g. `/srv/db/gtdb/metadata/release232/representatives/sp_cluster_update/gtdb_r226_metadata.updated_reps.tsv`
+
 
 ### Example
 
