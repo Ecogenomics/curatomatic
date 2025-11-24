@@ -44,7 +44,7 @@ The following arguments are optional:
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95.0)
 - `--meta PATH` = File containing unique identifiers for novel rank creation.
 
-Note: The format for `--meta` should be a TSV file that contains a header row with `accession`, `ncbi_wgs_formatted` (optional), `taxonomy` (optional).
+Note: The format for `--meta` should be a TSV file that contains a header row with `accession`, `ncbi_wgs_formatted` (optional), `gtdb_taxonomy` (optional).
 See `example/meta.tsv
 
 ### Example

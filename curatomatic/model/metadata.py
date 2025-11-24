@@ -35,9 +35,9 @@ class Metadata:
                         wgs_formatted = cols[header['ncbi_wgs_formatted']]
                         wgs_formatted = None if wgs_formatted == 'none' else wgs_formatted
 
-                    if 'taxonomy' in header:
-                        if cols[header['taxonomy']] != 'none':
-                            taxonomy = Taxonomy.from_string(cols[header['taxonomy']])
+                    if 'gtdb_taxonomy' in header:
+                        if cols[header['gtdb_taxonomy']] != 'none':
+                            taxonomy = Taxonomy.from_string(cols[header['gtdb_taxonomy']])
 
                 out[gid] = MetadataRow(
                     accession=gid,
