@@ -164,3 +164,11 @@ test/
 data/
 
 .DS_Store
+
+
+# Added by cargo
+
+/target
+
+/test_data
+
