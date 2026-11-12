@@ -134,3 +134,13 @@ fn red_value_parses_and_trims() {
 fn red_value_display_respects_the_precision() {
     assert_eq!(format!("{:.3}", RedValue::new(0.957_017)), "0.957");
 }
+
+#[test]
+fn halfway_to_matches_the_python_arithmetic() {
+    // Python: 0.098 + ((0.472 - 0.098) / 2) == 0.28500000000000003, but (0.098 + 0.472) / 2 == 0.285.
+    let (parent, rank) = (RedValue::new(0.098), RedValue::new(0.472));
+    assert_eq!(parent.halfway_to(rank), RedValue::new(0.285_000_000_000_000_03));
+    assert_eq!(parent.midpoint(rank), RedValue::new(0.285));
+    assert!(RedValue::new(0.285) < parent.halfway_to(rank));
+    assert_eq!(parent.halfway_to(parent), parent);
+}

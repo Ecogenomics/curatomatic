@@ -17,6 +17,9 @@ use crate::taxonomy::Taxonomy;
 /// Separates the rest of a node label from its RED value.
 const RED_SEPARATOR: &str = "|RED=";
 
+/// A species that has no name yet: the rank prefix on its own.
+const SPECIES_PLACEHOLDER: &str = "s__";
+
 /// The ranks that each leaf node is missing, in the order that the leaves occur in the tree.
 pub(crate) type MissingRanks = BTreeMap<NodeId, BTreeSet<Rank>>;
 
@@ -108,9 +111,13 @@ impl Tree {
 
     /// Read a tree from a Newick file.
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
-        let mut tree = NewickTree::from_file(path)?;
+        Self::from_newick(NewickTree::from_file(path)?)
+    }
 
+    /// Build the tree from a parsed Newick tree, see [`Tree::from_file`].
+    fn from_newick(mut tree: NewickTree) -> CuratomaticResult<Self> {
         // Convert any placeholders (e.g. s__) that exist on the basal node to an unresolved name.
+        // Only the placeholder is replaced: any other taxa on the node (e.g. its genus) are kept.
         // TODO: This is a hack, fix it.
         let leaves: Vec<NodeId> = tree.leaves().collect();
         for leaf in leaves {
@@ -133,12 +140,15 @@ impl Tree {
                 return Err(CuratomaticError::InvalidNodeLabel(parent_label.to_owned()));
             }
 
-            let has_placeholder = taxon
-                .unwrap_or_default()
-                .split(';')
-                .any(|taxon| taxon.trim() == "s__");
-            if has_placeholder {
-                tree.set_label(parent, format!("s__{{unresolved}} {gid}{RED_SEPARATOR}{red:.3}"));
+            let taxa: Vec<&str> = taxon.unwrap_or_default().split(';').map(str::trim).collect();
+            if taxa.contains(&SPECIES_PLACEHOLDER) {
+                let unresolved = format!("{SPECIES_PLACEHOLDER}{{unresolved}} {gid}");
+                let taxa = taxa
+                    .into_iter()
+                    .map(|taxon| if taxon == SPECIES_PLACEHOLDER { unresolved.as_str() } else { taxon })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                tree.set_label(parent, format!("{taxa}{RED_SEPARATOR}{red:.3}"));
             }
         }
 
@@ -242,7 +252,7 @@ impl Tree {
             CuratomaticError::Invariant("the species cannot be refined, it has no child".to_owned())
         })?;
         let median_red = red_dict.get(rank)?;
-        let parent_red_thresh = red_dict.get(rank.parent())?.midpoint(median_red);
+        let parent_red_thresh = red_dict.get(parent_rank(rank)?)?.midpoint(median_red);
         let child_red_thresh = red_dict.get(child_rank)?.midpoint(median_red);
 
         for (node, node_label) in self.tree.ids().zip(&self.node_labels) {
@@ -268,6 +278,12 @@ impl Tree {
                     // Check if this node is within the RED range.
                     if cur_red <= child_red_thresh {
                         // Make sure that this will actually improve the bootstrap support.
+                        //
+                        // Every internal node is expected to have a bootstrap value. The only
+                        // nodes without one are the species nodes directly above the leaves,
+                        // which are never an ancestor of a node that holds a bootstrap. An
+                        // ancestor without one (e.g. a root labelled `d__Bacteria|RED=0.000`)
+                        // is a malformed tree, and is reported as an error rather than guessed at.
                         let cur_bs = required_bootstrap(cur_label)?;
                         if cur_bs >= min_bs || cur_bs > original_bs {
                             // Stop if this would incorporate any nested ranks.
@@ -509,13 +525,25 @@ fn transfer_taxon(
     let mut old_info = NodeLabel::from_node(tree, old_node)?;
     let mut new_info = NodeLabel::from_node(tree, new_node)?;
 
-    old_info
-        .taxonomy
-        .as_mut()
-        .ok_or_else(|| {
-            CuratomaticError::Invariant(format!("node {old_node} has no taxonomy to remove {taxon} from"))
-        })?
-        .remove_taxon(taxon)?;
+    // A leaf is labelled with its genome, it cannot hold a taxon.
+    if let Some(gid) = &new_info.gid {
+        return Err(CuratomaticError::Invariant(format!(
+            "{taxon} cannot be moved to the leaf node {gid}"
+        )));
+    }
+
+    let old_taxonomy = old_info.taxonomy.as_mut().ok_or_else(|| {
+        CuratomaticError::Invariant(format!("node {old_node} has no taxonomy to remove {taxon} from"))
+    })?;
+    old_taxonomy.remove_taxon(taxon)?;
+
+    // A node without a bootstrap is labelled by its taxonomy alone, so removing its last taxon
+    // would leave nothing to label it with. Neither label has been changed at this point.
+    if old_info.bootstrap.is_none() && old_taxonomy.iter_ranks().next().is_none() {
+        return Err(CuratomaticError::Invariant(format!(
+            "moving {taxon} would leave node {old_node} with neither a bootstrap nor a taxonomy"
+        )));
+    }
     new_info
         .taxonomy
         .get_or_insert_with(Taxonomy::default)
@@ -549,8 +577,9 @@ pub(crate) fn fill_in_missing_ranks(
     for (&leaf, missing_ranks) in leaf_to_ranks_missing {
         // Try find the highest node placement for each rank descending.
         for &rank in missing_ranks {
-            let parent_red = red_dict.get(rank.parent())?;
-            let midpoint_red = parent_red.midpoint(red_dict.get(rank)?);
+            // A novel domain cannot be placed, as there is no parent rank to bound its RED.
+            let parent_red = red_dict.get(parent_rank(rank)?)?;
+            let midpoint_red = parent_red.halfway_to(red_dict.get(rank)?);
 
             // Go up the tree to find a suitable node that won't conflict.
             let mut candidates = Vec::new();
@@ -636,6 +665,12 @@ fn leaf_gid(tree: &NewickTree, leaf: NodeId) -> GenomeId {
     )
 }
 
+/// The rank above `rank`, which every rank but the domain has.
+fn parent_rank(rank: Rank) -> CuratomaticResult<Rank> {
+    rank.parent()
+        .ok_or(CuratomaticError::NoParentRank(rank.prefix()))
+}
+
 /// The bootstrap support of a node, which an internal node must have to be compared.
 fn required_bootstrap(label: &NodeLabel) -> CuratomaticResult<BootstrapValue> {
     label.bootstrap.ok_or_else(|| {
@@ -658,3 +693,6 @@ fn containing<'a>(
 fn polyphyly(child_taxa: &BTreeMap<NodeId, BTreeSet<&Taxon>>, taxon: &Taxon) -> bool {
     containing(child_taxa, taxon).nth(1).is_some()
 }
+
+#[cfg(test)]
+mod tests;

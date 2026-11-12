@@ -34,7 +34,8 @@ impl Metadata {
     /// Read a tab separated metadata file.
     ///
     /// The `accession` column is required. The `ncbi_wgs_formatted` and `gtdb_taxonomy` columns
-    /// are optional, and a value of `none` in either is treated as missing.
+    /// are optional, and a value of `none` in either is treated as missing. An empty
+    /// `ncbi_wgs_formatted` value is an error.
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
         let file = File::open(path)
             .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
@@ -86,7 +87,16 @@ impl Metadata {
             let mut wgs = None;
             if cols.len() > 1 {
                 if let Some(idx) = wgs_idx {
-                    wgs = not_none(column(idx, COL_WGS)?).map(str::to_owned);
+                    let value = column(idx, COL_WGS)?;
+                    // An empty value would otherwise name a novel taxon with the bare rank
+                    // prefix (e.g. `g__`).
+                    if value.trim().is_empty() {
+                        return Err(CuratomaticError::EmptyValue {
+                            line: line_no,
+                            column: COL_WGS.to_owned(),
+                        });
+                    }
+                    wgs = not_none(value).map(str::to_owned);
                 }
                 if let Some(idx) = taxonomy_idx
                     && let Some(tax_string) = not_none(column(idx, COL_TAXONOMY)?)

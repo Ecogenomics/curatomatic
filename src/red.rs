@@ -29,6 +29,15 @@ impl RedValue {
     pub(crate) fn midpoint(self, other: RedValue) -> RedValue {
         RedValue((self.0 + other.0) / 2.0)
     }
+
+    /// The RED value halfway from this RED value to another, as `self + (other - self) / 2`.
+    ///
+    /// This can differ from [`RedValue::midpoint`] in the last bit. Python places novel taxa with
+    /// this form (`fill_in_missing_ranks` in `curatomatic/util/tree.py`), and a node whose RED is
+    /// exactly on the threshold is only treated the same if the arithmetic is.
+    pub(crate) fn halfway_to(self, other: RedValue) -> RedValue {
+        RedValue(self.0 + (other.0 - self.0) / 2.0)
+    }
 }
 
 impl FromStr for RedValue {

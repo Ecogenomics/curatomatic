@@ -32,17 +32,9 @@ impl Rank {
         }
     }
 
-    /// The next higher rank.
-    ///
-    /// This wraps around, the parent of the domain is the species. The Python implementation
-    /// looks the parent up with `RANKS[RANKS.index(rank) - 1]`, which behaves the same way.
-    pub(crate) fn parent(self) -> Rank {
-        Rank::iter()
-            .rev()
-            .cycle()
-            .skip_while(|&rank| rank != self)
-            .nth(1)
-            .unwrap_or(self)
+    /// The next higher rank, or `None` for the domain.
+    pub(crate) fn parent(self) -> Option<Rank> {
+        Rank::iter().rev().skip_while(|&rank| rank != self).nth(1)
     }
 
     /// The next lower rank, or `None` for the species.

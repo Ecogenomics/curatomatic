@@ -18,6 +18,10 @@ pub(crate) enum CuratomaticError {
     MissingColumn(String),
     /// A row has no value for a column that the header declares.
     MissingValue { line: usize, column: String },
+    /// A row has an empty value for a column, where `none` is expected if there is no value.
+    EmptyValue { line: usize, column: String },
+    /// The rank (identified by its prefix) has no parent rank, i.e. it is the domain.
+    NoParentRank(char),
     /// A Newick tree could not be parsed.
     Newick(String),
     /// A node label does not have the expected `<bootstrap>:<taxonomy>|RED=<value>` format.
@@ -48,6 +52,12 @@ impl fmt::Display for CuratomaticError {
             }
             CuratomaticError::MissingValue { line, column } => {
                 write!(f, "Line {line} has no value for column: {column}")
+            }
+            CuratomaticError::EmptyValue { line, column } => {
+                write!(f, "Line {line} has an empty value for column: {column}")
+            }
+            CuratomaticError::NoParentRank(rank) => {
+                write!(f, "The {rank}__ rank has no parent rank.")
             }
             CuratomaticError::Newick(message) => write!(f, "Invalid Newick tree: {message}"),
             CuratomaticError::InvalidNodeLabel(label) => write!(f, "Invalid node label: {label}"),

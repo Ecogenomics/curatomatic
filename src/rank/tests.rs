@@ -35,20 +35,15 @@ fn of_taxon_reads_the_leading_prefix() {
 }
 
 #[test]
-fn parent_of_the_domain_wraps_around_to_the_species() {
-    // Python looks the parent up with `RANKS[RANKS.index(rank) - 1]`, and `RANKS[-1]` is the
-    // species (`curatomatic/model/rank.py`).
-    assert_eq!(Rank::Domain.parent(), Rank::Species);
-}
-
-#[test]
-fn parent_is_the_next_higher_rank() {
-    assert_eq!(Rank::Phylum.parent(), Rank::Domain);
-    assert_eq!(Rank::Class.parent(), Rank::Phylum);
-    assert_eq!(Rank::Order.parent(), Rank::Class);
-    assert_eq!(Rank::Family.parent(), Rank::Order);
-    assert_eq!(Rank::Genus.parent(), Rank::Family);
-    assert_eq!(Rank::Species.parent(), Rank::Genus);
+fn parent_is_the_next_higher_rank_and_the_domain_has_none() {
+    // The domain must not wrap around to the species.
+    assert_eq!(Rank::Domain.parent(), None);
+    assert_eq!(Rank::Phylum.parent(), Some(Rank::Domain));
+    assert_eq!(Rank::Class.parent(), Some(Rank::Phylum));
+    assert_eq!(Rank::Order.parent(), Some(Rank::Class));
+    assert_eq!(Rank::Family.parent(), Some(Rank::Order));
+    assert_eq!(Rank::Genus.parent(), Some(Rank::Family));
+    assert_eq!(Rank::Species.parent(), Some(Rank::Genus));
 }
 
 #[test]

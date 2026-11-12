@@ -66,3 +66,51 @@ The example can be run using the following command:
 ```shell
 python -m curatomatic example/gtdb_r226_ar53.decorated.scaled.red.tree example/gtdb_r226_ar53.decorated.dict /tmp/output
 ```
+
+## Rust
+
+A Rust re-implementation of curatomatic is also available. It takes the same arguments and writes the same output as the Python version.
+
+### Building
+
+```shell
+cargo build --release
+```
+
+The binary is written to `./target/release/curatomatic`.
+
+### Running
+
+```shell
+./target/release/curatomatic [OPTIONS] <TREE> <RED_DICT> <OUT_DIR>
+```
+
+The arguments are the same as above (`TREE`, `RED_DICT`, `OUT_DIR`), and `OUT_DIR` must not already exist.
+
+The following options are available:
+
+- `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level (default = info).
+- `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
+- `--meta PATH` = File containing unique identifiers for novel rank creation (see [Metadata file](#metadata-file---meta)).
+- `-h, --help` = Print the help.
+- `-V, --version` = Print the version.
+
+Example:
+
+```shell
+./target/release/curatomatic --min-bs 95.0 --meta example/meta.tsv \
+    example/gtdb_r226_ar53.decorated.scaled.red.tree example/gtdb_r226_ar53.decorated.dict /tmp/output
+```
+
+### Output
+
+The following files are written to `OUT_DIR`:
+
+- `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`).
+- `curatomatic.log` = The log of the run.
+
+### Testing
+
+```shell
+cargo nextest run
+```

@@ -191,3 +191,19 @@ fn subset_to_no_ids_empties_the_metadata() {
     meta.subset_to_ids(&BTreeSet::new());
     assert!(meta.rows.is_empty());
 }
+
+#[test]
+fn an_empty_wgs_value_is_an_error() {
+    for wgs in ["", " "] {
+        assert_eq!(
+            parse(&format!(
+                "accession\tncbi_wgs_formatted\tgtdb_taxonomy\nGCA_000000001.1\tABC\tnone\nGCA_000000002.1\t{wgs}\tnone\n"
+            )),
+            Err(CuratomaticError::EmptyValue {
+                line: 3,
+                column: "ncbi_wgs_formatted".to_owned(),
+            }),
+            "wgs = {wgs:?}"
+        );
+    }
+}
