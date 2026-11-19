@@ -244,3 +244,28 @@ fn taxa_are_ordered_as_plain_strings() {
     assert!(Taxon::new("g__A") < Taxon::new("g__B"));
     assert!(Taxon::new("g__Z") < Taxon::new("g__a"));
 }
+
+#[test]
+fn a_valid_name_is_named_and_not_an_unresolved_species() {
+    for taxon in [
+        "s__Chlorobium limicola",
+        "s__CAYYKD01 sp964471825",
+        "g__CAYYKD01",
+        "c__Chlorobiia",
+    ] {
+        assert!(Taxon::new(taxon).is_valid_name(), "{taxon}");
+    }
+    for taxon in [
+        "p__",
+        "c__",
+        "o__",
+        "f__",
+        "g__",
+        "s__",
+        "s__{unresolved} G1",
+    ] {
+        assert!(!Taxon::new(taxon).is_valid_name(), "{taxon}");
+    }
+    assert!(Taxon::new("s__{unresolved} G1").is_unresolved_species());
+    assert!(!Taxon::new("s__Chlorobium limicola").is_unresolved_species());
+}

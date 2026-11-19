@@ -455,7 +455,8 @@ fn a_novel_taxon_can_be_placed_on_a_leaf() {
     )
     .unwrap();
     let file = taxonomy_file(
-        "G1\td__D;s__A one\nG2\td__D;s__A two\nG3\td__D;s__B three\nG4\td__D;s__X four\n",
+        "G1\td__D;s__{unresolved} G1\nG2\td__D;s__{unresolved} G2\n\
+         G3\td__D;s__{unresolved} G3\nG4\td__D;s__X four\n",
     );
     tree.assign_leaf_taxonomy(&file).unwrap();
     let missing = tree.get_leaf_nodes_missing_rank().unwrap();
@@ -477,7 +478,7 @@ fn a_novel_taxon_can_be_placed_on_a_leaf() {
             Taxon::new("g__G3")
         ])
     );
-    assert_eq!(leaf_taxa(&tree, 0), "g__G1; s__A one");
+    assert_eq!(leaf_taxa(&tree, 0), "g__G1; s__{unresolved} G1");
 }
 
 #[test]
@@ -505,4 +506,148 @@ fn any_other_taxon_on_more_than_one_node_is_an_error() {
         ),
         Err(CuratomaticError::NonUniqueTaxon(_))
     ));
+}
+
+// ---- Novel taxa are only created where nothing below is named ----
+
+/// Fill in the missing ranks of a tree whose leaves hold the given taxa, as `main` does after
+/// refinement. Returns the tree and the novel taxa.
+fn fill_novel(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, BTreeSet<Taxon>) {
+    let mut tree = tree_with_leaf_taxa(newick, leaf_taxa).unwrap();
+    let missing = tree.get_leaf_nodes_missing_rank().unwrap();
+    let known = tree.taxon_labels.clone();
+    let novel = fill_in_missing_ranks(
+        &mut tree,
+        &missing,
+        BootstrapValue::new(95.0),
+        &red_dict(),
+        &Metadata::default(),
+        known,
+    )
+    .unwrap();
+    tree.reload().unwrap();
+    (tree, novel)
+}
+
+/// The taxonomy written for each genome, joined by `;`.
+fn written_taxonomies(tree: &Tree) -> Vec<String> {
+    tree.leaf_taxonomies()
+        .unwrap()
+        .iter()
+        .map(|(gid, taxa)| {
+            let taxa: Vec<&str> = taxa.iter().map(Taxon::as_str).collect();
+            format!("{gid}\t{}", taxa.join(";"))
+        })
+        .collect()
+}
+
+/// G1 (0) and G2 (1) below a supported node X (RED 0.95), below the root, which holds every rank
+/// above the genus.
+const MISSING_GENUS: &str =
+    "((G1:0.1,G2:0.1)'100|red=0.95':0.1)'d__D;p__P;c__C;o__O;f__F|red=0.0';";
+
+#[test]
+fn a_missing_phylum_above_a_named_class_is_not_created() {
+    // The highest phylum candidate (RED 0.3) is above `c__C`.
+    let (tree, novel) = fill_novel(
+        "(((G1:0.1,G2:0.1)'100:c__C;o__O;f__F;g__G|red=0.5':0.1)'100|red=0.3':0.1)'d__D|red=0.0';",
+        &[(0, "s__G one"), (1, "s__G two")],
+    );
+    assert!(novel.is_empty());
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__;c__C;o__O;f__F;g__G;s__G one",
+            "G2\td__D;p__;c__C;o__O;f__F;g__G;s__G two"
+        ]
+    );
+}
+
+#[test]
+fn a_missing_genus_above_only_unresolved_species_is_created() {
+    let (tree, novel) = fill_novel(
+        MISSING_GENUS,
+        &[(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")],
+    );
+    assert_eq!(novel, BTreeSet::from([Taxon::new("g__G1")]));
+    assert_eq!(label(&tree, 2), "100.0:g__G1|RED=0.950");
+}
+
+#[test]
+fn a_missing_genus_above_a_named_species_is_not_created() {
+    let (tree, novel) = fill_novel(
+        MISSING_GENUS,
+        &[(0, "s__{unresolved} G1"), (1, "s__Chlorobium limicola")],
+    );
+    assert!(novel.is_empty());
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__P;c__C;o__O;f__F;g__;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__O;f__F;g__;s__Chlorobium limicola"
+        ]
+    );
+}
+
+#[test]
+fn a_wgs_style_name_below_blocks_creation() {
+    // The highest family candidate (RED 0.75) is above `g__CAYYKD01`, and G3's genus is skipped
+    // with its family.
+    let (_, novel) = fill_novel(
+        "(((G1:0.1,G2:0.1)'100:g__CAYYKD01|red=0.95':0.1,G3:0.1)'100|red=0.75':0.1)\
+         'd__D;p__P;c__C;o__O|red=0.0';",
+        &[
+            (0, "s__{unresolved} G1"),
+            (1, "s__{unresolved} G2"),
+            (3, "s__{unresolved} G3"),
+        ],
+    );
+    assert!(novel.is_empty());
+}
+
+#[test]
+fn a_lower_rank_on_the_candidate_node_itself_blocks_creation() {
+    // The highest phylum candidate is the node of `c__Chlorobiia`.
+    let (tree, novel) = fill_novel(
+        "((G1:0.1,G2:0.1)'100:c__Chlorobiia;o__O;f__F;g__G|red=0.4':0.1)'d__D|red=0.0';",
+        &[(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")],
+    );
+    assert!(novel.is_empty());
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__;c__Chlorobiia;o__O;f__F;g__G;s__{unresolved} G1",
+            "G2\td__D;p__;c__Chlorobiia;o__O;f__F;g__G;s__{unresolved} G2"
+        ]
+    );
+}
+
+#[test]
+fn the_lower_ranks_of_a_skipped_genome_are_not_filled() {
+    // The phylum is skipped at X (RED 0.2), above `c__C`. Nothing named is below Z (RED 0.75), the
+    // highest family candidate, but the family and genus are not filled.
+    let (tree, novel) = fill_novel(
+        "((((G1:0.1,G2:0.1)'100|red=0.75':0.1)'100:c__C;o__O|red=0.45':0.1)'100|red=0.2':0.1)\
+         'd__D|red=0.0';",
+        &[(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")],
+    );
+    assert!(novel.is_empty());
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__;c__C;o__O;f__;g__;s__{unresolved} G1",
+            "G2\td__D;p__;c__C;o__O;f__;g__;s__{unresolved} G2"
+        ]
+    );
+}
+
+#[test]
+fn a_genome_that_is_not_skipped_still_gets_its_lower_ranks() {
+    // Without `c__C; o__O` the same tree gets a novel phylum and family (and more).
+    let (_, novel) = fill_novel(
+        "((((G1:0.1,G2:0.1)'100|red=0.75':0.1)'100|red=0.45':0.1)'100|red=0.2':0.1)'d__D|red=0.0';",
+        &[(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")],
+    );
+    assert!(novel.contains(&Taxon::new("p__G1")));
+    assert!(novel.contains(&Taxon::new("f__G1")));
 }

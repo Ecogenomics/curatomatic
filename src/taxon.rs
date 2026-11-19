@@ -12,6 +12,9 @@ const BAD_PAIRS: [(char, char); 5] = [('I', 'l'), ('0', 'O'), ('1', 'I'), ('5', 
 /// The name of a novel taxon that could not be given a unique name, after its rank prefix.
 const UNRESOLVABLE: &str = "UNRESOLVABLE";
 
+/// The start of a species name that curatomatic must not change, e.g. `s__{unresolved} NAME`.
+const UNRESOLVED_SPECIES: &str = "s__{unresolved}";
+
 /// The name of a single taxon, including its rank prefix (e.g. `g__Escherichia`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Taxon(String);
@@ -45,6 +48,17 @@ impl Taxon {
     /// True if this is a name, rather than a placeholder that is only the rank prefix (e.g. `g__`).
     pub(crate) fn is_named(&self) -> bool {
         self.as_str().chars().count() > 3
+    }
+
+    /// True if this is a species of the form `s__{unresolved} NAME`.
+    pub(crate) fn is_unresolved_species(&self) -> bool {
+        self.as_str().starts_with(UNRESOLVED_SPECIES)
+    }
+
+    /// True if this is a valid name: named (see [`Taxon::is_named`]), and not an unresolved
+    /// species (see [`Taxon::is_unresolved_species`]). A novel taxon is never created above one.
+    pub(crate) fn is_valid_name(&self) -> bool {
+        self.is_named() && !self.is_unresolved_species()
     }
 }
 

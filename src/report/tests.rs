@@ -135,11 +135,13 @@ fn a_taxon_inside_another_of_the_same_rank_is_nested() {
     );
 }
 
-/// G1 and G2 have no genus, and sit below a supported node at RED 0.84 (q = 0.4). G3 keeps the
-/// prior taxa above genus polyphyletic at the root, so they are not moved down.
+/// G1 and G2 have no genus, and sit below a supported node at RED 0.84 (q = 0.4). Their species
+/// are unresolved, so a novel genus may be created above them. G3 keeps the prior taxa above genus
+/// polyphyletic at the root, so they are not moved down.
 fn novel_tree() -> String {
     format!(
-        "(((G1|RED=1.000)'s__X one|RED=1.000',(G2|RED=1.000)'s__X two|RED=1.000')'100.0|RED=0.840',\
+        "(((G1|RED=1.000)'s__{{unresolved}} G1|RED=1.000',\
+         (G2|RED=1.000)'s__{{unresolved}} G2|RED=1.000')'100.0|RED=0.840',\
          (G3|RED=1.000)'g__C; s__C three|RED=1.000'){ROOT};"
     )
 }

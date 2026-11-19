@@ -16,6 +16,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | L4 | Novel names without WGS | `<rank>__NOVEL-<lowest gid>`, may duplicate an existing taxon | `<rank>__<lowest gid not already used>`, else `<rank>__UNRESOLVABLE` | **Yes** |
 | L5 | Novel domain | Uses the species median as the parent | Error | Stops the run instead of a wrong placement |
 | L6 | Leaf taxa | Leaves can't hold a taxon, the tree needs a species node above each leaf | `--taxonomy` assigns the ranks the tree can't hold to the leaves | **Yes**, a new input |
+| L7 | Novel taxa above names | A novel taxon is created for every missing rank, even above named taxa | Only created where no valid name of a lower rank is below it | **Yes** |
 
 All other refinement and novel-rank rules are the same; see
 [Unchanged logic](#unchanged-logic).
@@ -93,6 +94,16 @@ genome, they get the same name.
   novel taxa placed on one. The curated taxonomy of every genome is written to
   `<stem>.curatomatic.taxonomy.tsv`. Leaf labels are never changed, so the output tree labels
   each leaf with its genome ID, as in Python.
+
+### L7. Novel taxa are not created above named taxa
+
+- **Python** (`fill_in_missing_ranks`, `util/tree.py`): a novel taxon is created on the highest
+  candidate node for every rank a genome is missing, even when named taxa of lower ranks are
+  below it. In R237, low bootstrap support above `c__Chlorobiia` split it into six novel phyla.
+- **Rust** (`fill_in_missing_ranks`, `src/tree.rs`): the novel taxon is skipped if a valid name
+  (`Taxon::is_valid_name`: not a placeholder or `s__{unresolved}` species) of a lower rank is on
+  the candidate node or below it. Its genomes keep the placeholder, and their lower missing ranks
+  are not filled either. See [refinement.md](refinement.md#novel-taxa).
 
 ## Failures that are now reported errors
 
@@ -193,7 +204,7 @@ documented in [refinement.md](refinement.md).
   (placeholders included). Candidates need bootstrap ≥ `min_bs` (or none), and RED ≥
   `parent + (rank − parent) / 2`. The Rust code uses `RedValue::halfway_to` to keep Python's
   floating-point form. The highest candidate is used, leaves that share it share a taxon, and
-  ranks are processed highest first.
+  ranks are processed highest first. (Rust then skips it if a name is below it, see L7.)
 - **Unique taxa**: a taxon on more than one node stops the run.
 - **End-of-run check**: the taxa after, minus the novel taxa, must equal the taxa before.
 - **Label removal**: everything from the first `|` is stripped from every label.

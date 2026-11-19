@@ -257,6 +257,30 @@ impl Tree {
         Ok(out)
     }
 
+    /// The lowest rank of any valid name (see [`Taxon::is_valid_name`]) on each node or below it,
+    /// indexed by node. `None` if there is no valid name at or below the node.
+    fn lowest_valid_rank_below(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
+        let mut out: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
+        // Post-order puts every child before its parent.
+        for node in self.newick.ids() {
+            let mut lowest = self
+                .newick
+                .children(node)
+                .iter()
+                .filter_map(|child| out.get(child.index()).copied().flatten())
+                .max();
+            if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_valid_name()) {
+                    lowest = lowest.max(Some(taxon.rank()?));
+                }
+            }
+            if let Some(slot) = out.get_mut(node.index()) {
+                *slot = lowest;
+            }
+        }
+        Ok(out)
+    }
+
     /// Give each leaf the ranks that the tree can't hold, from the taxonomy file.
     ///
     /// Each leaf gets every named taxon of the file whose rank is below the
@@ -760,6 +784,10 @@ fn non_empty(taxonomy: Taxonomy) -> Option<Taxonomy> {
 /// lowest. `known_taxa` are the taxa that already exist, and are not reused. Returns the taxa
 /// that were created.
 ///
+/// A novel taxon is only created when no valid name (see [`Taxon::is_valid_name`]) of a lower
+/// rank is on the highest node or below it. Otherwise its leaves keep the placeholder, and none
+/// of their lower missing ranks are filled either.
+///
 /// The tree must be up to date: call [`Tree::reload`] first.
 pub(crate) fn fill_in_missing_ranks(
     tree: &mut Tree,
@@ -803,6 +831,11 @@ pub(crate) fn fill_in_missing_ranks(
         }
     }
 
+    // Read before any novel taxon is created, so only the names already on the tree count.
+    let lowest_valid_below = tree.lowest_valid_rank_below()?;
+    // Leaves whose novel taxon of a higher rank was skipped, so their lower ranks are not filled.
+    let mut skipped_leaves: BTreeSet<NodeId> = BTreeSet::new();
+
     // Process higher to lower ranks.
     let mut new_taxa_created = BTreeSet::new();
     for (rank, leaf_candidates) in &rank_to_leaf_candidates {
@@ -810,6 +843,9 @@ pub(crate) fn fill_in_missing_ranks(
         let mut candidate_to_leaves: Vec<(NodeId, BTreeSet<NodeId>)> = Vec::new();
         let mut index: HashMap<NodeId, usize> = HashMap::new();
         for (leaf, candidates) in leaf_candidates {
+            if skipped_leaves.contains(leaf) {
+                continue;
+            }
             let &candidate =
                 candidates
                     .last()
@@ -830,7 +866,16 @@ pub(crate) fn fill_in_missing_ranks(
         }
 
         // Create a novel group for the highest candidate node that covers the descendant taxa.
+        let mut n_skipped: usize = 0;
         for (candidate, leaves) in &candidate_to_leaves {
+            // A curator never places a novel taxon above a valid name of a lower rank.
+            let lowest = lowest_valid_below.get(candidate.index()).copied().flatten();
+            if lowest.is_some_and(|lowest| lowest > *rank) {
+                skipped_leaves.extend(leaves);
+                n_skipped = n_skipped.saturating_add(1);
+                continue;
+            }
+
             let gids = leaves
                 .iter()
                 .filter_map(|&leaf| tree.leaf_gid(leaf).cloned())
@@ -842,6 +887,10 @@ pub(crate) fn fill_in_missing_ranks(
             // Add the taxon to the node (the leaf itself may be the candidate).
             tree.add_node_taxon(*candidate, new_taxon)?;
         }
+        info!(
+            "Skipped {n_skipped} novel {} taxa that have a valid name below them.",
+            rank.prefix()
+        );
     }
 
     Ok(new_taxa_created)

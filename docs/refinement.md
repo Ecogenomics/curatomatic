@@ -210,3 +210,17 @@ node, as is every node above it. A novel taxon without a WGS name is named after
 ID under it whose name is not already a taxon (`g__G963674675`). If every genome ID is taken (e.g.
 the input tree named a taxon after a genome that is not in it), it is the sentinel
 `<rank>__UNRESOLVABLE`, which may be on more than one node, for a curator to name.
+
+A novel taxon is only created where **no valid name is below it**. A curator never places a novel
+rank above existing names:
+
+- For a missing rank `R` on its highest candidate node `N`, the taxon is created only if no node at
+  or below `N` (leaves included) holds a valid name of a rank below `R`, species included. A lower
+  rank on `N` itself counts (e.g. `c__Chlorobiia` on the node of a would-be phylum).
+- A valid name is any taxon that is not a placeholder (`c__`, `g__`, ...) and not an unresolved
+  species (`s__{unresolved} NAME`), see `Taxon::is_valid_name`. Named species, species named after
+  a placeholder genus (`s__CAYYKD01 sp964471825`) and WGS-style taxa (`g__CAYYKD01`) are all valid.
+- The names are read from the tree after refinement, before any novel taxon is created.
+- The genomes of a skipped taxon keep the placeholder (e.g. `p__`) in the taxonomy and tree, and
+  none of their lower missing ranks are filled either. No report row is added; the run logs the
+  number skipped for each rank.
