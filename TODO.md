@@ -1,26 +1,5 @@
 # TODO
 
-## Job 3: Replace the hand-rolled `thousands` with the `thousands` crate
-
-### Problem
-`src/main.rs` → `thousands` formats counts with comma separators to match Python's `f'{n:,}'`. The standard library
-can't group digits, so the function was written by hand. The `thousands` crate does the same thing, so there's no
-need to maintain our own.
-
-### Where
-- Rust: `src/main.rs` → `thousands` and its callers in `curate` and `taxonomy_coverage_messages`.
-- Tests: `src/main/tests.rs` → `thousands_matches_python_comma_formatting`.
-
-### What to do
-1. `cargo add thousands`.
-2. Delete `thousands` and call `n.separate_with_commas()` (`use thousands::Separable;`) at each call site.
-3. Keep the test cases from `thousands_matches_python_comma_formatting`, but have them call `separate_with_commas`,
-   so they still pin the output to Python's (always a comma, never locale-dependent).
-
-### Done when
-`thousands` is gone from `src/main.rs`, `cargo test` passes, and the log lines for every test_data run are
-unchanged.
-
 
 ## Job 4: Read the median RED values from a TSV instead of the JSON `.dict`
 
