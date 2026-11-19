@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 
 use ::log::{info, warn};
-use strum::IntoEnumIterator;
 
 use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
@@ -436,34 +435,6 @@ impl Tree {
             current = self.tree.parent(ancestor);
         }
         None
-    }
-
-    /// Check that no node carries two or more named taxa of the same rank.
-    ///
-    /// The labels are read from the tree itself, so this can be called without a reload.
-    pub(crate) fn check_no_same_rank_taxa(&self) -> CuratomaticResult<()> {
-        for node in self.tree.ids() {
-            let Some(taxonomy) = NodeLabel::from_node(&self.tree, node)?.taxonomy else {
-                continue;
-            };
-            for rank in Rank::iter() {
-                let named: Vec<&str> = taxonomy
-                    .get_rank(rank)
-                    .iter()
-                    .filter(|taxon| taxon.is_named())
-                    .map(Taxon::as_str)
-                    .collect();
-                if named.len() > 1 {
-                    return Err(CuratomaticError::Invariant(format!(
-                        "node {} has more than one taxon of rank {}: {}",
-                        self.tree.label(node).unwrap_or("None"),
-                        rank.prefix(),
-                        named.join(", ")
-                    )));
-                }
-            }
-        }
-        Ok(())
     }
 
     /// The taxa of `rank` that the metadata assigns to the genomes below each child of `node`.

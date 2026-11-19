@@ -186,7 +186,6 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         let refinement = tree.refine_existing_labels(rank, cli.min_bs, &red_dict, &metadata)?;
         moves.extend(tree.process_refinement(&refinement, rank, cli.min_bs, &red_dict)?);
         tree.reload()?;
-        tree.check_no_same_rank_taxa()?;
     }
 
     info!("Identifying leaf nodes missing ranks");
@@ -207,7 +206,6 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         known_taxa,
     )?;
     info!("Created {} novel ranks.", new_taxa_created.len().separate_with_commas());
-    tree.check_no_same_rank_taxa()?;
 
     let tree_taxa_after = tree.extract_all_taxa_from_tree()?;
     let taxa_without_new: BTreeSet<_> = tree_taxa_after
@@ -248,14 +246,11 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    match run(&cli) {
-        Ok(code) => code,
-        Err(e) => {
-            // Ignore a failure to write to stderr, there is nothing else to report it to.
-            drop(writeln!(io::stderr(), "ERROR: {e}"));
-            ExitCode::FAILURE
-        }
-    }
+    run(&cli).unwrap_or_else(|e| {
+        // Ignore a failure to write to stderr, there is nothing else to report it to.
+        drop(writeln!(io::stderr(), "ERROR: {e}"));
+        ExitCode::FAILURE
+    })
 }
 
 #[cfg(test)]

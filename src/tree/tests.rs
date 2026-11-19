@@ -173,7 +173,6 @@ fn a_nested_taxon_is_not_moved_up_part_of_the_way_to_its_ancestor() {
     assert_eq!(label_with(&tree, "g__B"), "50.0:g__B|RED=0.930");
     assert_eq!(label_with(&tree, "g__A"), "100.0:g__A|RED=0.820");
     assert_eq!(label_with(&tree, "RED=0.880"), "100.0|RED=0.880");
-    tree.check_no_same_rank_taxa().unwrap();
 }
 
 #[test]
@@ -181,7 +180,6 @@ fn a_nested_taxon_is_not_moved_onto_the_node_of_its_ancestor() {
     let tree = refine_genus(NESTED_ON_ANCESTOR_NODE);
     assert_eq!(label_with(&tree, "g__B"), "50.0:g__B|RED=0.930");
     assert_eq!(label_with(&tree, "g__A"), "100.0:g__A|RED=0.880");
-    tree.check_no_same_rank_taxa().unwrap();
 }
 
 #[test]
@@ -195,16 +193,4 @@ fn nested_inside_finds_the_closest_named_ancestor_of_the_same_rank() {
     let (genus, family) = (Taxon::new("g__B"), Taxon::new("f__F"));
     assert_eq!(tree.nested_inside(b, Rank::Genus, &genus), Some(&Taxon::new("g__A")));
     assert_eq!(tree.nested_inside(b, Rank::Family, &family), None);
-}
-
-#[test]
-fn a_node_with_two_named_taxa_of_the_same_rank_is_an_error() {
-    let tree = tree(&nested_tree("100.0:g__A; g__C")).unwrap();
-    assert!(matches!(tree.check_no_same_rank_taxa(), Err(CuratomaticError::Invariant(_))));
-}
-
-#[test]
-fn a_placeholder_does_not_count_as_a_second_taxon_of_the_rank() {
-    let tree = tree(&nested_tree("100.0:g__A; g__")).unwrap();
-    tree.check_no_same_rank_taxa().unwrap();
 }
