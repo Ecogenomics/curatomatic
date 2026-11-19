@@ -1,13 +1,9 @@
 use std::fmt;
 
-/// Leaf nodes with this prefix are zombies: copies of a genome that is already in the tree.
-const ZOMBIE_PREFIX: &str = "D-";
-
 /// The ID of a genome, e.g. `G002502135`.
 ///
-/// The leaf of a zombie (e.g. `D-G002502135`) also holds a `GenomeId`, see
-/// [`GenomeId::is_zombie`]. The derived order is byte-wise, which is the same as the plain string
-/// order that Python sorts genome IDs by (`util/taxon.py:26`).
+/// The derived order is byte-wise, which is the same as the plain string order that Python sorts
+/// genome IDs by (`util/taxon.py:26`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct GenomeId(String);
 
@@ -18,11 +14,6 @@ impl GenomeId {
 
     pub(crate) fn as_str(&self) -> &str {
         &self.0
-    }
-
-    /// True if this is the ID of a zombie leaf: a copy of a genome that is already in the tree.
-    pub(crate) fn is_zombie(&self) -> bool {
-        self.0.starts_with(ZOMBIE_PREFIX)
     }
 }
 

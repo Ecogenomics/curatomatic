@@ -20,8 +20,8 @@ fn red_dict() -> Red {
         .unwrap()
 }
 
-/// Post-order: G1 (0), D-G1 (1), their species node (2), G2 (3), its species node (4), root (5).
-const TWO_GENOMES: &str = "((G1|RED=1.000:0.1,D-G1|RED=1.000:0.1)'g__A; s__A one|RED=1.000':0.1,\
+/// Post-order: G1 (0), G3 (1), their species node (2), G2 (3), its species node (4), root (5).
+const TWO_GENOMES: &str = "((G1|RED=1.000:0.1,G3|RED=1.000:0.1)'g__A; s__A one|RED=1.000':0.1,\
      (G2|RED=1.000:0.1)'s__B b|RED=1.000':0.1)'90.0:f__F|RED=0.700';";
 
 #[test]
@@ -203,9 +203,9 @@ fn taxonomy_file(contents: &str) -> TaxonomyFile {
 }
 
 /// A tree in the r237 format: leaves without a RED, and `|red=`. Post-order: G1 (0), G2 (1),
-/// `g__A` (2), G3 (3), `f__F` (4), G4 (5), D-G4 (6), `c__C` (7), root (8).
+/// `g__A` (2), G3 (3), `f__F` (4), G4 (5), `c__C` (6), root (7).
 const NEW_STYLE: &str = "(((G1:0.1,G2:0.1)'100:g__A|red=0.95':0.1,G3:0.1)'100:f__F|red=0.70':0.1,\
-     (G4:0.1,D-G4:0.1)'100:c__C|red=0.40':0.1)'d__D|red=0.0000';";
+     (G4:0.1)'100:c__C|red=0.40':0.1)'d__D|red=0.0000';";
 
 /// The taxonomy file for [`NEW_STYLE`], where the file disagrees with the tree for G1's genus,
 /// G3's genus is a placeholder, and G4 has a phylum that the tree doesn't.
@@ -252,7 +252,7 @@ fn the_taxa_on_the_tree_are_never_changed_by_the_taxonomy_file() {
     let (after, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
     // G1 is in `g__Other` in the file, the tree's `g__A` wins.
     assert!(!after.taxon_labels.contains(&Taxon::new("g__Other")));
-    for index in [2, 4, 7, 8] {
+    for index in [2, 4, 6, 7] {
         assert_eq!(label(&after, index), label(&before, index));
     }
     assert!(after.taxon_labels.is_superset(&before.taxon_labels));
@@ -289,15 +289,10 @@ fn an_unresolved_species_reaches_the_leaf_unchanged() {
 }
 
 #[test]
-fn zombies_get_nothing_from_the_taxonomy_file() {
-    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
-    assert_eq!(label(&tree, 6), "D-G4");
-}
-
-#[test]
 fn an_old_style_tree_gets_nothing_from_the_taxonomy_file() {
     let taxonomy = "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A other\n\
-                    G2\td__D;p__P;c__C;o__O;f__F;g__B;s__B other\n";
+                    G2\td__D;p__P;c__C;o__O;f__F;g__B;s__B other\n\
+                    G3\td__D;p__P;c__C;o__O;f__F;g__A;s__A third\n";
     let (tree, assignment) = assigned(TWO_GENOMES, taxonomy);
     assert_eq!(assignment, LeafAssignment::default());
     assert_eq!(label(&tree, 0), "G1|RED=1.000");
@@ -346,7 +341,7 @@ fn leaf_taxonomies_read_the_ranks_in_order_from_the_leaf_and_its_ancestors() {
             (gid.as_str(), taxa.join(";"))
         })
         .collect();
-    // Zombies are skipped, and a rank that no node holds is a placeholder.
+    // A rank that no node holds is a placeholder.
     assert_eq!(
         rows,
         vec![

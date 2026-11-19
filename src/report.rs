@@ -163,7 +163,7 @@ fn is_flagged_rank(rank: Rank) -> bool {
 /// Data derived from the structure and labels of the curated tree.
 struct TreeIndex<'a> {
     tree: &'a Tree,
-    /// The number of genomes (leaves that are not zombies) below each node.
+    /// The number of genomes (leaves) below each node.
     n_genomes: Vec<usize>,
 }
 
@@ -173,12 +173,7 @@ impl<'a> TreeIndex<'a> {
         let mut n_genomes = Vec::new();
         for node in newick.ids() {
             let n = if newick.is_leaf(node) {
-                usize::from(
-                    tree.label(node)?
-                        .gid
-                        .as_ref()
-                        .is_some_and(|gid| !gid.is_zombie()),
-                )
+                usize::from(tree.label(node)?.gid.is_some())
             } else {
                 newick
                     .children(node)
@@ -211,13 +206,11 @@ impl<'a> TreeIndex<'a> {
         })
     }
 
-    /// The genomes (not zombies) at or below `node`, which may be a leaf itself.
+    /// The genomes at or below `node`, which may be a leaf itself.
     fn genomes_under(&self, node: NodeId) -> CuratomaticResult<Vec<&'a GenomeId>> {
         let mut out = Vec::new();
         for desc in self.newick().descendants(node).chain([node]) {
-            if let Some(gid) = &self.tree.label(desc)?.gid
-                && !gid.is_zombie()
-            {
+            if let Some(gid) = &self.tree.label(desc)?.gid {
                 out.push(gid);
             }
         }

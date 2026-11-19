@@ -179,13 +179,13 @@ documented in [refinement.md](refinement.md).
   original node is unsupported.
 - **Downward rules**: skip when supported and `RED > lower`; stop on polyphyly (more than one
   child containing the taxon in the prior taxonomy); the record/continue table for nodes without
-  a bootstrap, supported nodes and improved nodes. Zombies contribute nothing.
+  a bootstrap, supported nodes and improved nodes.
 - **Choosing the move**: the candidates plus the original node, sorted by supported first,
   then RED delta ascending, then bootstrap descending. A missing bootstrap counts as `100`. The
   sort is stable, with ties in insertion order. Nothing happens if the original node is best.
 - **Transferring a taxon**: remove it from the old node, add it to the new one, rewrite both
   labels (bootstrap `.1f`, RED `.3f`).
-- **Leaves missing ranks**: walk up from each non-zombie leaf, collecting taxa until every rank is
+- **Leaves missing ranks**: walk up from each leaf, collecting taxa until every rank is
   assigned.
 - **Novel rank placement**: stop at the first ancestor that has any taxon of the rank below it
   (placeholders included). Candidates need bootstrap ≥ `min_bs` (or none), and RED ≥

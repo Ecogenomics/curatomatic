@@ -114,8 +114,8 @@ window (`RED > lower bound`): going lower would only move further from the media
 ### Rule D2: follow the genomes of the taxon
 
 For a node, each child is assigned the set of taxa of this rank that the prior taxonomy gives to
-the genomes at or below it (a child may be a leaf itself). Zombie leaves (`D-` prefix) and genomes without a prior taxonomy contribute
-nothing.
+the genomes at or below it (a child may be a leaf itself). Genomes without a prior taxonomy
+contribute nothing.
 
 - If **more than one** child contains the taxon, moving down would make it polyphyletic, so the
   descent stops here.
@@ -182,7 +182,7 @@ Before refinement, when the tree is read:
   any other leaf RED is invalid. An internal node is labelled
   `[<bootstrap>][:][<taxonomy>]|RED=<red>`. The RED key may be written `RED=` or `red=`, after a
   `|`, or after the `:` of a bootstrap with no taxonomy (`100:red=0.889`).
-- If `--taxonomy` is given, every leaf (zombies are skipped) is given the ranks the tree can't hold,
+- If `--taxonomy` is given, every leaf is given the ranks the tree can't hold,
   before anything else runs (`Tree::assign_leaf_taxonomy`):
   - The leaf gets every named taxon of its row whose rank is **below** the lowest rank of any taxon
     on its path to the root. If the lowest is a genus, it gets only its species. If it is a

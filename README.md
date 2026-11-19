@@ -147,7 +147,7 @@ The following files are written to `OUT_DIR`:
 
 - `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`). A leaf that holds taxa is labelled `<gid>|<taxonomy>`.
 - `<tree stem>.curatomatic.report.tsv` = The taxa that curatomatic changed or flagged, for review.
-- `<tree stem>.curatomatic.taxonomy.tsv` = The curated taxonomy of each genome, in the format of the [taxonomy file](#taxonomy-file---taxonomy), one row per genome in tree order (zombies are skipped). Each rank is the taxon nearest the leaf on its path in the curated tree.
+- `<tree stem>.curatomatic.taxonomy.tsv` = The curated taxonomy of each genome, in the format of the [taxonomy file](#taxonomy-file---taxonomy), one row per genome in tree order. Each rank is the taxon nearest the leaf on its path in the curated tree.
 - `curatomatic.log` = The log of the run.
 
 ## Testing

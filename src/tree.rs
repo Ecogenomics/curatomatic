@@ -66,7 +66,7 @@ pub(crate) struct Tree {
     newick: NewickTree,
     /// The label of every node, indexed by node. Call [`Tree::reload`] after changing the tree.
     node_labels: Vec<NodeLabel>,
-    /// The genome ID of every leaf node that is not a zombie.
+    /// The genome ID of every leaf node.
     pub(crate) gids: BTreeSet<GenomeId>,
     /// Every taxon that is on the tree.
     pub(crate) taxon_labels: BTreeSet<Taxon>,
@@ -101,7 +101,6 @@ impl Tree {
     fn get_gids(tree: &NewickTree, node_labels: &[NodeLabel]) -> BTreeSet<GenomeId> {
         tree.leaves()
             .filter_map(|node| node_labels.get(node.index())?.gid.as_ref())
-            .filter(|gid| !gid.is_zombie())
             .cloned()
             .collect()
     }
@@ -162,20 +161,12 @@ impl Tree {
         self.newick.to_file(path)
     }
 
-    /// The number of leaf nodes that are not zombies, and the number that are.
-    pub(crate) fn n_nodes_and_zombies(&self) -> (usize, usize) {
-        let (mut n_nodes, mut n_zombies) = (0_usize, 0_usize);
-        for leaf in self.newick.leaves() {
-            if self.leaf_gid(leaf).is_none_or(GenomeId::is_zombie) {
-                n_zombies = n_zombies.saturating_add(1);
-            } else {
-                n_nodes = n_nodes.saturating_add(1);
-            }
-        }
-        (n_nodes, n_zombies)
+    /// The number of leaf nodes.
+    pub(crate) fn n_leaves(&self) -> usize {
+        self.newick.leaves().count()
     }
 
-    /// The genome ID of a leaf (which may be a zombie), `None` if `node` is not a leaf.
+    /// The genome ID of a leaf, `None` if `node` is not a leaf.
     fn leaf_gid(&self, node: NodeId) -> Option<&GenomeId> {
         self.node_labels.get(node.index())?.gid.as_ref()
     }
@@ -205,7 +196,7 @@ impl Tree {
 
     /// Give each leaf the ranks that the tree can't hold, from the taxonomy file.
     ///
-    /// Each leaf (zombies are skipped) gets every named taxon of the file whose rank is below the
+    /// Each leaf gets every named taxon of the file whose rank is below the
     /// lowest rank on its path to the root, e.g. only its species if the lowest is a genus. A gap
     /// above the lowest rank is never filled, and placeholders (e.g. `g__`) are never assigned.
     /// The taxa already on the tree are never changed. A taxon that is already on the tree, or
@@ -222,7 +213,7 @@ impl Tree {
         let mut wanted: Vec<(NodeId, Vec<&Taxon>)> = Vec::new();
         let mut n_wanting: HashMap<&Taxon, usize> = HashMap::new();
         for leaf in self.newick.leaves() {
-            let Some(gid) = self.leaf_gid(leaf).filter(|gid| !gid.is_zombie()) else {
+            let Some(gid) = self.leaf_gid(leaf) else {
                 continue;
             };
             let taxonomy =
@@ -272,7 +263,7 @@ impl Tree {
         Ok(out)
     }
 
-    /// The taxonomy of each leaf (zombies are skipped), in tree order.
+    /// The taxonomy of each leaf, in tree order.
     ///
     /// The taxonomy is read from the taxa on the leaf and every ancestor, one taxon for each rank
     /// from the domain to the species. When a rank is on more than one node of the path (nested
@@ -282,7 +273,7 @@ impl Tree {
     pub(crate) fn leaf_taxonomies(&self) -> CuratomaticResult<Vec<(GenomeId, Vec<Taxon>)>> {
         let mut out = Vec::new();
         for leaf in self.newick.leaves() {
-            let Some(gid) = self.leaf_gid(leaf).filter(|gid| !gid.is_zombie()) else {
+            let Some(gid) = self.leaf_gid(leaf) else {
                 continue;
             };
             let mut named: BTreeMap<Rank, &Taxon> = BTreeMap::new();
@@ -310,16 +301,11 @@ impl Tree {
 
     /// The leaf nodes that are missing one or more ranks, and the ranks that they are missing.
     ///
-    /// The ranks are those not assigned on the path from the leaf (included) to the root. Zombies
-    /// are skipped. Call [`Tree::reload`] first if the tree was changed.
+    /// The ranks are those not assigned on the path from the leaf (included) to the root. Call [`Tree::reload`] first if the tree was changed.
     pub(crate) fn get_leaf_nodes_missing_rank(&self) -> CuratomaticResult<MissingRanks> {
         let mut out = MissingRanks::new();
 
         for leaf in self.newick.leaves() {
-            if self.leaf_gid(leaf).is_none_or(GenomeId::is_zombie) {
-                continue;
-            }
-
             // Go up the tree and read the taxonomy from it.
             let mut taxonomy = Taxonomy::default();
             let mut current = Some(leaf);

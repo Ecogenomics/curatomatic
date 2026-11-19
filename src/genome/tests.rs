@@ -63,16 +63,6 @@ fn display_and_as_str_give_the_id() {
     assert_eq!(gid.to_string(), "G002502135");
 }
 
-#[test]
-fn zombies_start_with_d_dash() {
-    assert!(GenomeId::new("D-G002502135").is_zombie());
-    assert!(GenomeId::new("D-").is_zombie());
-    assert!(!GenomeId::new("G002502135").is_zombie());
-    assert!(!GenomeId::new("d-G1").is_zombie());
-    assert!(!GenomeId::new("XD-G1").is_zombie());
-    assert!(!GenomeId::new("").is_zombie());
-}
-
 // Python sorts genome IDs as plain strings (`util/taxon.py:26`).
 #[test]
 fn order_is_plain_string_order() {

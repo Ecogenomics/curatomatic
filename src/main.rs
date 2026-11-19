@@ -269,12 +269,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     info!("Reading tree");
     let mut tree = Tree::from_file(&cli.tree)?;
 
-    // Get the number of tree nodes, and zombie nodes (i.e. prefixed with "D-").
-    let (tree_n_nodes, tree_n_zombies) = tree.n_nodes_and_zombies();
+    let tree_n_nodes = tree.n_leaves();
     info!(
-        "Found: {} leaf nodes, and {} zombies in the tree.",
-        tree_n_nodes.separate_with_commas(),
-        tree_n_zombies.separate_with_commas()
+        "Found: {} leaf nodes in the tree.",
+        tree_n_nodes.separate_with_commas()
     );
 
     // This runs first, before anything reads the taxa on the tree.

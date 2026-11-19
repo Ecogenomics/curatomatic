@@ -38,7 +38,7 @@ The domain and species never have a placeholder: every genome always has a named
 
 ## Tree format
 
-Previously, trees were given with "Dummy" or "Zombie" nodes. These were used so that taxon label(s) could be placed for
+Previously, trees were given with "Dummy" nodes. These were used so that taxon label(s) could be placed for
 leaf nodes or singletons in the tree, where no bifurcation was present to place those labels from.
 
 To supplement the tree file, an additional taxonomy file is provided to store the taxon label(s) for those nodes.
