@@ -70,7 +70,9 @@ fn score_candidate_taxon(taxon: &Taxon) -> u8 {
 /// Generate a taxon for `rank` that is not already in `known_taxa`.
 ///
 /// The NCBI WGS prefix of the genomes is used when there is one, preferring the most readable. If
-/// none is available then the name is derived from the lowest genome ID.
+/// none is available then the taxon is named after the lowest genome ID whose name is not already
+/// known (e.g. `g__G963674675`). If every genome ID is taken, the taxon is named after the lowest
+/// genome ID anyway, duplicating the existing taxon of that name.
 pub(crate) fn generate_unique_rank(
     rank: Rank,
     leaf_node_gids: &BTreeSet<GenomeId>,
@@ -90,10 +92,20 @@ pub(crate) fn generate_unique_rank(
         return Ok(taxon.clone());
     }
 
-    let gid = leaf_node_gids
+    // Genome IDs are sorted, so this tries the lowest first.
+    let gid_taxon = |gid: &GenomeId| Taxon::new(format!("{}__{gid}", rank.prefix()));
+    if let Some(taxon) = leaf_node_gids
+        .iter()
+        .map(gid_taxon)
+        .find(|taxon| !known_taxa.contains(taxon))
+    {
+        return Ok(taxon);
+    }
+
+    leaf_node_gids
         .first()
-        .ok_or_else(|| CuratomaticError::Invariant("no genomes to name a taxon after".to_owned()))?;
-    Ok(Taxon::new(format!("{}__NOVEL-{gid}", rank.prefix())))
+        .map(gid_taxon)
+        .ok_or_else(|| CuratomaticError::Invariant("no genomes to name a taxon after".to_owned()))
 }
 
 #[cfg(test)]

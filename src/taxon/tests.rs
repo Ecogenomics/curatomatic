@@ -1,8 +1,9 @@
 use super::*;
 use std::io::Cursor;
 
-// Expected values for `score_candidate_taxon` and `generate_unique_rank` come from the Python
-// implementation (`curatomatic/util/taxon.py:7-31`), run on the same inputs.
+// Expected values for `score_candidate_taxon` and the WGS choice in `generate_unique_rank` come from
+// the original Python implementation, run on the same inputs. The genome ID fallback differs on
+// purpose: curators name these taxa after the bare genome ID, not `NOVEL-<gid>`.
 
 fn gids(gids: &[&str]) -> BTreeSet<GenomeId> {
     gids.iter().map(|&gid| GenomeId::new(gid)).collect()
@@ -56,20 +57,20 @@ fn score_is_one_when_any_pair_is_present() {
 #[test]
 fn without_metadata_the_lowest_gid_names_the_taxon() {
     let taxon = generate(Rank::Genus, &["G3", "G1", "G2"], &Metadata::default(), &[]).unwrap();
-    assert_eq!(taxon, Taxon::new("g__NOVEL-G1"));
+    assert_eq!(taxon, Taxon::new("g__G1"));
 }
 
 #[test]
 fn the_lowest_gid_is_chosen_by_plain_string_order() {
     // Python `sorted(...)[0]`: `G10` sorts before `G9`.
     let taxon = generate(Rank::Genus, &["G9", "G10"], &Metadata::default(), &[]).unwrap();
-    assert_eq!(taxon, Taxon::new("g__NOVEL-G10"));
+    assert_eq!(taxon, Taxon::new("g__G10"));
 }
 
 #[test]
 fn the_rank_prefix_follows_the_rank() {
     let taxon = generate(Rank::Species, &["G1"], &Metadata::default(), &[]).unwrap();
-    assert_eq!(taxon, Taxon::new("s__NOVEL-G1"));
+    assert_eq!(taxon, Taxon::new("s__G1"));
     let meta = metadata(&[("G1", "ABC")]);
     assert_eq!(
         generate(Rank::Family, &["G1"], &meta, &[]).unwrap(),
@@ -122,10 +123,36 @@ fn when_every_wgs_scores_the_same_the_lowest_string_wins() {
 }
 
 #[test]
-fn when_every_wgs_is_known_it_falls_back_to_novel() {
+fn when_every_wgs_is_known_it_falls_back_to_the_gid() {
     let meta = metadata(&[("G1", "ABC"), ("G2", "DEF")]);
     let taxon = generate(Rank::Genus, &["G2", "G1"], &meta, &["g__ABC", "g__DEF"]).unwrap();
-    assert_eq!(taxon, Taxon::new("g__NOVEL-G1"));
+    assert_eq!(taxon, Taxon::new("g__G1"));
+}
+
+#[test]
+fn a_known_gid_name_falls_back_to_the_next_lowest_gid() {
+    let taxon = generate(Rank::Genus, &["G3", "G1", "G2"], &Metadata::default(), &["g__G1"]).unwrap();
+    assert_eq!(taxon, Taxon::new("g__G2"));
+}
+
+#[test]
+fn a_gid_name_of_another_rank_does_not_conflict() {
+    let taxon = generate(Rank::Genus, &["G1"], &Metadata::default(), &["f__G1"]).unwrap();
+    assert_eq!(taxon, Taxon::new("g__G1"));
+}
+
+#[test]
+fn when_every_gid_name_is_known_the_lowest_gid_is_duplicated() {
+    let known_taxa = ["g__G1", "g__G2"];
+    let taxon = generate(Rank::Genus, &["G2", "G1"], &Metadata::default(), &known_taxa).unwrap();
+    assert_eq!(taxon, Taxon::new("g__G1"));
+}
+
+#[test]
+fn a_known_wgs_and_gid_falls_back_to_the_next_gid() {
+    let meta = metadata(&[("G1", "ABC")]);
+    let taxon = generate(Rank::Genus, &["G1", "G2"], &meta, &["g__ABC", "g__G1"]).unwrap();
+    assert_eq!(taxon, Taxon::new("g__G2"));
 }
 
 #[test]
@@ -133,7 +160,7 @@ fn genomes_without_a_wgs_or_metadata_are_ignored() {
     // `G1` has the `none` placeholder, and `G3` is not in the metadata.
     let meta = metadata(&[("G1", "none"), ("G2", "XYZ")]);
     let taxon = generate(Rank::Genus, &["G1", "G3"], &meta, &[]).unwrap();
-    assert_eq!(taxon, Taxon::new("g__NOVEL-G1"));
+    assert_eq!(taxon, Taxon::new("g__G1"));
 }
 
 #[test]

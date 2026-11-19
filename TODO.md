@@ -1,32 +1,5 @@
 # TODO
 
-## Job 2: Name fallback novel taxa `<rank>__<accession>`, not `<rank>__NOVEL-<accession>`
-
-### Problem
-When no unused WGS prefix is available, `generate_unique_rank` names the taxon `g__NOVEL-G963674675`. Curators use the
-bare accession: `g__G963674675`. In bac120, 298 novel taxa got a `NOVEL-` name; for 187 of them the curated name is
-exactly the name with `NOVEL-` removed, on the same genomes (the other 111 were merged into a neighbour or given a
-Latin name). ar53 has only 4 `NOVEL-` names, none kept.
-
-### R232 check
-Still valid. R232 bac120 has 365 `NOVEL-` names: 206 were curated to the bare accession on the same genomes, 72 were
-merged into a neighbour and 87 got another name. ar53: 2 of 9. Many of the "other name" cases are WGS-style names
-(`g__NOVEL-G020072925` became `g__JAIQGA01`), which means the genome has a WGS prefix that the metadata file didn't
-supply. 13,146 of the 189,801 R232 bac120 genomes have an empty `ncbi_wgs_formatted`.
-
-### Where
-- Rust: `src/taxon.rs` → `generate_unique_rank` (last line).
-- Python: `curatomatic/util/taxon.py` (the same function).
-
-### What to do
-1. Emit `{prefix}__{gid}`. If that name is already in `known_taxa`, fall back to the next lowest genome ID in the
-   group, and only then to a suffixed name. Keep the result deterministic.
-2. Update `src/taxon/tests.rs`.
-
-### Done when
-No `NOVEL-` appears in any output tree, and the bac120 exact count rises by about 187.
-
-
 ## Job 3: Replace the hand-rolled `thousands` with the `thousands` crate
 
 ### Problem
@@ -88,3 +61,42 @@ Genus	20066	19408	0.9189	0.9175	0.0394	0.8208	0.8508	0.8657	0.9694	0.9804	0.9918
 ### Done when
 `curatomatic` runs on `test_data/r237` with `median_red_rank_distribution.tsv`, the `debug` line for the RED values
 lists every rank including `s=1.000`, and the r226 runs give the same trees as with the old `.dict` files.
+
+
+## Job 5: Replace `--meta` with `--novel-name-file PATH --novel-name-column NAME`
+
+### Problem
+`--meta` needs a three column file (`accession`, `ncbi_wgs_formatted`, `gtdb_taxonomy`) just to get the WGS prefix used
+to name novel taxa. Building it means joining the GTDB metadata with a taxonomy file first
+(`scripts/create_input_file.py`). The GTDB metadata file already has the WGS column, so curatomatic should read it
+directly and let the caller choose the column.
+
+### Input format
+`test_data/r237/gtdb_r237_bac120_metadata.tsv` with `--novel-name-column ncbi_wgs_formatted`: tab separated, with a
+header, many columns. Only `accession` and the named column are read; the rest are ignored.
+- Find both columns by header name. Error (with the path) when `accession` or the named column is missing.
+- Values `none`, `n/a`, `null` or empty (after trimming, case-insensitive) mean "no name" and are ignored. They are not
+  an error (empty is an error now). In the r237 bac120 file 15,313 rows are `none`.
+
+### Where
+- Rust: `src/main.rs` (`Cli::meta` → `novel_name_file` + `novel_name_column`, the "Reading metadata" block),
+  `src/metadata.rs` (`from_file`/`from_reader` take the column name, `not_none` handles the new placeholder set),
+  `src/error.rs` if messages mention the metadata file.
+- Tests: `src/metadata/tests.rs`, `src/main/tests.rs`.
+- Docs: `README.md` (`--meta` usage and the "Metadata file (--meta)" section), `example/meta.tsv` and the example
+  command.
+
+### What to do
+1. Add the two flags. `--novel-name-column` is required when `--novel-name-file` is given (clap `requires`); remove
+   `--meta`.
+2. Read the named column in place of the hard-coded `ncbi_wgs_formatted`, with the placeholder rules above.
+3. Tests: custom column name, missing column error, and each placeholder (`none`, `N/A`, `null`, empty) ignored.
+
+### Open question
+`--meta` also supplies `gtdb_taxonomy`, which drives downward refinement, the report's prior taxa
+(`displaced_from_prior`, `new_in_decoration`) and the taxonomy coverage log lines. Decide whether this file keeps
+supplying it (the r237 metadata file has a `gtdb_taxonomy` column) or whether the previous taxonomy gets its own flag.
+
+### Done when
+`curatomatic` runs on `test_data/r237` with `--novel-name-file test_data/r237/gtdb_r237_bac120_metadata.tsv
+--novel-name-column ncbi_wgs_formatted`, novel taxa get WGS names, and no `--meta` remains in the code or README.
