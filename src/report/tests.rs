@@ -1,6 +1,8 @@
 use std::io;
 
 use super::*;
+use crate::genome::gid_to_canonical;
+use crate::taxonomy::Taxonomy;
 use crate::tree::fill_in_missing_ranks;
 
 /// Genus: parent threshold 0.8, median 0.9, child threshold 0.95, so `q < 0.5` is RED < 0.85.
@@ -9,8 +11,20 @@ fn red_dict() -> Red {
         .unwrap()
 }
 
+/// Metadata from `accession`, `ncbi_wgs_formatted` and `gtdb_taxonomy` columns, where the taxonomy
+/// is the prior taxonomy (`none` if the genome has none).
 fn metadata(contents: &str) -> Metadata {
-    Metadata::from_reader(io::Cursor::new(contents)).unwrap()
+    let path = Path::new("names.tsv");
+    let mut meta =
+        Metadata::from_reader(io::Cursor::new(contents), path, "ncbi_wgs_formatted").unwrap();
+    for line in contents.lines().skip(1) {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols[2] != "none" {
+            let gid = gid_to_canonical(cols[0]);
+            meta.set_taxonomy(gid, Taxonomy::from_string(cols[2]).unwrap());
+        }
+    }
+    meta
 }
 
 const HEAD: &str = "accession\tncbi_wgs_formatted\tgtdb_taxonomy\n";

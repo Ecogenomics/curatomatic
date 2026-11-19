@@ -11,18 +11,15 @@ use crate::taxonomy::Taxonomy;
 
 /// Column holding the genome accession.
 const COL_ACCESSION: &str = "accession";
-/// Column holding the NCBI WGS prefix.
-const COL_WGS: &str = "ncbi_wgs_formatted";
-/// Column holding the GTDB taxonomy string.
-const COL_TAXONOMY: &str = "gtdb_taxonomy";
-/// Value used in the metadata file to indicate that there is no value.
-const NONE_VALUE: &str = "none";
+/// Values (compared after trimming, ignoring case) that mean a genome has no novel name.
+const NO_NAME_VALUES: [&str; 4] = ["", "none", "n/a", "null"];
 
 /// The metadata associated with a single genome.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MetadataRow {
     pub(crate) accession: GenomeId,
     pub(crate) taxonomy: Option<Taxonomy>,
+    /// The name used for novel taxa that contain this genome (e.g. its WGS prefix).
     pub(crate) wgs: Option<String>,
 }
 
@@ -30,99 +27,101 @@ pub(crate) struct MetadataRow {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Metadata {
     pub(crate) rows: BTreeMap<GenomeId, MetadataRow>,
-    /// Whether the file had a `gtdb_taxonomy` column. Without it no genome has a prior taxonomy,
-    /// so no label can move down the tree.
-    pub(crate) has_taxonomy_column: bool,
+    /// Whether a prior taxonomy was given. Without it no genome has a prior taxonomy, so no label
+    /// can move down the tree.
+    pub(crate) has_prior_taxonomy: bool,
 }
 
 impl Metadata {
-    /// Read a tab separated metadata file.
+    /// Read the novel names from a tab separated file with a header (e.g. the GTDB metadata file).
     ///
-    /// The `accession` column is required. The `ncbi_wgs_formatted` and `gtdb_taxonomy` columns
-    /// are optional, and a value of `none` in either is treated as missing. An empty
-    /// `ncbi_wgs_formatted` value is an error.
-    pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
+    /// Only the `accession` column and `column` are read, both found by header name; any other
+    /// column is ignored. A value of `none`, `n/a`, `null` or empty (see [`NO_NAME_VALUES`]) means
+    /// the genome has no name. No genome is given a prior taxonomy.
+    pub(crate) fn from_file(path: &Path, column: &str) -> CuratomaticResult<Self> {
         let file = File::open(path)
             .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_reader(BufReader::new(file))
+        Self::from_reader(BufReader::new(file), path, column)
     }
 
-    /// Read tab separated metadata from a reader, see [`Metadata::from_file`].
-    pub(crate) fn from_reader(reader: impl BufRead) -> CuratomaticResult<Self> {
+    /// Read the novel names from a reader, see [`Metadata::from_file`]. `path` is only used in
+    /// error messages.
+    pub(crate) fn from_reader(
+        reader: impl BufRead,
+        path: &Path,
+        column: &str,
+    ) -> CuratomaticResult<Self> {
         let mut lines = reader.lines();
         let header_line = lines
             .next()
             .transpose()
-            .map_err(|e| CuratomaticError::Io(e.to_string()))?
+            .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?
             .unwrap_or_default();
-        let header: HashMap<&str, usize> = header_line
-            .trim()
-            .split('\t')
+        let header: HashMap<&str, usize> = split_line(&header_line)
             .enumerate()
-            .map(|(idx, name)| (name, idx))
+            .map(|(idx, name)| (name.trim(), idx))
             .collect();
-
-        let accession_idx = *header
-            .get(COL_ACCESSION)
-            .ok_or_else(|| CuratomaticError::MissingColumn(COL_ACCESSION.to_owned()))?;
-        let wgs_idx = header.get(COL_WGS).copied();
-        let taxonomy_idx = header.get(COL_TAXONOMY).copied();
+        let find_column = |name: &str| {
+            header
+                .get(name)
+                .copied()
+                .ok_or_else(|| CuratomaticError::MissingColumn {
+                    path: path.display().to_string(),
+                    column: name.to_owned(),
+                })
+        };
+        let accession_idx = find_column(COL_ACCESSION)?;
+        let name_idx = find_column(column)?;
 
         let mut rows = BTreeMap::new();
         for (line_idx, line) in lines.enumerate() {
-            let line = line.map_err(|e| CuratomaticError::Io(e.to_string()))?;
+            let line = line.map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
             if line.trim().is_empty() {
                 continue;
             }
             // The header is line 1.
             let line_no = line_idx.saturating_add(2);
-            let cols: Vec<&str> = line.trim().split('\t').collect();
-            let column = |idx: usize, name: &str| {
+            // Values are not trimmed as a line, so empty trailing values keep their columns.
+            let cols: Vec<&str> = split_line(&line).collect();
+            let value = |idx: usize, name: &str| {
                 cols.get(idx)
-                    .copied()
+                    .map(|value| value.trim())
                     .ok_or_else(|| CuratomaticError::MissingValue {
                         line: line_no,
                         column: name.to_owned(),
                     })
             };
 
-            let accession = gid_to_canonical(column(accession_idx, COL_ACCESSION)?);
-
-            let mut taxonomy = None;
-            let mut wgs = None;
-            if cols.len() > 1 {
-                if let Some(idx) = wgs_idx {
-                    let value = column(idx, COL_WGS)?;
-                    // An empty value would otherwise name a novel taxon with the bare rank
-                    // prefix (e.g. `g__`).
-                    if value.trim().is_empty() {
-                        return Err(CuratomaticError::EmptyValue {
-                            line: line_no,
-                            column: COL_WGS.to_owned(),
-                        });
-                    }
-                    wgs = not_none(value).map(str::to_owned);
-                }
-                if let Some(idx) = taxonomy_idx
-                    && let Some(tax_string) = not_none(column(idx, COL_TAXONOMY)?)
-                {
-                    taxonomy = Some(Taxonomy::from_string(tax_string)?);
-                }
-            }
-
+            let accession = gid_to_canonical(value(accession_idx, COL_ACCESSION)?);
+            let wgs = named(value(name_idx, column)?).map(str::to_owned);
             rows.insert(
                 accession.clone(),
                 MetadataRow {
                     accession,
-                    taxonomy,
+                    taxonomy: None,
                     wgs,
                 },
             );
         }
         Ok(Metadata {
             rows,
-            has_taxonomy_column: taxonomy_idx.is_some(),
+            has_prior_taxonomy: false,
         })
+    }
+
+    /// Give `gid` a prior taxonomy, adding a row for it if there is none.
+    // Nothing outside the tests supplies a prior taxonomy until `--taxonomy` is added.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn set_taxonomy(&mut self, gid: GenomeId, taxonomy: Taxonomy) {
+        self.has_prior_taxonomy = true;
+        self.rows
+            .entry(gid.clone())
+            .or_insert_with(|| MetadataRow {
+                accession: gid,
+                taxonomy: None,
+                wgs: None,
+            })
+            .taxonomy = Some(taxonomy);
     }
 
     /// Retain only the rows whose genome ID is in `ids`.
@@ -130,8 +129,7 @@ impl Metadata {
         self.rows.retain(|gid, _| ids.contains(gid));
     }
 
-    /// The number of rows that have a taxonomy.
-    /// Every named taxon in any `gtdb_taxonomy` value (placeholders such as `g__` are left out).
+    /// Every named taxon in any prior taxonomy (placeholders such as `g__` are left out).
     pub(crate) fn all_taxa(&self) -> BTreeSet<Taxon> {
         self.rows
             .values()
@@ -175,9 +173,17 @@ impl Metadata {
     }
 }
 
-/// `None` if the value is the `none` placeholder.
-fn not_none(value: &str) -> Option<&str> {
-    (value != NONE_VALUE).then_some(value)
+/// The fields of a tab separated line, without its line ending.
+fn split_line(line: &str) -> impl Iterator<Item = &str> {
+    line.trim_end_matches(['\r', '\n']).split('\t')
+}
+
+/// `None` if the (trimmed) value is one of [`NO_NAME_VALUES`].
+fn named(value: &str) -> Option<&str> {
+    let is_placeholder = NO_NAME_VALUES
+        .iter()
+        .any(|placeholder| value.eq_ignore_ascii_case(placeholder));
+    (!is_placeholder).then_some(value)
 }
 
 #[cfg(test)]

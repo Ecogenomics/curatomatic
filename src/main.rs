@@ -54,9 +54,14 @@ struct Cli {
     #[arg(long, default_value_t = BootstrapValue::new(95.0))]
     min_bs: BootstrapValue,
 
-    /// File containing unique identifiers for novel rank creation.
-    #[arg(long)]
-    meta: Option<PathBuf>,
+    /// Tab separated file with a header (e.g. the GTDB metadata file) giving the name used for
+    /// novel taxa of each genome, in the `accession` and `--novel-name-column` columns.
+    #[arg(long, value_name = "PATH", requires = "novel_name_column")]
+    novel_name_file: Option<PathBuf>,
+
+    /// Column of `--novel-name-file` holding the names (e.g. `ncbi_wgs_formatted`).
+    #[arg(long, value_name = "NAME", requires = "novel_name_file")]
+    novel_name_column: Option<String>,
 }
 
 fn run(cli: &Cli) -> io::Result<ExitCode> {
@@ -81,7 +86,8 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     debug!("median_red: {}", cli.red_dict.display());
     debug!("out_dir: {}", cli.out_dir.display());
     debug!("min_bs: {}", cli.min_bs);
-    debug!("meta: {:?}", cli.meta);
+    debug!("novel_name_file: {:?}", cli.novel_name_file);
+    debug!("novel_name_column: {:?}", cli.novel_name_column);
 
     if let Err(e) = curate(cli) {
         error!("{e}");
@@ -94,26 +100,25 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
 /// refinement can't run because none do.
 fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(Level, String)> {
     let mut out = Vec::new();
-    if !metadata.has_taxonomy_column {
+    if !metadata.has_prior_taxonomy {
         out.push((
             Level::Warn,
-            "The metadata file has no gtdb_taxonomy column, downward refinement is disabled."
-                .to_owned(),
+            "No prior taxonomy was given, downward refinement is disabled.".to_owned(),
         ));
     }
     let n_taxonomy = metadata.n_with_taxonomy();
     out.push((
         Level::Info,
         format!(
-            "{} of {} tree genomes have a gtdb_taxonomy.",
+            "{} of {} tree genomes have a prior taxonomy.",
             n_taxonomy.separate_with_commas(),
             tree_n_nodes.separate_with_commas()
         ),
     ));
-    if metadata.has_taxonomy_column && n_taxonomy == 0 {
+    if metadata.has_prior_taxonomy && n_taxonomy == 0 {
         out.push((
             Level::Warn,
-            "No tree genomes have a gtdb_taxonomy, downward refinement is disabled.".to_owned(),
+            "No tree genomes have a prior taxonomy, downward refinement is disabled.".to_owned(),
         ));
     }
     out
@@ -138,11 +143,12 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         tree_n_zombies.separate_with_commas()
     );
 
-    // Read the metadata file, keeping every taxon of the previous release for the report.
+    // Read the novel names, keeping every taxon of the previous release for the report.
     let mut prior_taxa = BTreeSet::new();
-    let metadata = if let Some(meta) = &cli.meta {
-        info!("Reading metadata");
-        let mut metadata = Metadata::from_file(meta)?;
+    let metadata = if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column)
+    {
+        info!("Reading novel names");
+        let mut metadata = Metadata::from_file(path, column)?;
         prior_taxa = metadata.all_taxa();
         let n_meta_rows_before = metadata.rows.len();
         metadata.subset_to_ids(&tree.gids);
@@ -154,7 +160,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         );
         if n_meta_mismatch > 0 {
             warn!(
-                "Found {} IDs in the tree that do not have a metadata entry.",
+                "Found {} IDs in the tree that do not have a novel name entry.",
                 n_meta_mismatch.separate_with_commas()
             );
         }

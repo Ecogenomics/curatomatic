@@ -1,5 +1,6 @@
 use super::*;
 use std::io::Cursor;
+use std::path::Path;
 
 // Expected values for `score_candidate_taxon` and the WGS choice in `generate_unique_rank` come from
 // the original Python implementation, run on the same inputs. The genome ID fallback differs on
@@ -15,11 +16,12 @@ fn known(taxa: &[&str]) -> BTreeSet<Taxon> {
 
 /// Metadata where each genome is given as `(accession, wgs)`.
 fn metadata(rows: &[(&str, &str)]) -> Metadata {
-    let mut tsv = String::from("accession\tgtdb_taxonomy\tncbi_wgs_formatted\n");
+    let mut tsv = String::from("accession\tncbi_wgs_formatted\n");
     for (accession, wgs) in rows {
-        tsv.push_str(&format!("{accession}\tnone\t{wgs}\n"));
+        tsv.push_str(&format!("{accession}\t{wgs}\n"));
     }
-    Metadata::from_reader(Cursor::new(tsv)).unwrap()
+    Metadata::from_reader(Cursor::new(tsv), Path::new("names.tsv"), "ncbi_wgs_formatted")
+        .unwrap()
 }
 
 fn generate(

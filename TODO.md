@@ -1,44 +1,6 @@
 # TODO
 
 
-## Job 5: Replace `--meta` with `--novel-name-file PATH --novel-name-column NAME`
-
-### Problem
-`--meta` needs a three column file (`accession`, `ncbi_wgs_formatted`, `gtdb_taxonomy`) just to get the WGS prefix used
-to name novel taxa. Building it means joining the GTDB metadata with a taxonomy file first
-(`scripts/create_input_file.py`). The GTDB metadata file already has the WGS column, so curatomatic should read it
-directly and let the caller choose the column.
-
-### Input format
-`test_data/r237/gtdb_r237_bac120_metadata.tsv` with `--novel-name-column ncbi_wgs_formatted`: tab separated, with a
-header, many columns. Only `accession` and the named column are read; the rest are ignored.
-- Find both columns by header name. Error (with the path) when `accession` or the named column is missing.
-- Values `none`, `n/a`, `null` or empty (after trimming, case-insensitive) mean "no name" and are ignored. They are not
-  an error (empty is an error now). In the r237 bac120 file 15,313 rows are `none`.
-
-### Where
-- Rust: `src/main.rs` (`Cli::meta` → `novel_name_file` + `novel_name_column`, the "Reading metadata" block),
-  `src/metadata.rs` (`from_file`/`from_reader` take the column name, `not_none` handles the new placeholder set),
-  `src/error.rs` if messages mention the metadata file.
-- Tests: `src/metadata/tests.rs`, `src/main/tests.rs`.
-- Docs: `README.md` (`--meta` usage and the "Metadata file (--meta)" section), `example/meta.tsv` and the example
-  command.
-
-### What to do
-1. Add the two flags. `--novel-name-column` is required when `--novel-name-file` is given (clap `requires`); remove
-   `--meta`.
-2. Read the named column in place of the hard-coded `ncbi_wgs_formatted`, with the placeholder rules above.
-3. Tests: custom column name, missing column error, and each placeholder (`none`, `N/A`, `null`, empty) ignored.
-
-### Prior taxonomy
-`--meta` also supplies `gtdb_taxonomy`, which drives downward refinement, the report's prior taxa
-(`displaced_from_prior`, `new_in_decoration`) and the taxonomy coverage log lines. This moves to `--taxonomy` (Job 6):
-the novel name file supplies only the WGS names.
-
-### Done when
-`curatomatic` runs on `test_data/r237` with `--novel-name-file test_data/r237/gtdb_r237_bac120_metadata.tsv
---novel-name-column ncbi_wgs_formatted`, novel taxa get WGS names, and no `--meta` remains in the code or README.
-
 
 ## Job 6: Add `--taxonomy` to name the ranks the tree can't hold
 

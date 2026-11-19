@@ -15,11 +15,9 @@ pub(crate) enum CuratomaticError {
     /// A file could not be read.
     Io(String),
     /// A required column is absent from the header of a file.
-    MissingColumn(String),
+    MissingColumn { path: String, column: String },
     /// A row has no value for a column that the header declares.
     MissingValue { line: usize, column: String },
-    /// A row has an empty value for a column, where `none` is expected if there is no value.
-    EmptyValue { line: usize, column: String },
     /// The rank (identified by its prefix) has no parent rank, i.e. it is the domain.
     NoParentRank(char),
     /// A Newick tree could not be parsed.
@@ -47,14 +45,11 @@ impl fmt::Display for CuratomaticError {
             CuratomaticError::UnknownRank(taxon) => write!(f, "Unknown rank for taxon: {taxon}"),
             CuratomaticError::TaxonNotFound(taxon) => write!(f, "Taxon not found: {taxon}"),
             CuratomaticError::Io(message) => write!(f, "I/O error: {message}"),
-            CuratomaticError::MissingColumn(column) => {
-                write!(f, "Missing required column: {column}")
+            CuratomaticError::MissingColumn { path, column } => {
+                write!(f, "Missing required column {column} in: {path}")
             }
             CuratomaticError::MissingValue { line, column } => {
                 write!(f, "Line {line} has no value for column: {column}")
-            }
-            CuratomaticError::EmptyValue { line, column } => {
-                write!(f, "Line {line} has an empty value for column: {column}")
             }
             CuratomaticError::NoParentRank(rank) => {
                 write!(f, "The {rank}__ rank has no parent rank.")

@@ -49,15 +49,6 @@ The following arguments are optional:
 
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level.
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95.0)
-- `--meta PATH` = File containing unique identifiers for novel rank creation (must be supplied for curating new releases).
-
-#### Metadata file (--meta):
-
-The format for `--meta` should be a TSV file that contains a header row with `accession`, `ncbi_wgs_formatted` (optional), `gtdb_taxonomy` (optional).
-See `example/meta.tsv`. Additional columns can be present but will be ignored.
-
-This file should come from the GTDB pre-release database and be updated with species clustering information,
-e.g. `/srv/db/gtdb/metadata/release232/representatives/sp_cluster_update/gtdb_r226_metadata.updated_reps.tsv`
 
 
 ### Example
@@ -106,18 +97,37 @@ Genus	0.9068450718741943
 - The domain is always `0.0` and the species always `1.0`. They need no row; a row for either must have that value.
 - A missing column, a median that is not a number, an unknown rank, or a rank given twice is an error.
 
+#### Novel name file (`--novel-name-file`)
+
+A tab separated file with a header, giving the name (e.g. the NCBI WGS prefix) used for each genome when a novel
+taxon is created. The GTDB metadata file can be used as is, e.g. `gtdb_r237_bac120_metadata.tsv` with
+`--novel-name-column ncbi_wgs_formatted` (see `example/meta.tsv`):
+
+```
+accession	ncbi_wgs_formatted
+GB_GCA_123456789.1	FOO
+```
+
+- Only the `accession` column and the column named by `--novel-name-column` are read, both found by header name. Any
+  other column is ignored.
+- A value of `none`, `n/a`, `null` or empty (after trimming, in any case) means the genome has no name.
+- A missing `accession` or name column, or a row too short to hold either, is an error.
+- Genomes without a name are given novel taxa named after their genome ID.
+
 The following options are available:
 
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level (default = info).
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
-- `--meta PATH` = File containing unique identifiers for novel rank creation (see [Metadata file](#metadata-file---meta)).
+- `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
+- `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.
 - `-h, --help` = Print the help.
 - `-V, --version` = Print the version.
 
 Example:
 
 ```shell
-./target/release/curatomatic --min-bs 95.0 --meta example/meta.tsv \
+./target/release/curatomatic --min-bs 95.0 \
+    --novel-name-file example/meta.tsv --novel-name-column ncbi_wgs_formatted \
     example/gtdb_r226_ar53.decorated.scaled.red.tree example/gtdb_r226_ar53.median_red_rank_distribution.tsv /tmp/output
 ```
 
