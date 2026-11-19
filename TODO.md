@@ -111,7 +111,12 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
   file to the leaf. E.g. if the lowest rank above the leaf is `p__`, the leaf gets `c__` to `s__` from the file;
   if it is `g__`, the leaf gets only `s__`. Don't check the names for consistency with the tree (e.g. a species of
   `g__Neosphaerochaeta` under `g__JAAYFO01` is kept as is).
+- **`s__{unresolved}` names are intentional: never touch them.** 5,066 species in the file are named like
+  `s__{unresolved} sp053939565` (e.g. G053939565). They are real names, not placeholders. Assign them to the leaf
+  like any other species, and write them to the output file exactly as read, `{unresolved}` included. Never rename,
+  refine, replace or drop them.
 - A leaf with a lowest rank of `s__` (an old tree with dummy leaves) gets nothing.
+- Gaps above the lowest rank are never filled from the file (see below).
 - This runs first, straight after reading the tree and before any refinement.
 
 ### Output
@@ -151,17 +156,17 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
 5. Point the prior taxonomy at `--taxonomy`.
 6. Write the output taxonomy file after the last refinement step.
 7. Tests: a leaf gets the ranks below its lowest ancestor rank and nothing above it, the tree's taxa are never
-   changed, placeholders are skipped, an old style tree gets nothing, a missing leaf is an error, an extra genome is a
+   changed, placeholders are skipped, an old style tree gets nothing, a gap above the lowest rank is not filled, an `s__{unresolved} sp…` name reaches the leaf and the output file unchanged, a missing leaf is an error, an extra genome is a
    warning, and leaf labels round trip with a taxonomy and with both RED spellings. For the output file: ranks come from the leaf and its
    ancestors in rank order, the nearest of two nested taxa wins, zombies are skipped, and the format matches the
    input file.
 
-### Open question
-The rule above fills only the ranks below the lowest one in the tree. A leaf can still have a gap higher up: in
-r237 bac120, 5,155 leaves have no phylum on their path but only 26 have nothing below the domain, so about 5,100 of
-them miss a phylum above a decorated class or lower (likewise class, order and family). These stay missing after this
-step, and `fill_in_missing_ranks` will create novel taxa for them. Decide whether that's right, or whether the file
-should fill these gaps too.
+### Gaps above the lowest rank
+The file fills only the ranks below the lowest one in the tree, never a gap higher up. In r237 bac120, 5,129 leaves
+have a class but no phylum on their path (e.g. G003554345: its parent is
+`c__T1SED10-198M;o__T1SED10-198M;f__T1SED10-198M`, then only unlabelled nodes up to `d__Bacteria`). That leaf gets
+`g__T1SED10-198M` and `s__T1SED10-198M sp003554345` from the file, but not `p__Sumerlaeota`: the missing phylum is
+left for `fill_in_missing_ranks`, which creates a novel taxon for it as now.
 
 ### Done when
 `curatomatic` runs on `test_data/r237` with `--taxonomy test_data/r237/final_taxonomy.tsv`. Before refinement, every

@@ -59,6 +59,22 @@ impl fmt::Display for RedValue {
     }
 }
 
+/// Column of the median RED file that holds the rank name.
+const COL_RANK: &str = "rank";
+/// Column of the median RED file that holds the median RED of the rank.
+const COL_MEDIAN: &str = "median";
+/// The RED value of the domain, which is the root of the tree.
+const RED_DOMAIN: RedValue = RedValue::new(0.0);
+
+/// The RED value that a rank always has, whatever the median RED file says.
+fn fixed_red(rank: Rank) -> Option<RedValue> {
+    match rank {
+        Rank::Domain => Some(RED_DOMAIN),
+        Rank::Species => Some(RedValue::LEAF),
+        Rank::Phylum | Rank::Class | Rank::Order | Rank::Family | Rank::Genus => None,
+    }
+}
+
 /// The median relative evolutionary divergence (RED) expected for each rank.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Red {
@@ -66,13 +82,11 @@ pub(crate) struct Red {
 }
 
 impl Red {
-    /// Read a JSON object that maps a rank name to its RED value, e.g. `{"phylum": 0.23}`.
-    ///
-    /// The rank is determined by the first character of the name. The domain is always `0.0`.
+    /// Read the median RED of each rank from a tab separated file, see [`Red::from_tsv`].
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
         let text = fs::read_to_string(path)
             .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_json(&text).map_err(|e| match e {
+        Self::from_tsv(&text).map_err(|e| match e {
             CuratomaticError::Red(message) => {
                 CuratomaticError::Red(format!("{}: {message}", path.display()))
             }
@@ -80,16 +94,75 @@ impl Red {
         })
     }
 
-    /// Parse the JSON text that [`Red::from_file`] reads.
-    pub(crate) fn from_json(text: &str) -> CuratomaticResult<Self> {
-        let values: BTreeMap<String, f64> =
-            serde_json::from_str(text).map_err(|e| CuratomaticError::Red(e.to_string()))?;
+    /// Parse a tab separated file with a header and one row per rank, e.g.
+    /// `median_red_rank_distribution.tsv`.
+    ///
+    /// The `rank` and `median` columns are found by name in the header, and any other column is
+    /// ignored. A rank is its full name in any case (e.g. `Phylum`). A rank that is not given has
+    /// no value, except the domain, which is always [`RED_DOMAIN`], and the species, which is
+    /// always [`RedValue::LEAF`]. A row for either is accepted only if it has that value.
+    ///
+    /// A missing column, an unparsable median, an unknown rank and a rank given twice are errors.
+    pub(crate) fn from_tsv(text: &str) -> CuratomaticResult<Self> {
+        let mut lines = text
+            .lines()
+            .enumerate()
+            .map(|(idx, line)| (idx.saturating_add(1), line.trim_end_matches('\r')))
+            .filter(|(_, line)| !line.trim().is_empty());
+
+        let (_, header) = lines
+            .next()
+            .ok_or_else(|| CuratomaticError::Red("the file is empty".to_owned()))?;
+        let column = |name: &str| {
+            header
+                .split('\t')
+                .position(|col| col.trim() == name)
+                .ok_or_else(|| CuratomaticError::Red(format!("missing column: {name}")))
+        };
+        let rank_idx = column(COL_RANK)?;
+        let median_idx = column(COL_MEDIAN)?;
 
         let mut data = BTreeMap::new();
-        for (name, value) in values {
-            data.insert(Rank::of_taxon(&name)?, RedValue::new(value));
+        for (line_no, line) in lines {
+            let cols: Vec<&str> = line.split('\t').collect();
+            let value = |idx: usize, name: &str| {
+                cols.get(idx).copied().ok_or_else(|| {
+                    CuratomaticError::Red(format!("line {line_no} has no value for column: {name}"))
+                })
+            };
+            let name = value(rank_idx, COL_RANK)?;
+            let rank = Rank::from_name(name).map_err(|_unknown_rank| {
+                CuratomaticError::Red(format!("line {line_no} has an unknown rank: {name}"))
+            })?;
+            let median = value(median_idx, COL_MEDIAN)?;
+            let red: RedValue = median.parse().map_err(|e| {
+                CuratomaticError::Red(format!(
+                    "line {line_no} has an invalid median for {}: {median} ({e})",
+                    rank.name()
+                ))
+            })?;
+
+            if let Some(fixed) = fixed_red(rank) {
+                if red != fixed {
+                    return Err(CuratomaticError::Red(format!(
+                        "line {line_no}: the {} median must be {fixed}, not {median}",
+                        rank.name()
+                    )));
+                }
+            }
+            if data.insert(rank, red).is_some() {
+                return Err(CuratomaticError::Red(format!(
+                    "line {line_no}: {} is given more than once",
+                    rank.name()
+                )));
+            }
         }
-        data.insert(Rank::Domain, RedValue::new(0.0));
+
+        for rank in [Rank::Domain, Rank::Species] {
+            if let Some(fixed) = fixed_red(rank) {
+                data.insert(rank, fixed);
+            }
+        }
         Ok(Red { data })
     }
 

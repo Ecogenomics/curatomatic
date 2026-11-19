@@ -28,9 +28,9 @@ pub(crate) enum CuratomaticError {
     InvalidNodeLabel(String),
     /// A taxon label is found on more than one node of the tree.
     NonUniqueTaxon(String),
-    /// The RED dictionary could not be parsed.
+    /// The median RED file could not be parsed.
     Red(String),
-    /// The RED dictionary has no value for a rank (identified by its prefix).
+    /// The median RED file has no value for a rank (identified by its prefix).
     MissingRed(char),
     /// No node was found that a novel taxon for the rank (identified by its prefix) can be placed on.
     NoCandidateNode { rank: char, gid: GenomeId },
@@ -64,9 +64,9 @@ impl fmt::Display for CuratomaticError {
             CuratomaticError::NonUniqueTaxon(taxon) => {
                 write!(f, "Taxon label {taxon} is not unique on the tree.")
             }
-            CuratomaticError::Red(message) => write!(f, "Invalid RED dictionary: {message}"),
+            CuratomaticError::Red(message) => write!(f, "Invalid median RED file: {message}"),
             CuratomaticError::MissingRed(rank) => {
-                write!(f, "The RED dictionary has no value for rank: {rank}")
+                write!(f, "The median RED file has no value for rank: {rank}")
             }
             CuratomaticError::NoCandidateNode { rank, gid } => {
                 write!(f, "No node can hold a novel {rank}__ taxon for genome: {gid}")

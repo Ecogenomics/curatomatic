@@ -14,10 +14,8 @@ fn label(tree: &Tree, index: usize) -> &str {
 }
 
 fn red_dict() -> Red {
-    Red::from_json(
-        r#"{"phylum": 0.3, "class": 0.4, "order": 0.5, "family": 0.7, "genus": 0.9, "species": 1.0}"#,
-    )
-    .unwrap()
+    Red::from_tsv("rank\tmedian\nPhylum\t0.3\nClass\t0.4\nOrder\t0.5\nFamily\t0.7\nGenus\t0.9\n")
+        .unwrap()
 }
 
 /// Post-order: G1 (0), D-G1 (1), their species node (2), G2 (3), its species node (4), root (5).

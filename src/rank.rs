@@ -32,6 +32,27 @@ impl Rank {
         }
     }
 
+    /// The full name of this rank, capitalised (e.g. `Phylum`).
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Rank::Domain => "Domain",
+            Rank::Phylum => "Phylum",
+            Rank::Class => "Class",
+            Rank::Order => "Order",
+            Rank::Family => "Family",
+            Rank::Genus => "Genus",
+            Rank::Species => "Species",
+        }
+    }
+
+    /// The rank with this full name, ignoring case (e.g. `Phylum` or `phylum`).
+    pub(crate) fn from_name(name: &str) -> CuratomaticResult<Rank> {
+        let name = name.trim();
+        Rank::iter()
+            .find(|rank| rank.name().eq_ignore_ascii_case(name))
+            .ok_or_else(|| CuratomaticError::UnknownRank(name.to_owned()))
+    }
+
     /// The next higher rank, or `None` for the domain.
     pub(crate) fn parent(self) -> Option<Rank> {
         Rank::iter().rev().skip_while(|&rank| rank != self).nth(1)

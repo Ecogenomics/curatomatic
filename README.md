@@ -40,6 +40,7 @@ python -m curatomatic [OPTIONS] TREE RED_DICT OUT_DIR
     - e.g. `gtdb_r232_bac120.decorated.red_decorated.tree` 
 - `RED_DICT` = Path to the RED dictionary (i.e. the JSON that contains thresholds).
     - e.g. `gtdb_r232_bac120.decorated.dict`
+    - The Rust version reads a TSV instead, see [Median RED file](#median-red-file-median_red).
 - `OUT_DIR` = Output directory to write to.
 
 Note: The `TREE` is the pre-curation tree and **must contain zombies** (e.g. D-G123456789).
@@ -82,10 +83,28 @@ The binary is written to `./target/release/curatomatic`.
 ### Running
 
 ```shell
-./target/release/curatomatic [OPTIONS] <TREE> <RED_DICT> <OUT_DIR>
+./target/release/curatomatic [OPTIONS] <TREE> <MEDIAN_RED> <OUT_DIR>
 ```
 
-The arguments are the same as above (`TREE`, `RED_DICT`, `OUT_DIR`), and `OUT_DIR` must not already exist.
+`TREE` and `OUT_DIR` are the same as above, and `OUT_DIR` must not already exist. `MEDIAN_RED` replaces the JSON
+`RED_DICT`.
+
+#### Median RED file (`MEDIAN_RED`)
+
+A tab separated file with a header and one row per rank, giving the median RED of that rank, e.g.
+`median_red_rank_distribution.tsv` (see `example/gtdb_r226_ar53.median_red_rank_distribution.tsv`):
+
+```
+rank	median
+Phylum	0.23103292252099542
+...
+Genus	0.9068450718741943
+```
+
+- The `rank` and `median` columns are found by name. Any other column (e.g. `mean`, `p95`) is ignored.
+- A rank is its full name, in any case (`Phylum`, `phylum`).
+- The domain is always `0.0` and the species always `1.0`. They need no row; a row for either must have that value.
+- A missing column, a median that is not a number, an unknown rank, or a rank given twice is an error.
 
 The following options are available:
 
@@ -99,7 +118,7 @@ Example:
 
 ```shell
 ./target/release/curatomatic --min-bs 95.0 --meta example/meta.tsv \
-    example/gtdb_r226_ar53.decorated.scaled.red.tree example/gtdb_r226_ar53.decorated.dict /tmp/output
+    example/gtdb_r226_ar53.decorated.scaled.red.tree example/gtdb_r226_ar53.median_red_rank_distribution.tsv /tmp/output
 ```
 
 ### Output

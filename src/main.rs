@@ -38,7 +38,9 @@ struct Cli {
     /// Path to the RED decorated and scaled tree.
     tree: PathBuf,
 
-    /// Path to the RED dictionary.
+    /// Path to the median RED of each rank: a TSV with `rank` and `median` columns
+    /// (e.g. `median_red_rank_distribution.tsv`).
+    #[arg(value_name = "MEDIAN_RED")]
     red_dict: PathBuf,
 
     /// Output directory to write to.
@@ -76,7 +78,7 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
         std::env::args().skip(1).collect::<Vec<_>>().join(" ")
     );
     debug!("tree: {}", cli.tree.display());
-    debug!("red_dict: {}", cli.red_dict.display());
+    debug!("median_red: {}", cli.red_dict.display());
     debug!("out_dir: {}", cli.out_dir.display());
     debug!("min_bs: {}", cli.min_bs);
     debug!("meta: {:?}", cli.meta);
@@ -164,8 +166,8 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         Metadata::default()
     };
 
-    // Read the RED dictionary.
-    info!("Reading RED dictionary");
+    // Read the median RED of each rank.
+    info!("Reading median RED values");
     let red_dict = Red::from_file(&cli.red_dict)?;
     debug!("{}", red_dict.to_str());
 

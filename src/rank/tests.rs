@@ -67,3 +67,23 @@ fn prefixes_are_the_gtdb_rank_letters() {
 fn try_from_is_case_sensitive() {
     assert!(Rank::try_from('G').is_err());
 }
+
+#[test]
+fn from_name_ignores_case_and_round_trips() {
+    for rank in Rank::iter() {
+        assert_eq!(Rank::from_name(rank.name()), Ok(rank));
+        assert_eq!(Rank::from_name(&rank.name().to_lowercase()), Ok(rank));
+        assert_eq!(Rank::from_name(&rank.name().to_uppercase()), Ok(rank));
+    }
+    assert_eq!(Rank::from_name(" Genus "), Ok(Rank::Genus));
+}
+
+#[test]
+fn from_name_rejects_prefixes_and_other_names() {
+    for name in ["p", "Phyla", "Phylumx", "Kingdom", ""] {
+        assert_eq!(
+            Rank::from_name(name),
+            Err(CuratomaticError::UnknownRank(name.to_owned()))
+        );
+    }
+}
