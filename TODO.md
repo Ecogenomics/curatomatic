@@ -5,8 +5,8 @@ curatomatic's pre-curation trees with the manually curated taxonomies of two rel
 - R226: `test_data/r226_ar53/ar53_taxonomy_r226_curated.tsv`, `test_data/r226_bac120/bac120_taxonomy_r226_curated.tsv`
 - R232: `test_data/r232_ar53/ar53_taxonomy_r232.tsv`, `test_data/r232_bac120/bac120_taxonomy_r232.tsv`
 
-Each job stands alone and can be picked up in a fresh context window. Do Job 1 first: both jobs regenerate the
-reference outputs in `test_data`, and Job 2's numbers assume Job 1's data fix.
+Each job stands alone and can be picked up in a fresh context window. Job 1's code fix is done, but its
+`test_data` update is still pending (see Job 1). Do that first: Job 2's numbers assume Job 1's data fix.
 
 Jobs 1–7 were written from R226 only and were re-checked against R232 on 2026-11-11. Each has an "R232 check" note.
 Summary of that review: Jobs 1, 2, 3 and 7 stand as written; Job 4 gains a step; Job 5 loses rule (a) and gets
@@ -30,63 +30,24 @@ Use newtypes where possible. Don't run clippy or other lints.
 # https://claude.ai/artifact/VkStq8kuS59BV5N9wqXZ4s?sk=Z9PaGddtyfhmVQ2qFivhnA#0f9ea517-82d7 
 ---
 
-## Job 1: A metadata file without a `gtdb_taxonomy` column silently disables downward refinement
+## Job 1 (done): A metadata file without a `gtdb_taxonomy` column silently disables downward refinement
 
-### Problem
-`--meta` is read with an optional `gtdb_taxonomy` column. If the column is missing, every genome gets
-`taxonomy = None` and nothing is reported. The downward half of `refine_existing_labels` then has no prior taxonomy
-to work with (`get_taxonomy_from_gids` returns an empty map), so **no label can ever move down the tree**. The run
-looks normal: the log shows "Found N records, matched N IDs".
+Code fixed in both implementations. After the metadata is subset to the tree, both log (identical wording):
+- WARNING "The metadata file has no gtdb_taxonomy column, downward refinement is disabled." if the column is missing.
+- INFO "N of M tree genomes have a gtdb_taxonomy."
+- WARNING "No tree genomes have a gtdb_taxonomy, downward refinement is disabled." if the column exists but N is 0.
 
-The checked-in test inputs hit exactly this case. `test_data/r226_ar53/metadata.tsv` and
-`test_data/r226_bac120/metadata.tsv` (the same file, md5 `06e5e7e051e1fcbc93c41b06fd3d0d4d`) have the header
-`accession  taxonomy  ncbi_wgs_formatted`. Commit e72d923 switched the code to `gtdb_taxonomy`. As a result, the
-six reference outputs in `test_data/*/curatomatic_bs*` never exercise the downward code path, so Rust/Python parity
-for that path is untested.
+Rust tests: `src/metadata/tests.rs` (no column parses, every taxonomy is `None`) and `src/main/tests.rs` (warning
+messages). Verified on a copy of the metadata with the header fixed: Python and Rust trees are byte-identical for all
+six R226 runs, and logs match apart from lines Python prints to stdout (`UNTESTED CODE`, `Shared name`). `Moving`
+counts at bs45 / bs80 / bs95: ar53 41 / 48 / 53, bac120 940 / 966 / 1,080. `UNTESTED CODE` fires 113 times on
+bac120 bs95. No Rust parity fixes were needed.
 
-### Evidence (Python v0.0.2, `--min-bs 95`)
-| | header `taxonomy` (as checked in) | header renamed to `gtdb_taxonomy` |
-|---|---|---|
-| ar53 moves (down) | 16 (0) | 53 (37) |
-| bac120 moves (down) | 267 (0) | 1,080 (815) |
-| ar53 curated taxa matched exactly (same node, same name) | 2,698 | 2,775 |
-| bac120 curated taxa matched exactly | 31,856 | 33,190 |
-
-Downward moves agree with manual curation 34 of 37 times (ar53) and 655 of 815 times (bac120).
-
-### R232 check
-Still valid. The R232 production runs used a metadata file with `gtdb_taxonomy`, so the bug is confined to the
-checked-in R226 test inputs, and the warning is still worth having. In R232 curators kept 1,180 of 1,451 downward
-moves in bac120 (81%) and 111 of 146 in ar53 (76%), in line with the R226 re-run above (80% and 92%).
-
-### Where
-- Python: `curatomatic/model/metadata.py` → `Metadata.from_file` (`if 'gtdb_taxonomy' in header`).
-- Rust: `src/metadata.rs` → `COL_TAXONOMY`, `Metadata::from_file` (`header.get(COL_TAXONOMY).copied()`).
-- Rust: `src/main.rs` → `curate()`, the "Reading metadata" block (where the existing mismatch `warn!` lives).
-
-### What to do
-1. In both implementations, after the metadata has been read and subset to the tree:
-   - If `--meta` was supplied without a `gtdb_taxonomy` column, log a WARNING that names the missing column and says
-     downward refinement is disabled.
-   - Log at INFO how many tree genomes have a prior taxonomy (e.g. "N of M tree genomes have a gtdb_taxonomy"). If
-     that number is 0, also log a WARNING.
-   - Keep the wording identical in Python and Rust.
-2. Fix the test inputs: rename the second header column of both `test_data/r226_*/metadata.tsv` files from
-   `taxonomy` to `gtdb_taxonomy`. Leave the rest of the files unchanged.
-3. Regenerate all six reference outputs (`test_data/r226_{ar53,bac120}/curatomatic_bs{45.0,80.0,95.0}/`) with the
-   Python version. Use the exact command on line 1 of each existing `curatomatic.log`; the output directory must not
-   exist beforehand (move the old directory aside first).
-4. Run the Rust binary on the same inputs and confirm the trees match byte for byte (`cargo nextest run` plus a manual
-   `diff`). The regenerated outputs now exercise the downward branch and the `UNTESTED CODE` branch (113 hits on
-   bac120 bs95), so expect parity differences to surface and fix them in Rust.
-5. Add a Rust unit test (in `src/metadata/tests.rs`) for a metadata file with no `gtdb_taxonomy` column: it parses,
-   and every row's taxonomy is `None`. Add a test that the warning is triggered, if the logging setup allows it.
-
-### Done when
-- Running with the old header produces the warning in both implementations.
-- With the fixed header, `grep -c Moving` on `test_data/r226_ar53/curatomatic_bs95.0/curatomatic.log` gives 53, and
-  on `test_data/r226_bac120/curatomatic_bs95.0/curatomatic.log` gives 1,080 (the counts before Job 2).
-- Rust output matches the regenerated Python output for all six runs.
+**Still pending (data only, `test_data` is gitignored):** rename the second header column of both
+`test_data/r226_*/metadata.tsv` files from `taxonomy` to `gtdb_taxonomy` and regenerate the six reference outputs
+`test_data/r226_{ar53,bac120}/curatomatic_bs{45.0,80.0,95.0}/` with Python, using the command on line 1 of each
+existing `curatomatic.log` (move the old directory aside first; the output directory must not exist). Until this is
+done the checked-in reference outputs still don't exercise the downward code path.
 
 ---
 
@@ -163,7 +124,7 @@ tree has 354 such pairs that curatomatic did not create (Job 9).
 4. Rust unit tests: add a small newick fixture where `g__B` is nested inside `g__A`, and a parent node of `g__B`
    would otherwise qualify. Assert that `g__B` isn't moved and that no node ends up with two genus labels. Put
    tree-level tests in a new `src/tree/tests.rs`, declared with `#[cfg(test)] mod tests;` in `src/tree.rs`.
-5. Apply the same change to Python, regenerate the six `test_data` reference outputs (see Job 1, step 3), and
+5. Apply the same change to Python, regenerate the six `test_data` reference outputs (see Job 1, "Still pending"), and
    confirm Rust parity.
 
 ### Done when

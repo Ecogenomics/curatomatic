@@ -16,8 +16,9 @@ class MetadataRow:
 
 class Metadata:
 
-    def __init__(self, rows: dict[str, MetadataRow]):
+    def __init__(self, rows: dict[str, MetadataRow], has_taxonomy_column: bool = False):
         self.rows: dict[str, MetadataRow] = rows
+        self.has_taxonomy_column: bool = has_taxonomy_column
 
     @classmethod
     def from_file(cls, path: Path):
@@ -25,6 +26,7 @@ class Metadata:
         with path.open() as f:
             header = f.readline().strip().split('\t')
             header = {k: i for i, k in enumerate(header)}
+            has_taxonomy_column = 'gtdb_taxonomy' in header
             for line in f.readlines():
                 cols = line.strip().split('\t')
                 gid = gid_to_canonical(cols[header['accession']])
@@ -44,10 +46,13 @@ class Metadata:
                     taxonomy=taxonomy,
                     wgs=wgs_formatted
                 )
-        return cls(rows=out)
+        return cls(rows=out, has_taxonomy_column=has_taxonomy_column)
 
     def subset_to_ids(self, ids: set[str]):
         self.rows = {k: v for k, v in self.rows.items() if k in ids}
+
+    def n_with_taxonomy(self) -> int:
+        return sum(1 for row in self.rows.values() if row.taxonomy is not None)
 
     def get_taxonomy_from_gids(self, gids: set[str]) -> dict[str, Taxonomy]:
         out = dict()

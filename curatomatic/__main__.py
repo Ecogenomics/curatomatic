@@ -67,6 +67,12 @@ def run(
         logger.info(f'Found {n_meta_rows_before:,} records, matched {len(metadata.rows):,} IDs to the tree.')
         if n_meta_mismatch > 0:
             logger.warning(f'Found {n_meta_mismatch:,} IDs in the tree that do not have a metadata entry.')
+        if not metadata.has_taxonomy_column:
+            logger.warning('The metadata file has no gtdb_taxonomy column, downward refinement is disabled.')
+        n_meta_taxonomy = metadata.n_with_taxonomy()
+        logger.info(f'{n_meta_taxonomy:,} of {tree_n_nodes:,} tree genomes have a gtdb_taxonomy.')
+        if metadata.has_taxonomy_column and n_meta_taxonomy == 0:
+            logger.warning('No tree genomes have a gtdb_taxonomy, downward refinement is disabled.')
     else:
         metadata = Metadata(dict())
 

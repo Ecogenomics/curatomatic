@@ -207,3 +207,25 @@ fn an_empty_wgs_value_is_an_error() {
         );
     }
 }
+
+#[test]
+fn a_file_without_a_gtdb_taxonomy_column_has_no_taxonomy() {
+    let meta = parse(
+        "accession\ttaxonomy\tncbi_wgs_formatted\n\
+         GB_GCA_000000001.1\td__Bacteria;p__Pseudomonadota\tABC\n\
+         RS_GCF_000000002.1\tnone\tnone\n",
+    )
+    .unwrap();
+    assert!(!meta.has_taxonomy_column);
+    assert_eq!(meta.rows.len(), 2);
+    assert!(meta.rows.values().all(|row| row.taxonomy.is_none()));
+    assert_eq!(meta.n_with_taxonomy(), 0);
+    assert_eq!(meta.rows[&gid("G000000001")].wgs.as_deref(), Some("ABC"));
+}
+
+#[test]
+fn n_with_taxonomy_counts_rows_with_a_taxonomy() {
+    let meta = sample();
+    assert!(meta.has_taxonomy_column);
+    assert_eq!(meta.n_with_taxonomy(), 2);
+}

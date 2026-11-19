@@ -28,6 +28,9 @@ pub(crate) struct MetadataRow {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Metadata {
     pub(crate) rows: BTreeMap<GenomeId, MetadataRow>,
+    /// Whether the file had a `gtdb_taxonomy` column. Without it no genome has a prior taxonomy,
+    /// so no label can move down the tree.
+    pub(crate) has_taxonomy_column: bool,
 }
 
 impl Metadata {
@@ -114,12 +117,20 @@ impl Metadata {
                 },
             );
         }
-        Ok(Metadata { rows })
+        Ok(Metadata {
+            rows,
+            has_taxonomy_column: taxonomy_idx.is_some(),
+        })
     }
 
     /// Retain only the rows whose genome ID is in `ids`.
     pub(crate) fn subset_to_ids(&mut self, ids: &BTreeSet<GenomeId>) {
         self.rows.retain(|gid, _| ids.contains(gid));
+    }
+
+    /// The number of rows that have a taxonomy.
+    pub(crate) fn n_with_taxonomy(&self) -> usize {
+        self.rows.values().filter(|row| row.taxonomy.is_some()).count()
     }
 
     /// The taxonomy of each genome in `gids` that has one.

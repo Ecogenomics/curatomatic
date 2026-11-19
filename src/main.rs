@@ -16,7 +16,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use ::log::{debug, error, info, warn};
+use ::log::{Level, debug, error, info, log, warn};
 use clap::Parser;
 use strum::IntoEnumIterator;
 
@@ -98,6 +98,35 @@ fn thousands(n: usize) -> String {
     out
 }
 
+/// Log lines that report how many tree genomes have a prior taxonomy, warning when downward
+/// refinement can't run because none do.
+fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(Level, String)> {
+    let mut out = Vec::new();
+    if !metadata.has_taxonomy_column {
+        out.push((
+            Level::Warn,
+            "The metadata file has no gtdb_taxonomy column, downward refinement is disabled."
+                .to_owned(),
+        ));
+    }
+    let n_taxonomy = metadata.n_with_taxonomy();
+    out.push((
+        Level::Info,
+        format!(
+            "{} of {} tree genomes have a gtdb_taxonomy.",
+            thousands(n_taxonomy),
+            thousands(tree_n_nodes)
+        ),
+    ));
+    if metadata.has_taxonomy_column && n_taxonomy == 0 {
+        out.push((
+            Level::Warn,
+            "No tree genomes have a gtdb_taxonomy, downward refinement is disabled.".to_owned(),
+        ));
+    }
+    out
+}
+
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
@@ -132,6 +161,9 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
                 "Found {} IDs in the tree that do not have a metadata entry.",
                 thousands(n_meta_mismatch)
             );
+        }
+        for (level, message) in taxonomy_coverage_messages(&metadata, tree_n_nodes) {
+            log!(level, "{message}");
         }
         metadata
     } else {
