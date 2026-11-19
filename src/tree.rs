@@ -195,8 +195,10 @@ impl Tree {
         &self.newick
     }
 
-    /// The node that holds each taxon. Call [`Tree::reload`] first if the tree was changed.
-    pub(crate) fn taxon_nodes(&self) -> BTreeMap<Taxon, NodeId> {
+    /// Every taxon on the tree and the node that holds it, in node order. A taxon on more than one
+    /// node (only [`Taxon::unresolvable`]) is listed once for each. Call [`Tree::reload`] first if
+    /// the tree was changed.
+    pub(crate) fn taxon_nodes(&self) -> Vec<(Taxon, NodeId)> {
         self.newick
             .ids()
             .zip(&self.node_labels)

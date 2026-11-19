@@ -263,7 +263,7 @@ fn set_taxonomy_adds_a_row_and_marks_a_prior_taxonomy() {
     assert!(!meta.has_prior_taxonomy);
     meta.set_taxonomy(gid("G1"), Taxonomy::from_string(TAX_A).unwrap());
     assert!(meta.has_prior_taxonomy);
-    assert!(meta.has_taxonomy(&gid("G1")));
+    assert!(meta.rows[&gid("G1")].taxonomy.is_some());
     assert_eq!(meta.rows[&gid("G1")].wgs, None);
 }
 

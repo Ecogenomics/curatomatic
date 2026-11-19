@@ -155,11 +155,6 @@ impl Metadata {
             .filter(|taxon| taxon.is_named())
     }
 
-    /// True if the metadata gives `gid` a taxonomy, i.e. the genome was in the previous release.
-    pub(crate) fn has_taxonomy(&self, gid: &GenomeId) -> bool {
-        self.rows.get(gid).is_some_and(|row| row.taxonomy.is_some())
-    }
-
     pub(crate) fn n_with_taxonomy(&self) -> usize {
         self.rows
             .values()

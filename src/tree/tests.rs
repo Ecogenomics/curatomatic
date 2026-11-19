@@ -109,7 +109,7 @@ fn a_taxon_on_a_leaf_is_held_by_the_leaf_and_never_by_its_label() {
         tree.label(leaf).unwrap().taxonomy,
         Some(Taxonomy::from_string("f__F").unwrap())
     );
-    assert_eq!(tree.taxon_nodes().get(&Taxon::new("f__F")), Some(&leaf));
+    assert!(tree.taxon_nodes().contains(&(Taxon::new("f__F"), leaf)));
 }
 
 #[test]

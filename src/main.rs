@@ -244,7 +244,6 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     };
 
     let tree_taxa_before = tree.extract_all_taxa_from_tree()?;
-    let taxon_nodes_before = tree.taxon_nodes();
 
     let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, taxonomy.as_ref())?;
     drop(taxonomy);
@@ -292,7 +291,6 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     tree.reload()?;
     let report = build_report(&ReportInput {
         tree: &tree,
-        taxa_before: &taxon_nodes_before,
         moves: &moves,
         novel: &new_taxa_created,
         metadata: &metadata,

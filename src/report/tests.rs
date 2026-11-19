@@ -41,7 +41,6 @@ fn report(newick: &str, metadata: &Metadata) -> Vec<ReportRow> {
     let min_bs = BootstrapValue::new(95.0);
     let red_dict = red_dict();
     let mut tree = Tree::from_newick(NewickTree::parse(newick).unwrap()).unwrap();
-    let taxa_before = tree.taxon_nodes();
 
     let mut moves = Vec::new();
     for rank in [
@@ -69,7 +68,6 @@ fn report(newick: &str, metadata: &Metadata) -> Vec<ReportRow> {
 
     build_report(&ReportInput {
         tree: &tree,
-        taxa_before: &taxa_before,
         moves: &moves,
         novel: &novel,
         metadata,
@@ -94,17 +92,17 @@ fn taxa(names: &[&str]) -> BTreeSet<Taxon> {
     names.iter().copied().map(Taxon::new).collect()
 }
 
+/// `g__B` is on an unsupported node over G1, below a supported node over G1 to G5.
+const LARGE_GAIN_TREE: &str = "(((G1|RED=1.000)'s__B one|RED=1.000')'50.0:g__B|RED=0.930',\
+     (G2|RED=1.000)'s__B two|RED=1.000',(G3|RED=1.000)'s__B three|RED=1.000',\
+     (G4|RED=1.000)'s__B four|RED=1.000',(G5|RED=1.000)'s__B five|RED=1.000')\
+     '100.0|RED=0.880'";
+
 #[test]
 fn a_move_up_that_gains_five_times_the_genomes_is_a_large_gain() {
-    let newick = format!(
-        "((((G1|RED=1.000)'s__B one|RED=1.000')'50.0:g__B|RED=0.930',\
-         (G2|RED=1.000)'s__B two|RED=1.000',(G3|RED=1.000)'s__B three|RED=1.000',\
-         (G4|RED=1.000)'s__B four|RED=1.000',(G5|RED=1.000)'s__B five|RED=1.000')\
-         '100.0|RED=0.880'){ROOT};"
-    );
-    let rows = report(&newick, &Metadata::default());
+    let rows = report(&format!("({LARGE_GAIN_TREE}){ROOT};"), &Metadata::default());
     let b = row(&rows, "g__B");
-    assert_eq!(b.action, Some(Action::MovedUp));
+    assert_eq!(b.action, Action::MovedUp);
     assert_eq!(flags(&rows, "g__B"), vec![Flag::LargeGain]);
     let before = b.before.unwrap();
     assert_eq!(
@@ -112,26 +110,38 @@ fn a_move_up_that_gains_five_times_the_genomes_is_a_large_gain() {
         (1, Some(BootstrapValue::new(50.0)), RedValue::new(0.93))
     );
     assert_eq!((b.after.n_genomes, b.after.red), (5, RedValue::new(0.88)));
-    assert_eq!(rows.len(), 1, "only g__B was changed or flagged");
+    assert_eq!(rows.len(), 1, "only g__B was changed");
 }
 
 #[test]
-fn a_taxon_inside_another_of_the_same_rank_is_nested() {
+fn a_taxon_that_was_not_changed_has_no_row_even_if_it_would_be_flagged() {
+    // g__B is nested in g__A on an unsupported node, but neither moves.
     let newick = format!(
         "((((G1|RED=1.000)'s__B one|RED=1.000',(G2|RED=1.000)'s__B two|RED=1.000')\
          '50.0:g__B|RED=0.930',(G4|RED=1.000)'s__A four|RED=1.000')'100.0:g__A|RED=0.880'){ROOT};"
     );
     let rows = report(&newick, &Metadata::default());
-    let b = row(&rows, "g__B");
-    assert_eq!(b.action, None);
-    assert_eq!(
-        flags(&rows, "g__B"),
-        vec![Flag::NestedInSameRank, Flag::UnsupportedLabel]
+    assert!(rows.is_empty(), "{rows:?}");
+}
+
+#[test]
+fn a_taxon_moved_down_inside_another_of_the_same_rank_is_nested() {
+    // The prior taxonomy puts only G1 in g__B, so g__B moves down onto its species node.
+    let newick = format!(
+        "((((G1|RED=1.000)'s__B one|RED=1.000',(G2|RED=1.000)'s__B two|RED=1.000')\
+         '50.0:g__B|RED=0.930',(G4|RED=1.000)'s__A four|RED=1.000')'100.0:g__A|RED=0.880'){ROOT};"
     );
+    let meta = metadata(&format!(
+        "{HEAD}G1\tnone\t{ABOVE_GENUS};g__B;s__B one\nG2\tnone\tnone\nG4\tnone\tnone\n"
+    ));
+    let rows = report(&newick, &meta);
+    let b = row(&rows, "g__B");
+    assert_eq!(b.action, Action::MovedDown);
+    assert_eq!(flags(&rows, "g__B"), vec![Flag::NestedInSameRank]);
     assert_eq!(b.nested_in, Some(Taxon::new("g__A")));
     assert!(
         rows.iter().all(|row| row.taxon.as_str() != "g__A"),
-        "g__A is not flagged"
+        "g__A was not changed"
     );
 }
 
@@ -154,7 +164,7 @@ fn a_novel_taxon_of_former_members_of_a_genus_is_displaced_from_prior() {
     ));
     let rows = report(&novel_tree(), &meta);
     let novel = row(&rows, "g__ABC01");
-    assert_eq!(novel.action, Some(Action::Novel));
+    assert_eq!(novel.action, Action::Novel);
     assert_eq!(novel.before, None);
     assert_eq!(novel.after.n_genomes, 2);
     assert_eq!(
@@ -175,90 +185,107 @@ fn a_novel_taxon_of_new_genomes_is_not_displaced() {
 }
 
 #[test]
-fn a_taxon_missing_from_the_prior_taxonomy_is_new_in_decoration() {
+fn every_node_given_the_unresolvable_sentinel_has_a_row() {
+    // G1 and G2 each need a novel genus, but the genus named after each genome is taken.
+    let newick = format!(
+        "(((G1|RED=1.000)'s__{{unresolved}} G1|RED=1.000')'100.0|RED=0.900',\
+         ((G2|RED=1.000)'s__{{unresolved}} G2|RED=1.000')'100.0|RED=0.900',\
+         (G3|RED=1.000)'g__G1; s__X three|RED=1.000',\
+         (G4|RED=1.000)'g__G2; s__Y four|RED=1.000'){ROOT};"
+    );
+    let rows = report(&newick, &Metadata::default());
+    let sentinel = Taxon::unresolvable(Rank::Genus);
+    let placed: Vec<_> = rows.iter().filter(|row| row.taxon == sentinel).collect();
+    assert_eq!(placed.len(), 2, "{rows:#?}");
+    assert!(placed.iter().all(|row| row.action == Action::Novel));
+}
+
+#[test]
+fn a_novel_taxon_is_never_new_in_decoration() {
     let meta = metadata(&format!(
         "{HEAD}G1\tABC01\tnone\nG2\tnone\tnone\nG3\tnone\t{ABOVE_GENUS};g__Other;s__C three\n"
     ));
     let rows = report(&novel_tree(), &meta);
-    assert_eq!(flags(&rows, "g__C"), vec![Flag::NewInDecoration]);
-    assert!(
-        !flags(&rows, "g__ABC01").contains(&Flag::NewInDecoration),
-        "novel taxa are not"
-    );
+    assert!(!flags(&rows, "g__ABC01").contains(&Flag::NewInDecoration));
 }
 
 #[test]
-fn nothing_is_new_in_decoration_without_a_prior_taxonomy() {
+fn a_moved_taxon_missing_from_the_prior_taxonomy_is_new_in_decoration() {
     let meta = metadata(&format!(
-        "{HEAD}G1\tABC01\tnone\nG2\tnone\tnone\nG3\tnone\tnone\n"
+        "{HEAD}G1\tnone\t{ABOVE_GENUS};g__X;s__X one\nG2\tnone\tnone\nG3\tnone\tnone\n\
+         G4\tnone\tnone\nG5\tnone\tnone\n"
     ));
-    let rows = report(&novel_tree(), &meta);
-    assert!(
-        rows.iter()
-            .all(|row| !row.flags.contains(&Flag::NewInDecoration))
+    let rows = report(&format!("({LARGE_GAIN_TREE}){ROOT};"), &meta);
+    assert_eq!(row(&rows, "g__B").action, Action::MovedUp);
+    assert_eq!(
+        flags(&rows, "g__B"),
+        vec![Flag::LargeGain, Flag::NewInDecoration]
     );
 }
 
-#[test]
-fn sisters_that_join_past_the_child_threshold_are_flagged_together() {
-    let join = |red: &str| {
-        format!(
-            "(((G1|RED=1.000)'g__A; s__A a|RED=1.000',(G2|RED=1.000)'g__B; s__B b|RED=1.000')\
-             '100.0|RED={red}'){ROOT};"
-        )
-    };
-    let rows = report(&join("0.970"), &Metadata::default());
-    assert_eq!(flags(&rows, "g__A"), vec![Flag::SisterJoinPastChildThresh]);
-    assert_eq!(row(&rows, "g__A").sister_taxa, taxa(&["g__B"]));
-    assert_eq!(row(&rows, "g__B").sister_taxa, taxa(&["g__A"]));
+/// `g__B` moves down from an unsupported node onto the species node of G1, the only genome the
+/// prior taxonomy puts in it. Its closest sister is `sister`, which joins it at RED `red`.
+fn moved_down_with_sister(red: &str, sister: &str) -> Vec<ReportRow> {
+    let newick = format!(
+        "((((G1|RED=1.000)'s__B one|RED=1.000',(G2|RED=1.000)'s__B two|RED=1.000')\
+         '50.0:g__B|RED=0.980',{sister})'100.0|RED={red}'){ROOT};"
+    );
+    let meta = metadata(&format!(
+        "{HEAD}G1\tnone\t{ABOVE_GENUS};g__B;s__B one\nG2\tnone\tnone\nG3\tnone\tnone\n\
+         G4\tnone\tnone\n"
+    ));
+    let rows = report(&newick, &meta);
+    assert_eq!(row(&rows, "g__B").action, Action::MovedDown);
+    rows
+}
 
-    let rows = report(&join("0.940"), &Metadata::default());
+#[test]
+fn a_sister_that_joins_past_the_child_threshold_is_flagged() {
+    let sister = "(G3|RED=1.000)'g__S; s__S three|RED=1.000'";
+    let rows = moved_down_with_sister("0.960", sister);
+    assert_eq!(flags(&rows, "g__B"), vec![Flag::SisterJoinPastChildThresh]);
+    assert_eq!(row(&rows, "g__B").sister_taxa, taxa(&["g__S"]));
     assert!(
-        rows.is_empty(),
+        rows.iter().all(|row| row.taxon.as_str() != "g__S"),
+        "g__S was not changed"
+    );
+
+    let rows = moved_down_with_sister("0.940", sister);
+    assert!(
+        flags(&rows, "g__B").is_empty(),
         "a join below the child threshold is not flagged"
     );
 }
 
 #[test]
 fn the_sisters_are_the_highest_taxa_of_the_rank_under_the_other_child() {
-    // g__B is nested in g__C, so only g__C is the sister of g__A.
-    let newick = format!(
-        "(((G1|RED=1.000)'g__A; s__A a|RED=1.000',((G2|RED=1.000)'g__B; s__B b|RED=1.000',\
-         (G3|RED=1.000)'s__C c|RED=1.000')'100.0:g__C|RED=0.990')'100.0|RED=0.970'){ROOT};"
-    );
-    let rows = report(&newick, &Metadata::default());
-    assert_eq!(row(&rows, "g__A").sister_taxa, taxa(&["g__C"]));
-    assert_eq!(flags(&rows, "g__B"), vec![Flag::NestedInSameRank]);
+    // g__D is nested in g__C, so only g__C is the sister of g__B.
+    let sister = "((G3|RED=1.000)'g__D; s__D three|RED=1.000',\
+                  (G4|RED=1.000)'s__C four|RED=1.000')'100.0:g__C|RED=0.990'";
+    let rows = moved_down_with_sister("0.960", sister);
+    assert_eq!(row(&rows, "g__B").sister_taxa, taxa(&["g__C"]));
 }
 
-/// `g__A` is on a supported node at RED 0.84 (q = 0.4) over G1 and G2. G3 keeps the prior taxa above
-/// genus polyphyletic at the root.
-fn split_tree() -> String {
-    format!(
-        "(((G1|RED=1.000)'s__A one|RED=1.000',(G2|RED=1.000)'s__A two|RED=1.000')'100.0:g__A|RED=0.840',\
-         (G3|RED=1.000)'g__C; s__C three|RED=1.000'){ROOT};"
+#[test]
+fn a_change_without_a_row_is_an_error() {
+    let tree = Tree::from_newick(
+        NewickTree::parse(&format!("((G1|RED=1.000)'s__A one|RED=1.000'){ROOT};")).unwrap(),
     )
-}
-
-#[test]
-fn a_low_taxon_whose_prior_members_are_under_one_child_is_a_split_candidate() {
-    let meta = metadata(&format!(
-        "{HEAD}G1\tnone\t{ABOVE_GENUS};g__A;s__A one\nG2\tnone\tnone\n\
-         G3\tnone\t{ABOVE_GENUS};g__C;s__C three\n"
-    ));
-    let rows = report(&split_tree(), &meta);
-    assert_eq!(row(&rows, "g__A").action, None);
-    assert_eq!(flags(&rows, "g__A"), vec![Flag::SplitCandidate]);
-}
-
-#[test]
-fn a_taxon_whose_other_child_holds_a_prior_genome_is_not_a_split_candidate() {
-    let meta = metadata(&format!(
-        "{HEAD}G1\tnone\t{ABOVE_GENUS};g__A;s__A one\nG2\tnone\t{ABOVE_GENUS};g__Z;s__Z two\n\
-         G3\tnone\t{ABOVE_GENUS};g__C;s__C three\n"
-    ));
-    let rows = report(&split_tree(), &meta);
-    assert!(rows.iter().all(|row| row.taxon.as_str() != "g__A"));
+    .unwrap();
+    let novel = taxa(&["g__Missing"]);
+    let result = build_report(&ReportInput {
+        tree: &tree,
+        moves: &[],
+        novel: &novel,
+        metadata: &Metadata::default(),
+        prior_taxa: &BTreeSet::new(),
+        min_bs: BootstrapValue::new(95.0),
+        red_dict: &red_dict(),
+    });
+    assert!(
+        matches!(&result, Err(CuratomaticError::Invariant(msg)) if msg.contains("g__Missing")),
+        "{result:?}"
+    );
 }
 
 #[test]
@@ -266,7 +293,7 @@ fn the_tsv_has_a_header_and_leaves_unset_values_empty() {
     let rows = [ReportRow {
         taxon: Taxon::new("g__ABC01"),
         rank: Rank::Genus,
-        action: Some(Action::Novel),
+        action: Action::Novel,
         flags: [Flag::DisplacedFromPrior, Flag::NovelLowRed]
             .into_iter()
             .collect(),

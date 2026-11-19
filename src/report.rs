@@ -1,4 +1,5 @@
-//! The review table for curators: one row per taxon that curatomatic changed or flagged.
+//! The review table for curators: one row per taxon that curatomatic moved or created, with
+//! flags for the changes a curator should check.
 //!
 //! The report is computed from data already in memory and never changes the tree.
 
@@ -67,9 +68,6 @@ pub(crate) enum Flag {
     UnsupportedLabel,
     /// A move that multiplied the number of genomes by 5 or more.
     LargeGain,
-    /// An unmoved taxon on a supported node with `q < 0.5`, whose genomes from the previous
-    /// release are all under one child, while the other children hold only new genomes.
-    SplitCandidate,
     /// A novel taxon whose genomes had a taxon of this rank in the previous release.
     DisplacedFromPrior,
     /// A taxon on the input tree that is in no `gtdb_taxonomy` of the metadata.
@@ -89,7 +87,7 @@ pub(crate) struct NodeStats {
 pub(crate) struct ReportRow {
     pub(crate) taxon: Taxon,
     pub(crate) rank: Rank,
-    pub(crate) action: Option<Action>,
+    pub(crate) action: Action,
     pub(crate) flags: BTreeSet<Flag>,
     /// The node of the taxon on the input tree, a novel taxon has none.
     pub(crate) before: Option<NodeStats>,
@@ -106,8 +104,6 @@ pub(crate) struct ReportRow {
 pub(crate) struct ReportInput<'a> {
     /// The curated tree, reloaded and still holding its RED values.
     pub(crate) tree: &'a Tree,
-    /// The node of every taxon on the input tree.
-    pub(crate) taxa_before: &'a BTreeMap<Taxon, NodeId>,
     /// The moves made by refinement.
     pub(crate) moves: &'a [Move],
     /// The novel taxa that were created.
@@ -328,36 +324,8 @@ fn sister_join(
     Ok(out)
 }
 
-/// True if the genomes below `node` that the metadata puts in `taxon` are all under one child,
-/// and every other child holds only genomes that are new (have no prior taxonomy).
-fn is_split_candidate(
-    index: &TreeIndex<'_>,
-    metadata: &Metadata,
-    rank: Rank,
-    taxon: &Taxon,
-    node: NodeId,
-) -> CuratomaticResult<bool> {
-    let children = index.newick().children(node);
-    if children.len() < 2 {
-        return Ok(false);
-    }
-    let mut n_with_members = 0_usize;
-    let mut others_new = true;
-    for &child in children {
-        let genomes = index.genomes_under(child)?;
-        let has_members = genomes
-            .iter()
-            .any(|gid| metadata.taxa_of_rank(gid, rank).any(|t| t == taxon));
-        if has_members {
-            n_with_members = n_with_members.saturating_add(1);
-        } else if genomes.is_empty() || genomes.iter().any(|gid| metadata.has_taxonomy(gid)) {
-            others_new = false;
-        }
-    }
-    Ok(n_with_members == 1 && others_new)
-}
-
-/// Build the rows of the report, sorted by rank and then taxon.
+/// Build the rows of the report, one for each taxon that was moved or created, sorted by rank and
+/// then taxon. A taxon that was not changed has no row, whatever its flags would be.
 pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<ReportRow>> {
     let index = TreeIndex::new(input.tree)?;
     let taxa_after = input.tree.taxon_nodes();
@@ -373,23 +341,22 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
     }
 
     let mut rows = Vec::new();
-    for (taxon, &node) in &taxa_after {
+    for &(ref taxon, node) in &taxa_after {
         let rank = taxon.rank()?;
         let is_novel = input.novel.contains(taxon);
         let after = index.stats(node)?;
 
         let (action, before) = if is_novel {
-            (Some(Action::Novel), None)
+            (Action::Novel, None)
         } else if let Some(m) = moves.get(taxon) {
             let action = if index.is_ancestor(m.to, m.from) {
                 Action::MovedUp
             } else {
                 Action::MovedDown
             };
-            (Some(action), Some(index.stats(m.from)?))
+            (action, Some(index.stats(m.from)?))
         } else {
-            let from = input.taxa_before.get(taxon).copied().unwrap_or(node);
-            (None, Some(index.stats(from)?))
+            continue;
         };
 
         let mut row = ReportRow {
@@ -427,19 +394,11 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
                 row.flags.insert(Flag::UnsupportedLabel);
             }
 
-            if let (Some(Action::MovedUp | Action::MovedDown), Some(before)) = (action, before)
+            if let Some(before) = before
                 && before.n_genomes > 0
                 && after.n_genomes >= before.n_genomes.saturating_mul(LARGE_GAIN_FACTOR)
             {
                 row.flags.insert(Flag::LargeGain);
-            }
-
-            if action.is_none()
-                && after.bootstrap.is_some_and(|bs| bs >= input.min_bs)
-                && q < LOW_Q
-                && is_split_candidate(&index, input.metadata, rank, taxon, node)?
-            {
-                row.flags.insert(Flag::SplitCandidate);
             }
 
             if is_novel {
@@ -457,13 +416,45 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
             }
         }
 
-        if row.action.is_some() || !row.flags.is_empty() {
-            rows.push(row);
-        }
+        rows.push(row);
     }
+    check_every_change_has_a_row(&rows, input)?;
 
     rows.sort_by(|a, b| a.rank.cmp(&b.rank).then_with(|| a.taxon.cmp(&b.taxon)));
     Ok(rows)
+}
+
+/// The report is the record of what curatomatic did, so every move and every novel taxon must have
+/// a row.
+fn check_every_change_has_a_row(
+    rows: &[ReportRow],
+    input: &ReportInput<'_>,
+) -> CuratomaticResult<()> {
+    let moved: BTreeSet<&Taxon> = rows
+        .iter()
+        .filter(|row| row.action != Action::Novel)
+        .map(|row| &row.taxon)
+        .collect();
+    let novel: BTreeSet<&Taxon> = rows
+        .iter()
+        .filter(|row| row.action == Action::Novel)
+        .map(|row| &row.taxon)
+        .collect();
+    let missing: Vec<String> = input
+        .moves
+        .iter()
+        .map(|m| &m.taxon)
+        .filter(|taxon| !moved.contains(taxon))
+        .chain(input.novel.iter().filter(|taxon| !novel.contains(taxon)))
+        .map(ToString::to_string)
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(CuratomaticError::Invariant(format!(
+        "the report has no row for these changed taxa: [{}]",
+        missing.join(", ")
+    )))
 }
 
 /// Format an optional value, an empty string if it is not set.
@@ -488,7 +479,7 @@ pub(crate) fn to_tsv(rows: &[ReportRow]) -> String {
         let fields = [
             row.taxon.to_string(),
             row.rank.prefix().to_string(),
-            optional(row.action, |action| action.to_string()),
+            row.action.to_string(),
             join(&row.flags),
             optional(before, |b| b.n_genomes.to_string()),
             row.after.n_genomes.to_string(),
