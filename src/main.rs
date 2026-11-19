@@ -10,11 +10,12 @@ mod red;
 mod report;
 mod taxon;
 mod taxonomy;
+mod taxonomy_file;
 mod tree;
 
 use std::collections::BTreeSet;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ::log::{Level, debug, error, info, log, warn};
@@ -30,6 +31,7 @@ use crate::rank::Rank;
 use crate::red::Red;
 use crate::report::{ReportInput, build_report, write_report};
 use crate::taxon::Taxon;
+use crate::taxonomy_file::TaxonomyFile;
 use crate::tree::{Tree, fill_in_missing_ranks};
 
 /// Semi-automatic curation of decorated phylogenetic trees.
@@ -54,6 +56,12 @@ struct Cli {
     /// Minimum bootstrap value to consider for decoration.
     #[arg(long, default_value_t = BootstrapValue::new(95.0))]
     min_bs: BootstrapValue,
+
+    /// Tab separated file with no header giving the taxonomy of each genome (e.g. the
+    /// `decorate_classifications.tsv` of gDecorate). It names the ranks the tree can't hold, and
+    /// is the prior taxonomy for downward refinement.
+    #[arg(long, value_name = "PATH")]
+    taxonomy: Option<PathBuf>,
 
     /// Tab separated file with a header (e.g. the GTDB metadata file) giving the name used for
     /// novel taxa of each genome, in the `accession` and `--novel-name-column` columns.
@@ -87,6 +95,7 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     debug!("median_red: {}", cli.red_dict.display());
     debug!("out_dir: {}", cli.out_dir.display());
     debug!("min_bs: {}", cli.min_bs);
+    debug!("taxonomy: {:?}", cli.taxonomy);
     debug!("novel_name_file: {:?}", cli.novel_name_file);
     debug!("novel_name_column: {:?}", cli.novel_name_column);
 
@@ -125,49 +134,135 @@ fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(
     out
 }
 
-/// Read the novel names, subset to the genomes on the tree, and every taxon of the previous
-/// release for the report. Both are empty if no novel name file is given.
+/// Read the taxonomy file, which must hold every genome on the tree.
+fn read_taxonomy_file(path: &Path, tree: &Tree) -> CuratomaticResult<TaxonomyFile> {
+    info!("Reading taxonomy file");
+    let file = TaxonomyFile::from_file(path)?;
+    let (missing, extra) = file.compare(&tree.gids);
+    if let Some(first) = missing.first() {
+        return Err(CuratomaticError::MissingFromTaxonomyFile {
+            n: missing.len(),
+            first: first.clone(),
+        });
+    }
+    if !extra.is_empty() {
+        warn!(
+            "Found {} genomes in the taxonomy file that are not in the tree.",
+            extra.len().separate_with_commas()
+        );
+    }
+    Ok(file)
+}
+
+/// Give the leaves the ranks that the tree can't hold, from the taxonomy file.
+fn assign_leaf_taxonomy(tree: &mut Tree, file: &TaxonomyFile) -> CuratomaticResult<()> {
+    info!("Assigning ranks from the taxonomy file to the leaves");
+    let taxa_before = tree.extract_all_taxa_from_tree()?;
+    let assignment = tree.assign_leaf_taxonomy(file)?;
+    if !tree.extract_all_taxa_from_tree()?.is_superset(&taxa_before) {
+        return Err(CuratomaticError::Invariant(
+            "assigning the taxonomy file to the leaves removed a taxon from the tree".to_owned(),
+        ));
+    }
+    let n_taxa = assignment
+        .n_taxa
+        .iter()
+        .map(|(rank, n)| format!("{}__={}", rank.prefix(), n.separate_with_commas()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    info!(
+        "Assigned taxa to {} leaves ({n_taxa}).",
+        assignment.n_leaves.separate_with_commas()
+    );
+    if !assignment.skipped.is_empty() {
+        warn!(
+            "Skipped {} taxa of the taxonomy file that are already on the tree, or that more than \
+             one leaf would get.",
+            assignment.skipped.len().separate_with_commas()
+        );
+        for taxon in &assignment.skipped {
+            debug!("Skipped: {taxon}");
+        }
+    }
+    Ok(())
+}
+
+/// Read the novel names and the prior taxonomy (from the taxonomy file), subset to the genomes on
+/// the tree, and every taxon of the prior taxonomy for the report. Each is empty if its file is
+/// not given.
 fn read_metadata(
     cli: &Cli,
     tree: &Tree,
     tree_n_nodes: usize,
+    taxonomy: Option<&TaxonomyFile>,
 ) -> CuratomaticResult<(Metadata, BTreeSet<Taxon>)> {
-    let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) else {
-        return Ok((Metadata::default(), BTreeSet::new()));
-    };
-    info!("Reading novel names");
-    let mut metadata = Metadata::from_file(path, column)?;
-    let prior_taxa = metadata.all_taxa();
-    let n_meta_rows_before = metadata.rows.len();
-    metadata.subset_to_ids(&tree.gids);
-    let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());
-    info!(
-        "Found {} records, matched {} IDs to the tree.",
-        n_meta_rows_before.separate_with_commas(),
-        metadata.rows.len().separate_with_commas()
-    );
-    if n_meta_mismatch > 0 {
-        warn!(
-            "Found {} IDs in the tree that do not have a novel name entry.",
-            n_meta_mismatch.separate_with_commas()
+    let mut metadata = Metadata::default();
+    if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) {
+        info!("Reading novel names");
+        metadata = Metadata::from_file(path, column)?;
+        let n_meta_rows_before = metadata.rows.len();
+        metadata.subset_to_ids(&tree.gids);
+        let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());
+        info!(
+            "Found {} records, matched {} IDs to the tree.",
+            n_meta_rows_before.separate_with_commas(),
+            metadata.rows.len().separate_with_commas()
         );
+        if n_meta_mismatch > 0 {
+            warn!(
+                "Found {} IDs in the tree that do not have a novel name entry.",
+                n_meta_mismatch.separate_with_commas()
+            );
+        }
     }
+
+    for (gid, gid_taxonomy) in taxonomy.into_iter().flat_map(TaxonomyFile::iter) {
+        metadata.set_taxonomy(gid.clone(), gid_taxonomy.clone());
+    }
+    let prior_taxa = metadata.all_taxa();
+    metadata.subset_to_ids(&tree.gids);
     for (level, message) in taxonomy_coverage_messages(&metadata, tree_n_nodes) {
         log!(level, "{message}");
     }
     Ok((metadata, prior_taxa))
 }
 
+/// Check that the taxa on the tree are those it started with, plus the novel taxa.
+fn check_taxa_unchanged(
+    before: &BTreeSet<Taxon>,
+    tree: &Tree,
+    novel: &BTreeSet<Taxon>,
+) -> CuratomaticResult<()> {
+    let after = tree.extract_all_taxa_from_tree()?;
+    let lost: Vec<String> = before
+        .iter()
+        .filter(|taxon| !after.contains(*taxon) || novel.contains(*taxon))
+        .map(ToString::to_string)
+        .collect();
+    let gained: Vec<String> = after
+        .iter()
+        .filter(|taxon| !before.contains(*taxon) && !novel.contains(*taxon))
+        .map(ToString::to_string)
+        .collect();
+    if lost.is_empty() && gained.is_empty() {
+        return Ok(());
+    }
+    Err(CuratomaticError::Invariant(format!(
+        "the taxa on the tree changed by more than the novel taxa that were created \
+         (lost or reused by a novel taxon: [{}], gained: [{}])",
+        lost.join(", "),
+        gained.join(", ")
+    )))
+}
+
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
     let path_report_out = cli.out_dir.join(format!("{stem}.curatomatic.report.tsv"));
+    let path_taxonomy_out = cli.out_dir.join(format!("{stem}.curatomatic.taxonomy.tsv"));
 
     info!("Reading tree");
     let mut tree = Tree::from_file(&cli.tree)?;
-
-    let tree_taxa_before = tree.extract_all_taxa_from_tree()?;
-    let taxon_nodes_before = tree.taxon_nodes();
 
     // Get the number of tree nodes, and zombie nodes (i.e. prefixed with "D-").
     let (tree_n_nodes, tree_n_zombies) = tree.n_nodes_and_zombies();
@@ -177,8 +272,21 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         tree_n_zombies.separate_with_commas()
     );
 
-    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes)?;
+    // This runs first, before anything reads the taxa on the tree.
+    let taxonomy = match &cli.taxonomy {
+        Some(path) => {
+            let file = read_taxonomy_file(path, &tree)?;
+            assign_leaf_taxonomy(&mut tree, &file)?;
+            Some(file)
+        }
+        None => None,
+    };
 
+    let tree_taxa_before = tree.extract_all_taxa_from_tree()?;
+    let taxon_nodes_before = tree.taxon_nodes();
+
+    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, taxonomy.as_ref())?;
+    drop(taxonomy);
     // Read the median RED of each rank.
     info!("Reading median RED values");
     let red_dict = Red::from_file(&cli.red_dict)?;
@@ -217,16 +325,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         new_taxa_created.len().separate_with_commas()
     );
 
-    let tree_taxa_after = tree.extract_all_taxa_from_tree()?;
-    let taxa_without_new: BTreeSet<_> = tree_taxa_after
-        .difference(&new_taxa_created)
-        .cloned()
-        .collect();
-    if taxa_without_new != tree_taxa_before {
-        return Err(CuratomaticError::Invariant(
-            "the taxa on the tree changed by more than the novel taxa that were created".to_owned(),
-        ));
-    }
+    check_taxa_unchanged(&tree_taxa_before, &tree, &new_taxa_created)?;
 
     info!("Building report");
     tree.reload()?;
@@ -240,6 +339,15 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         min_bs: cli.min_bs,
         red_dict: &red_dict,
     })?;
+
+    info!("Writing taxonomy to disk.");
+    let leaf_taxonomies = tree.leaf_taxonomies()?;
+    taxonomy_file::write(
+        &path_taxonomy_out,
+        leaf_taxonomies
+            .iter()
+            .map(|(gid, taxa)| (gid, taxa.as_slice())),
+    )?;
 
     info!("Removing RED labels");
     tree.remove_red_labels()?;

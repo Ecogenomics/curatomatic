@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::taxon::Taxon;
+
 // Expected values in this file come from the Python implementation
 // (`curatomatic/model/node_label.py`, `NodeLabel.from_node` and `to_string`), run with dendropy
 // on the same labels.
@@ -63,9 +65,24 @@ fn leaf_with_a_red_other_than_one_is_an_error() {
 }
 
 #[test]
-fn leaf_without_a_red_or_with_a_bad_red_is_an_error() {
-    // Python: `AssertionError` for the first, `ValueError` for the others.
-    for label in ["G1", "G1|RED=x", "G1|RED=1.0|RED=1.0"] {
+fn leaf_without_a_red_has_a_red_of_one() {
+    let label = leaf("G1").unwrap();
+    assert_eq!(
+        (label.red, label.gid),
+        (RedValue::LEAF, Some(GenomeId::new("G1")))
+    );
+    assert_eq!(label.taxonomy, None);
+}
+
+#[test]
+fn leaf_with_a_bad_red_is_an_error() {
+    for label in [
+        "G1|RED=x",
+        "G1|RED=1.0|RED=1.0",
+        "G1|red=1|RED=1",
+        "G1RED=1",
+        "|RED=1",
+    ] {
         assert_eq!(
             leaf(label),
             Err(CuratomaticError::InvalidNodeLabel(label.to_owned())),
@@ -193,17 +210,95 @@ fn to_label_of_a_node_with_neither_bootstrap_nor_taxonomy_is_an_error() {
     ));
 }
 
+/// Read a leaf label, and write it back out.
+fn leaf_round_trip(label: &str) -> String {
+    leaf(label).unwrap().to_label().unwrap()
+}
+
 #[test]
-fn to_label_of_a_leaf_with_a_taxonomy_is_an_error() {
-    // Python: `AssertionError`.
-    let label = NodeLabel {
-        red: RedValue::LEAF,
-        bootstrap: None,
-        taxonomy: Some(Taxonomy::from_string("g__Foo").unwrap()),
-        gid: Some(GenomeId::new("G1")),
-    };
-    assert!(matches!(
-        label.to_label(),
-        Err(CuratomaticError::InvalidNodeLabel(_))
-    ));
+fn leaf_with_a_taxonomy_round_trips() {
+    let label = leaf("G1|g__Foo; s__Foo bar|RED=1.000").unwrap();
+    assert_eq!(
+        label,
+        NodeLabel {
+            red: RedValue::LEAF,
+            bootstrap: None,
+            taxonomy: Some(Taxonomy::from_string("g__Foo; s__Foo bar").unwrap()),
+            gid: Some(GenomeId::new("G1")),
+        }
+    );
+    assert_eq!(label.to_label().unwrap(), "G1|g__Foo; s__Foo bar|RED=1.000");
+    assert_eq!(
+        leaf_round_trip("G1|g__Foo; s__Foo bar|RED=1.000"),
+        "G1|g__Foo; s__Foo bar|RED=1.000"
+    );
+}
+
+#[test]
+fn leaf_with_a_taxonomy_and_no_red_is_read() {
+    assert_eq!(
+        leaf_round_trip("G1|s__{unresolved} sp1"),
+        "G1|s__{unresolved} sp1|RED=1.000"
+    );
+}
+
+#[test]
+fn leaf_red_may_be_written_in_lower_case() {
+    assert_eq!(leaf_round_trip("G1|red=1.0"), "G1|RED=1.000");
+    assert_eq!(leaf_round_trip("G1|s__A b|red=1.0"), "G1|s__A b|RED=1.000");
+}
+
+#[test]
+fn an_unresolved_species_on_a_leaf_is_kept_as_is() {
+    let label = leaf("G1|s__{unresolved} sp053939565|RED=1.0").unwrap();
+    assert_eq!(
+        label.taxonomy.unwrap().s,
+        vec![Taxon::new("s__{unresolved} sp053939565")]
+    );
+}
+
+#[test]
+fn internal_red_may_be_written_in_lower_case() {
+    assert_eq!(
+        round_trip("100:g__A;f__B|red=0.8386"),
+        "100.0:f__B; g__A|RED=0.839"
+    );
+    assert_eq!(
+        round_trip("d__Bacteria|red=0.0000"),
+        "d__Bacteria|RED=0.000"
+    );
+}
+
+#[test]
+fn a_bootstrap_followed_by_a_red_without_a_taxonomy_is_read() {
+    // The r237 trees label a node with only a bootstrap `<bootstrap>:red=<red>`.
+    let label = internal("100:red=0.8894").unwrap();
+    assert_eq!(label.bootstrap, Some(BootstrapValue::new(100.0)));
+    assert_eq!(label.taxonomy, None);
+    assert_eq!(label.red, RedValue::new(0.8894));
+    assert_eq!(round_trip("79:RED=0.5"), "79.0|RED=0.500");
+}
+
+#[test]
+fn strip_red_removes_the_red_and_its_separator() {
+    for (label, expected) in [
+        ("100:g__A|RED=0.9", "100:g__A"),
+        ("100:red=0.9", "100"),
+        ("g__A|red=0.9", "g__A"),
+        ("G1|s__A b|RED=1.000", "G1|s__A b"),
+        ("G1", "G1"),
+    ] {
+        assert_eq!(strip_red(label).unwrap(), expected, "label {label:?}");
+    }
+}
+
+#[test]
+fn an_internal_node_without_a_red_is_an_error() {
+    for label in ["100", "100:g__A", "g__A"] {
+        assert_eq!(
+            internal(label),
+            Err(CuratomaticError::InvalidNodeLabel(label.to_owned())),
+            "label {label:?}"
+        );
+    }
 }

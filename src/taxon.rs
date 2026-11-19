@@ -9,6 +9,9 @@ use crate::rank::Rank;
 /// Characters that are easily confused with one another when a name is read by a person.
 const BAD_PAIRS: [(char, char); 5] = [('I', 'l'), ('0', 'O'), ('1', 'I'), ('5', 'S'), ('2', 'Z')];
 
+/// The name of a novel taxon that could not be given a unique name, after its rank prefix.
+const UNRESOLVABLE: &str = "UNRESOLVABLE";
+
 /// The name of a single taxon, including its rank prefix (e.g. `g__Escherichia`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Taxon(String);
@@ -25,6 +28,18 @@ impl Taxon {
     /// The rank of this taxon, determined by the first character of its name.
     pub(crate) fn rank(&self) -> CuratomaticResult<Rank> {
         Rank::of_taxon(self.as_str())
+    }
+
+    /// The sentinel for a novel taxon of `rank` that could not be given a unique name, e.g.
+    /// `g__UNRESOLVABLE`. Unlike every other taxon, it may be on more than one node.
+    pub(crate) fn unresolvable(rank: Rank) -> Self {
+        Taxon(format!("{}__{UNRESOLVABLE}", rank.prefix()))
+    }
+
+    /// True if this is the sentinel of [`Taxon::unresolvable`].
+    pub(crate) fn is_unresolvable(&self) -> bool {
+        self.rank()
+            .is_ok_and(|rank| self == &Taxon::unresolvable(rank))
     }
 
     /// True if this is a name, rather than a placeholder that is only the rank prefix (e.g. `g__`).
@@ -71,8 +86,8 @@ fn score_candidate_taxon(taxon: &Taxon) -> u8 {
 ///
 /// The NCBI WGS prefix of the genomes is used when there is one, preferring the most readable. If
 /// none is available then the taxon is named after the lowest genome ID whose name is not already
-/// known (e.g. `g__G963674675`). If every genome ID is taken, the taxon is named after the lowest
-/// genome ID anyway, duplicating the existing taxon of that name.
+/// known (e.g. `g__G963674675`). If every genome ID is taken (e.g. the input tree named a taxon
+/// after a genome that is not in it), the taxon is the sentinel [`Taxon::unresolvable`].
 pub(crate) fn generate_unique_rank(
     rank: Rank,
     leaf_node_gids: &BTreeSet<GenomeId>,
@@ -105,10 +120,12 @@ pub(crate) fn generate_unique_rank(
         return Ok(taxon);
     }
 
-    leaf_node_gids
-        .first()
-        .map(gid_taxon)
-        .ok_or_else(|| CuratomaticError::Invariant("no genomes to name a taxon after".to_owned()))
+    if leaf_node_gids.is_empty() {
+        return Err(CuratomaticError::Invariant(
+            "no genomes to name a taxon after".to_owned(),
+        ));
+    }
+    Ok(Taxon::unresolvable(rank))
 }
 
 #[cfg(test)]

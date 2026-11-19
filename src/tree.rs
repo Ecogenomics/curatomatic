@@ -2,23 +2,19 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 
 use ::log::{info, warn};
+use strum::IntoEnumIterator;
 
 use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::GenomeId;
 use crate::metadata::Metadata;
 use crate::newick::{NewickTree, NodeId};
-use crate::node_label::NodeLabel;
+use crate::node_label::{NodeLabel, strip_red};
 use crate::rank::Rank;
-use crate::red::{Red, RedValue};
+use crate::red::Red;
 use crate::taxon::{Taxon, generate_unique_rank};
 use crate::taxonomy::Taxonomy;
-
-/// Separates the rest of a node label from its RED value.
-const RED_SEPARATOR: &str = "|RED=";
-
-/// A species that has no name yet: the rank prefix on its own.
-const SPECIES_PLACEHOLDER: &str = "s__";
+use crate::taxonomy_file::TaxonomyFile;
 
 /// The ranks that each leaf node is missing, in the order that the leaves occur in the tree.
 pub(crate) type MissingRanks = BTreeMap<NodeId, BTreeSet<Rank>>;
@@ -42,6 +38,18 @@ impl Refinement {
             moves.push((to_node, from_node));
         }
     }
+}
+
+/// What [`Tree::assign_leaf_taxonomy`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct LeafAssignment {
+    /// The number of leaves that were given one or more taxa.
+    pub(crate) n_leaves: usize,
+    /// The number of taxa that were assigned to a leaf, for each rank.
+    pub(crate) n_taxa: BTreeMap<Rank, usize>,
+    /// Taxa that were not assigned: they are already on the tree, or more than one leaf would get
+    /// them. Each taxon is on one node only.
+    pub(crate) skipped: BTreeSet<Taxon>,
 }
 
 /// A taxon that [`Tree::process_refinement`] moved from one node to another.
@@ -98,7 +106,7 @@ impl Tree {
             .collect()
     }
 
-    /// Every taxon on the tree, which must be on one node only.
+    /// Every taxon on the tree, which must be on one node only (except [`Taxon::unresolvable`]).
     fn get_taxon_labels(node_labels: &[NodeLabel]) -> CuratomaticResult<BTreeSet<Taxon>> {
         let mut out = BTreeSet::new();
         for taxonomy in node_labels
@@ -106,7 +114,7 @@ impl Tree {
             .filter_map(|label| label.taxonomy.as_ref())
         {
             for taxon in taxonomy.iter_ranks() {
-                if !out.insert(taxon.clone()) {
+                if !out.insert(taxon.clone()) && !taxon.is_unresolvable() {
                     return Err(CuratomaticError::NonUniqueTaxon(taxon.to_string()));
                 }
             }
@@ -145,53 +153,7 @@ impl Tree {
     }
 
     /// Build the tree from a parsed Newick tree, see [`Tree::from_file`].
-    pub(crate) fn from_newick(mut tree: NewickTree) -> CuratomaticResult<Self> {
-        // Convert any placeholders (e.g. s__) that exist on the basal node to an unresolved name.
-        // Only the placeholder is replaced: any other taxa on the node (e.g. its genus) are kept.
-        // TODO: This is a hack, fix it.
-        let leaves: Vec<NodeId> = tree.leaves().collect();
-        for leaf in leaves {
-            let gid = GenomeId::new(
-                leaf_label(&tree, leaf)?
-                    .split("|RED")
-                    .next()
-                    .unwrap_or_default(),
-            );
-            if gid.is_zombie() {
-                continue;
-            }
-
-            let parent = tree.parent(leaf).ok_or_else(|| {
-                CuratomaticError::Invariant(format!("leaf {gid} has no parent node"))
-            })?;
-            let parent_label = tree.label(parent).unwrap_or_default();
-            let (red, bootstrap, taxon) = parse_node_label(parent_label)?;
-            if red != RedValue::LEAF || bootstrap.is_some() {
-                return Err(CuratomaticError::InvalidNodeLabel(parent_label.to_owned()));
-            }
-
-            let taxa: Vec<&str> = taxon
-                .unwrap_or_default()
-                .split(';')
-                .map(str::trim)
-                .collect();
-            if taxa.contains(&SPECIES_PLACEHOLDER) {
-                let unresolved = format!("{SPECIES_PLACEHOLDER}{{unresolved}} {gid}");
-                let taxa = taxa
-                    .into_iter()
-                    .map(|taxon| {
-                        if taxon == SPECIES_PLACEHOLDER {
-                            unresolved.as_str()
-                        } else {
-                            taxon
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                tree.set_label(parent, format!("{taxa}{RED_SEPARATOR}{red:.3}"));
-            }
-        }
-
+    pub(crate) fn from_newick(tree: NewickTree) -> CuratomaticResult<Self> {
         Self::new(tree)
     }
 
@@ -204,7 +166,7 @@ impl Tree {
     pub(crate) fn n_nodes_and_zombies(&self) -> (usize, usize) {
         let (mut n_nodes, mut n_zombies) = (0_usize, 0_usize);
         for leaf in self.newick.leaves() {
-            if leaf_gid(&self.newick, leaf).is_zombie() {
+            if self.leaf_gid(leaf).is_none_or(GenomeId::is_zombie) {
                 n_zombies = n_zombies.saturating_add(1);
             } else {
                 n_nodes = n_nodes.saturating_add(1);
@@ -213,22 +175,156 @@ impl Tree {
         (n_nodes, n_zombies)
     }
 
+    /// The genome ID of a leaf (which may be a zombie), `None` if `node` is not a leaf.
+    fn leaf_gid(&self, node: NodeId) -> Option<&GenomeId> {
+        self.node_labels.get(node.index())?.gid.as_ref()
+    }
+
+    /// The lowest rank of any taxon (placeholders included) on the path from each node (included)
+    /// to the root, indexed by node.
+    fn lowest_rank_on_path(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
+        let mut out: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
+        // Post-order puts every parent after its children, so in reverse the parent comes first.
+        let nodes: Vec<NodeId> = self.newick.ids().collect();
+        for &node in nodes.iter().rev() {
+            let mut lowest = self
+                .newick
+                .parent(node)
+                .and_then(|parent| out.get(parent.index()).copied().flatten());
+            if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                for taxon in taxonomy.iter_ranks() {
+                    lowest = lowest.max(Some(taxon.rank()?));
+                }
+            }
+            if let Some(slot) = out.get_mut(node.index()) {
+                *slot = lowest;
+            }
+        }
+        Ok(out)
+    }
+
+    /// Give each leaf the ranks that the tree can't hold, from the taxonomy file.
+    ///
+    /// Each leaf (zombies are skipped) gets every named taxon of the file whose rank is below the
+    /// lowest rank on its path to the root, e.g. only its species if the lowest is a genus. A gap
+    /// above the lowest rank is never filled, and placeholders (e.g. `g__`) are never assigned.
+    /// The taxa already on the tree are never changed. A taxon that is already on the tree, or
+    /// that more than one leaf would get, is not assigned (see [`LeafAssignment::skipped`]).
+    ///
+    /// A leaf whose genome is not in the file is an error. Reloads the tree.
+    pub(crate) fn assign_leaf_taxonomy(
+        &mut self,
+        file: &TaxonomyFile,
+    ) -> CuratomaticResult<LeafAssignment> {
+        let lowest = self.lowest_rank_on_path()?;
+
+        // The taxa that each leaf would get, and how many leaves would get each taxon.
+        let mut wanted: Vec<(NodeId, Vec<&Taxon>)> = Vec::new();
+        let mut n_wanting: HashMap<&Taxon, usize> = HashMap::new();
+        for leaf in self.newick.leaves() {
+            let Some(gid) = self.leaf_gid(leaf).filter(|gid| !gid.is_zombie()) else {
+                continue;
+            };
+            let taxonomy =
+                file.get(gid)
+                    .ok_or_else(|| CuratomaticError::MissingFromTaxonomyFile {
+                        n: 1,
+                        first: gid.clone(),
+                    })?;
+            let below = lowest.get(leaf.index()).copied().flatten();
+            let mut taxa = Vec::new();
+            for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_named()) {
+                if below.is_none_or(|below| taxon.rank().is_ok_and(|rank| rank > below)) {
+                    taxa.push(taxon);
+                    let n = n_wanting.entry(taxon).or_default();
+                    *n = n.saturating_add(1);
+                }
+            }
+            if !taxa.is_empty() {
+                wanted.push((leaf, taxa));
+            }
+        }
+
+        let mut out = LeafAssignment::default();
+        for (leaf, taxa) in wanted {
+            let mut info = self.label(leaf)?.clone();
+            let mut assigned = false;
+            for taxon in taxa {
+                if self.taxon_labels.contains(taxon) || n_wanting.get(taxon).is_some_and(|&n| n > 1)
+                {
+                    out.skipped.insert(taxon.clone());
+                    continue;
+                }
+                let n = out.n_taxa.entry(taxon.rank()?).or_default();
+                *n = n.saturating_add(1);
+                info.taxonomy
+                    .get_or_insert_with(Taxonomy::default)
+                    .add_taxon(taxon.clone())?;
+                assigned = true;
+            }
+            if assigned {
+                out.n_leaves = out.n_leaves.saturating_add(1);
+                self.newick.set_label(leaf, info.to_label()?);
+            }
+        }
+
+        self.reload()?;
+        Ok(out)
+    }
+
+    /// The taxonomy of each leaf (zombies are skipped), in tree order.
+    ///
+    /// The taxonomy is read from the taxa on the leaf and every ancestor, one taxon for each rank
+    /// from the domain to the species. When a rank is on more than one node of the path (nested
+    /// taxa) the one nearest the leaf is used, and when one node holds more than one, the first.
+    /// Placeholders are ignored, a rank without a named taxon is given as its placeholder (e.g.
+    /// `g__`). Call [`Tree::reload`] first if the tree was changed.
+    pub(crate) fn leaf_taxonomies(&self) -> CuratomaticResult<Vec<(GenomeId, Vec<Taxon>)>> {
+        let mut out = Vec::new();
+        for leaf in self.newick.leaves() {
+            let Some(gid) = self.leaf_gid(leaf).filter(|gid| !gid.is_zombie()) else {
+                continue;
+            };
+            let mut named: BTreeMap<Rank, &Taxon> = BTreeMap::new();
+            let mut current = Some(leaf);
+            while let Some(node) = current {
+                if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                    for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_named()) {
+                        named.entry(taxon.rank()?).or_insert(taxon);
+                    }
+                }
+                current = self.newick.parent(node);
+            }
+            let taxa = Rank::iter()
+                .map(|rank| {
+                    named.get(&rank).map_or_else(
+                        || Taxon::new(format!("{}__", rank.prefix())),
+                        |&taxon| taxon.clone(),
+                    )
+                })
+                .collect();
+            out.push((gid.clone(), taxa));
+        }
+        Ok(out)
+    }
+
     /// The leaf nodes that are missing one or more ranks, and the ranks that they are missing.
     ///
-    /// The ranks are those not assigned on the path from the leaf to the root. Zombies are skipped.
+    /// The ranks are those not assigned on the path from the leaf (included) to the root. Zombies
+    /// are skipped. Call [`Tree::reload`] first if the tree was changed.
     pub(crate) fn get_leaf_nodes_missing_rank(&self) -> CuratomaticResult<MissingRanks> {
         let mut out = MissingRanks::new();
 
         for leaf in self.newick.leaves() {
-            if leaf_gid(&self.newick, leaf).is_zombie() {
+            if self.leaf_gid(leaf).is_none_or(GenomeId::is_zombie) {
                 continue;
             }
 
             // Go up the tree and read the taxonomy from it.
             let mut taxonomy = Taxonomy::default();
-            let mut current = self.newick.parent(leaf);
+            let mut current = Some(leaf);
             while let Some(node) = current {
-                if let Some(node_taxonomy) = NodeLabel::from_node(&self.newick, node)?.taxonomy {
+                if let Some(node_taxonomy) = &self.label(node)?.taxonomy {
                     for taxon in node_taxonomy.iter_ranks() {
                         taxonomy.add_taxon(taxon.clone())?;
                     }
@@ -256,7 +352,7 @@ impl Tree {
                 .newick
                 .label(node)
                 .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("node {node}")))?;
-            let label = label.split('|').next().unwrap_or_default().to_owned();
+            let label = strip_red(label)?.to_owned();
             self.newick.set_label(node, label);
         }
         Ok(())
@@ -296,7 +392,7 @@ impl Tree {
         let child_red_thresh = red_dict.get(child_rank)?.midpoint(median_red);
 
         for (node, node_label) in self.newick.ids().zip(&self.node_labels) {
-            // Skip those that are not set (i.e. leaf nodes).
+            // Skip nodes without a bootstrap (i.e. leaf nodes), which are never refined.
             let (Some(taxonomy), Some(original_bs)) = (&node_label.taxonomy, node_label.bootstrap)
             else {
                 continue;
@@ -462,7 +558,8 @@ impl Tree {
         None
     }
 
-    /// The taxa of `rank` that the metadata assigns to the genomes below each child of `node`.
+    /// The taxa of `rank` that the metadata assigns to the genomes at or below each child of
+    /// `node` (a child may be a leaf itself).
     fn child_rank_taxa<'a>(
         &self,
         node: NodeId,
@@ -471,7 +568,7 @@ impl Tree {
     ) -> CuratomaticResult<BTreeMap<NodeId, BTreeSet<&'a Taxon>>> {
         let mut out: BTreeMap<NodeId, BTreeSet<&'a Taxon>> = BTreeMap::new();
         for &child in self.newick.children(node) {
-            for desc in self.newick.descendants(child) {
+            for desc in self.newick.descendants(child).chain([child]) {
                 if !self.newick.is_leaf(desc) {
                     continue;
                 }
@@ -565,40 +662,6 @@ impl Tree {
     }
 }
 
-/// Parse an internal node label into its RED, bootstrap and taxonomy (if they are set).
-pub(crate) fn parse_node_label(
-    label: &str,
-) -> CuratomaticResult<(RedValue, Option<BootstrapValue>, Option<&str>)> {
-    let invalid = || CuratomaticError::InvalidNodeLabel(label.to_owned());
-    let float = |value: &str| {
-        value
-            .parse::<BootstrapValue>()
-            .map_err(|_not_a_float| invalid())
-    };
-
-    let mut parts = label.trim().split(RED_SEPARATOR);
-    let (Some(prefix), Some(suffix), None) = (parts.next(), parts.next(), parts.next()) else {
-        return Err(invalid());
-    };
-    let red = suffix
-        .parse::<RedValue>()
-        .map_err(|_not_a_float| invalid())?;
-
-    // Either the taxonomy, the bootstrap, or the bootstrap and taxonomy.
-    if prefix.contains(':') {
-        let mut parts = prefix.split(':');
-        let (Some(bootstrap), Some(taxon), None) = (parts.next(), parts.next(), parts.next())
-        else {
-            return Err(invalid());
-        };
-        Ok((red, Some(float(bootstrap)?), Some(taxon)))
-    } else if let Ok(bootstrap) = float(prefix) {
-        Ok((red, Some(bootstrap), None))
-    } else {
-        Ok((red, None, Some(prefix)))
-    }
-}
-
 /// Move a taxon from one node to another, rewriting the labels of both.
 fn transfer_taxon(
     tree: &mut NewickTree,
@@ -609,13 +672,6 @@ fn transfer_taxon(
     let mut old_info = NodeLabel::from_node(tree, old_node)?;
     let mut new_info = NodeLabel::from_node(tree, new_node)?;
 
-    // A leaf is labelled with its genome, it cannot hold a taxon.
-    if let Some(gid) = &new_info.gid {
-        return Err(CuratomaticError::Invariant(format!(
-            "{taxon} cannot be moved to the leaf node {gid}"
-        )));
-    }
-
     let old_taxonomy = old_info.taxonomy.as_mut().ok_or_else(|| {
         CuratomaticError::Invariant(format!(
             "node {old_node} has no taxonomy to remove {taxon} from"
@@ -623,9 +679,13 @@ fn transfer_taxon(
     })?;
     old_taxonomy.remove_taxon(taxon)?;
 
-    // A node without a bootstrap is labelled by its taxonomy alone, so removing its last taxon
-    // would leave nothing to label it with. Neither label has been changed at this point.
-    if old_info.bootstrap.is_none() && old_taxonomy.iter_ranks().next().is_none() {
+    // An internal node without a bootstrap is labelled by its taxonomy alone, so removing its last
+    // taxon would leave nothing to label it with (a leaf keeps its genome ID). Neither label has
+    // been changed at this point.
+    if old_info.gid.is_none()
+        && old_info.bootstrap.is_none()
+        && old_taxonomy.iter_ranks().next().is_none()
+    {
         return Err(CuratomaticError::Invariant(format!(
             "moving {taxon} would leave node {old_node} with neither a bootstrap nor a taxonomy"
         )));
@@ -642,7 +702,8 @@ fn transfer_taxon(
 
 /// Create a novel taxon for every rank that a leaf is missing, and place them on the tree.
 ///
-/// Each is placed on the highest node that holds no other taxon of the rank below it, has enough
+/// Each is placed on the highest node (the leaf included) that holds no other taxon of the rank
+/// below it, has enough
 /// bootstrap support, and has a RED that is past the midpoint between the rank and its parent.
 /// Leaves that share the highest node share the taxon. The ranks are filled from highest to
 /// lowest. `known_taxa` are the taxa that already exist, and are not reused. Returns the taxa
@@ -669,7 +730,7 @@ pub(crate) fn fill_in_missing_ranks(
 
             // Go up the tree to find a suitable node that won't conflict.
             let mut candidates = Vec::new();
-            let mut current = tree.newick.parent(leaf);
+            let mut current = Some(leaf);
             while let Some(node) = current {
                 if tree.any_descendant_has_rank(node, rank) {
                     break;
@@ -703,7 +764,10 @@ pub(crate) fn fill_in_missing_ranks(
                     .last()
                     .ok_or_else(|| CuratomaticError::NoCandidateNode {
                         rank: rank.prefix(),
-                        gid: leaf_gid(&tree.newick, *leaf),
+                        gid: tree
+                            .leaf_gid(*leaf)
+                            .cloned()
+                            .unwrap_or_else(|| GenomeId::new(leaf.to_string())),
                     })?;
             let idx = *index.entry(candidate).or_insert_with(|| {
                 candidate_to_leaves.push((candidate, BTreeSet::new()));
@@ -737,21 +801,6 @@ pub(crate) fn fill_in_missing_ranks(
     }
 
     Ok(new_taxa_created)
-}
-
-/// The label of a leaf node.
-fn leaf_label(tree: &NewickTree, leaf: NodeId) -> CuratomaticResult<&str> {
-    tree.label(leaf)
-        .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("leaf {leaf} has no label")))
-}
-
-/// The genome ID of a leaf node, which is that of a zombie if the leaf is one.
-fn leaf_gid(tree: &NewickTree, leaf: NodeId) -> GenomeId {
-    GenomeId::new(
-        tree.label(leaf)
-            .and_then(|label| label.split(RED_SEPARATOR).next())
-            .unwrap_or_default(),
-    )
 }
 
 /// The rank above `rank`, which every rank but the domain has.

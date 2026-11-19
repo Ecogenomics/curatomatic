@@ -21,7 +21,7 @@ bootstrap values or its RED values, and it never creates, renames or deletes a t
 | `min_bs` | The `--min-bs` argument (default `95.0`). A node is *supported* if its bootstrap is `≥ min_bs`. |
 | Original node | The node the taxon is on when the rank's pass starts. |
 | Named taxon | A taxon with a name after its prefix (`g__Escherichia`). A bare prefix (`g__`) is a placeholder, and the rules below that say "named" ignore placeholders. |
-| Prior taxonomy | The taxonomy each genome had in the previous release (metadata). Only used for moving labels down. |
+| Prior taxonomy | The taxonomy of each genome in the `--taxonomy` file. Only used for moving labels down (and by the report). |
 
 ## Order of processing
 
@@ -57,8 +57,9 @@ Using the r226 bac120 medians as an example:
 ## Which taxa are considered
 
 For the rank being refined, every taxon of that rank on every node is considered, **as long as the
-node has both a taxonomy and a bootstrap value**. Nodes without a bootstrap (leaves, and the
-species nodes directly above them) are skipped.
+node has both a taxonomy and a bootstrap value**. Nodes without a bootstrap (leaves, and in old
+style trees the species nodes directly above them) are skipped: a taxon on a leaf is never moved
+up, but a taxon can be moved down onto a leaf.
 
 Each taxon is searched in two directions, up and down. Candidates from both are pooled and the
 best is chosen (see [Choosing the move](#choosing-the-move)).
@@ -102,10 +103,8 @@ descendants, so a conflict below it stops the walk at the next ancestor that is 
 Moving down narrows the taxon to the part of the tree that its genomes actually belong to,
 according to the prior taxonomy.
 
-> **Currently inactive.** Moving down needs a prior taxonomy, and the command line has no option
-> to supply one yet (`Metadata::from_file` reads novel names only). The log warns
-> "No prior taxonomy was given, downward refinement is disabled." The rules below are what runs
-> once a prior taxonomy is given (as the tests do via `Metadata::set_taxonomy`).
+> Moving down needs a prior taxonomy, which is read from `--taxonomy`. Without it the log warns
+> "No prior taxonomy was given, downward refinement is disabled." and nothing is moved down.
 
 ### Rule D1: well supported, deep taxa stay
 
@@ -115,7 +114,7 @@ window (`RED > lower bound`): going lower would only move further from the media
 ### Rule D2: follow the genomes of the taxon
 
 For a node, each child is assigned the set of taxa of this rank that the prior taxonomy gives to
-the genomes under it. Zombie leaves (`D-` prefix) and genomes without a prior taxonomy contribute
+the genomes at or below it (a child may be a leaf itself). Zombie leaves (`D-` prefix) and genomes without a prior taxonomy contribute
 nothing.
 
 - If **more than one** child contains the taxon, moving down would make it polyphyletic, so the
@@ -131,7 +130,7 @@ At each node reached (the RED window is **not** applied on the way down):
 
 | Node | Recorded as a candidate? | Keep descending? |
 | --- | --- | --- |
-| No bootstrap (a leaf, or a species node above one) | Yes | No |
+| No bootstrap (a leaf, or the species node above one in an old style tree) | Yes | No |
 | Supported (`bs ≥ min_bs`) | Yes | Only if its RED delta is not larger than the original node's |
 | Unsupported, but higher bootstrap than the original node | Yes | Yes |
 | Anything else | No | Yes |
@@ -159,11 +158,9 @@ beaten by a supported candidate closer to the median (or equally close with a hi
 
 ## Moves that are rejected
 
-A chosen move fails with an error, stopping the run, if:
-
-- the best node is a **leaf**: a leaf is labelled with its genome ID and cannot hold a taxon; or
-- removing the taxon would leave the original node with **neither a bootstrap nor a taxonomy**, so
-  it would have nothing to be labelled with.
+A chosen move fails with an error, stopping the run, if removing the taxon would leave an internal
+original node with **neither a bootstrap nor a taxonomy**, so it would have nothing to be labelled
+with. A leaf can hold a taxon, and keeps its genome ID when its last taxon is moved away.
 
 Neither node is changed in that case.
 
@@ -171,15 +168,39 @@ Neither node is changed in that case.
 
 These are checked during or after the refinement, and break the run if violated:
 
-- Every taxon is on **exactly one** node (checked whenever the labels are loaded).
-- At the end of the run, the set of taxa on the tree equals the set at the start plus the novel
-  taxa that were created: refinement moves taxa, it never adds or loses them.
+- Every taxon is on **exactly one** node (checked whenever the labels are loaded). The only
+  exception is the sentinel `<rank>__UNRESOLVABLE` (see [Novel taxa](#novel-taxa)).
+- Assigning the taxonomy file to the leaves only adds taxa, it never removes one.
+- At the end of the run, the set of taxa on the tree equals the set after the leaf assignment plus
+  the novel taxa that were created: refinement moves taxa, it never adds or loses them.
 
 ## Input preparation
 
 Before refinement, when the tree is read:
 
-- The parent of every non-zombie leaf must have a RED of exactly `1.0` and no bootstrap, otherwise
-  its label is invalid and the run stops.
-- A species placeholder (`s__`) on that parent is replaced with `s__{unresolved} <gid>`; any other
-  taxa on the node are kept.
+- A leaf is labelled `<gid>[|<taxonomy>][|RED=<red>]`. A leaf without a RED has a RED of `1.0`, and
+  any other leaf RED is invalid. An internal node is labelled
+  `[<bootstrap>][:][<taxonomy>]|RED=<red>`. The RED key may be written `RED=` or `red=`, after a
+  `|`, or after the `:` of a bootstrap with no taxonomy (`100:red=0.889`).
+- If `--taxonomy` is given, every leaf (zombies are skipped) is given the ranks the tree can't hold,
+  before anything else runs (`Tree::assign_leaf_taxonomy`):
+  - The leaf gets every named taxon of its row whose rank is **below** the lowest rank of any taxon
+    on its path to the root. If the lowest is a genus, it gets only its species. If it is a
+    species (an old style tree, with a species node above each leaf), it gets nothing.
+  - A gap above the lowest rank is never filled (e.g. a missing phylum above a class): it is left
+    for the novel taxa.
+  - The taxa already on the tree are never changed, even when the file disagrees.
+  - Placeholders (`g__`) are never assigned. `s__{unresolved} <name>` species are names, and are
+    assigned as read.
+  - A taxon that is already on the tree, or that more than one leaf would get, is not assigned (it
+    would be on more than one node). The run logs a warning with the number skipped.
+  - A leaf whose genome is not in the file is an error. A genome in the file that is not on the
+    tree is a warning.
+
+## Novel taxa
+
+Novel taxa are placed by `fill_in_missing_ranks` after refinement. The leaf itself is a candidate
+node, as is every node above it. A novel taxon without a WGS name is named after the lowest genome
+ID under it whose name is not already a taxon (`g__G963674675`). If every genome ID is taken (e.g.
+the input tree named a taxon after a genome that is not in it), it is the sentinel
+`<rank>__UNRESOLVABLE`, which may be on more than one node, for a curator to name.

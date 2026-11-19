@@ -4,15 +4,22 @@ use crate::genome::GenomeId;
 use crate::newick::{NewickTree, NodeId};
 use crate::red::RedValue;
 use crate::taxonomy::Taxonomy;
-use crate::tree::parse_node_label;
 
-/// Separates the rest of a node label from its RED value.
-const RED_SEPARATOR: &str = "|RED=";
+/// Separates the rest of a node label from its RED value when it is written.
+pub(crate) const RED_SEPARATOR: &str = "|RED=";
+
+/// The spellings of the RED key that are read, which follow a `|` or a `:`.
+const RED_KEYS: [&str; 2] = ["RED=", "red="];
+
+/// Separates the genome ID of a leaf from its taxonomy.
+const LEAF_SEPARATOR: char = '|';
 
 /// The information held in the label of a node.
 ///
-/// A leaf is labelled `<gid>|RED=<red>`. An internal node is labelled
-/// `[<bootstrap>][:][<taxonomy>]|RED=<red>`, with at least one of the bootstrap and taxonomy.
+/// A leaf is labelled `<gid>[|<taxonomy>][|RED=<red>]`, a leaf without a RED has a RED of
+/// [`RedValue::LEAF`]. An internal node is labelled `[<bootstrap>][:][<taxonomy>]|RED=<red>`, with
+/// at least one of the bootstrap and taxonomy. The RED key may also be written `|red=`, or `:red=`
+/// straight after a bootstrap (e.g. `100:red=0.889`).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NodeLabel {
     pub(crate) red: RedValue,
@@ -28,31 +35,15 @@ impl NodeLabel {
             .label(node)
             .ok_or_else(|| invalid(&format!("node {node} has no label")))?;
         if tree.is_leaf(node) {
-            let (prefix, red) = split_red(label)?;
-            if red != RedValue::LEAF {
-                return Err(invalid(label));
-            }
-            return Ok(NodeLabel {
-                red,
-                bootstrap: None,
-                taxonomy: None,
-                gid: Some(GenomeId::new(prefix)),
-            });
+            return parse_leaf_label(label);
         }
 
         // Either the bootstrap, the taxonomy, or both.
         let (red, bootstrap, taxonomy) = parse_node_label(label)?;
-        let taxonomy = taxonomy.unwrap_or_default();
-
-        let taxonomy = if taxonomy.is_empty() {
-            None
-        } else {
-            Some(Taxonomy::from_string(taxonomy)?)
-        };
         Ok(NodeLabel {
             red,
             bootstrap,
-            taxonomy,
+            taxonomy: parse_taxonomy(taxonomy.unwrap_or_default())?,
             gid: None,
         })
     }
@@ -64,12 +55,12 @@ impl NodeLabel {
 
         if let Some(gid) = &self.gid {
             // This is a leaf node.
-            if !tax_string.is_empty() {
-                return Err(invalid(&format!(
-                    "leaf {gid} cannot hold a taxonomy: {tax_string}"
-                )));
+            if tax_string.is_empty() {
+                return Ok(format!("{gid}{RED_SEPARATOR}{red:.3}"));
             }
-            return Ok(format!("{gid}{RED_SEPARATOR}{red:.3}"));
+            return Ok(format!(
+                "{gid}{LEAF_SEPARATOR}{tax_string}{RED_SEPARATOR}{red:.3}"
+            ));
         }
 
         // This is an internal node.
@@ -84,17 +75,102 @@ impl NodeLabel {
     }
 }
 
-/// Split a label into what precedes `|RED=`, and the RED value.
-fn split_red(label: &str) -> CuratomaticResult<(&str, RedValue)> {
-    let mut parts = label.trim().split(RED_SEPARATOR);
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(prefix), Some(red), None) => Ok((prefix, parse_red(red, label)?)),
-        _ => Err(invalid(label)),
+/// Read the label of a leaf: `<gid>[|<taxonomy>][|RED=<red>]`.
+fn parse_leaf_label(label: &str) -> CuratomaticResult<NodeLabel> {
+    let (prefix, red) = split_red(label)?;
+    let red = red.unwrap_or(RedValue::LEAF);
+    if red != RedValue::LEAF {
+        return Err(invalid(label));
+    }
+    let (gid, taxonomy) = prefix.split_once(LEAF_SEPARATOR).unwrap_or((prefix, ""));
+    if gid.is_empty() {
+        return Err(invalid(label));
+    }
+    Ok(NodeLabel {
+        red,
+        bootstrap: None,
+        taxonomy: parse_taxonomy(taxonomy)?,
+        gid: Some(GenomeId::new(gid)),
+    })
+}
+
+/// `None` for an empty taxonomy string.
+fn parse_taxonomy(taxonomy: &str) -> CuratomaticResult<Option<Taxonomy>> {
+    if taxonomy.trim().is_empty() {
+        Ok(None)
+    } else {
+        Taxonomy::from_string(taxonomy).map(Some)
     }
 }
 
-fn parse_red(value: &str, label: &str) -> CuratomaticResult<RedValue> {
-    value.parse().map_err(|_not_a_float| invalid(label))
+/// Parse an internal node label into its RED, bootstrap and taxonomy (if they are set).
+fn parse_node_label(
+    label: &str,
+) -> CuratomaticResult<(RedValue, Option<BootstrapValue>, Option<&str>)> {
+    let float = |value: &str| {
+        value
+            .parse::<BootstrapValue>()
+            .map_err(|_not_a_float| invalid(label))
+    };
+
+    let (prefix, red) = split_red(label)?;
+    let red = red.ok_or_else(|| invalid(label))?;
+
+    // Either the taxonomy, the bootstrap, or the bootstrap and taxonomy.
+    if prefix.contains(':') {
+        let mut parts = prefix.split(':');
+        let (Some(bootstrap), Some(taxon), None) = (parts.next(), parts.next(), parts.next())
+        else {
+            return Err(invalid(label));
+        };
+        Ok((red, Some(float(bootstrap)?), Some(taxon)))
+    } else if let Ok(bootstrap) = float(prefix) {
+        Ok((red, Some(bootstrap), None))
+    } else {
+        Ok((red, None, Some(prefix)))
+    }
+}
+
+/// Split a label into what precedes the RED, and the RED value if there is one.
+///
+/// The RED follows `|RED=` or `|red=`, and the `|` is not part of the prefix. It can also follow
+/// `:RED=` or `:red=`, where the `:` separates a bootstrap from an empty taxonomy, and is kept in
+/// the prefix (`100:red=0.5` gives `100:`). A label with more than one RED is invalid.
+fn split_red(label: &str) -> CuratomaticResult<(&str, Option<RedValue>)> {
+    let label = label.trim();
+    let mut found = RED_KEYS
+        .iter()
+        .flat_map(|key| label.match_indices(key))
+        .map(|(idx, key)| (idx, key.len()));
+    let Some((idx, key_len)) = found.next() else {
+        return Ok((label, None));
+    };
+    if found.next().is_some() {
+        return Err(invalid(label));
+    }
+
+    let (before, rest) = label.split_at_checked(idx).ok_or_else(|| invalid(label))?;
+    let value = rest.get(key_len..).ok_or_else(|| invalid(label))?;
+    let red = value.parse().map_err(|_not_a_float| invalid(label))?;
+    let prefix = if let Some(prefix) = before.strip_suffix('|') {
+        prefix
+    } else if before.ends_with(':') {
+        before
+    } else {
+        return Err(invalid(label));
+    };
+    Ok((prefix, Some(red)))
+}
+
+/// The label without its RED value, e.g. `100:g__A|RED=0.9` gives `100:g__A`, and `100:red=0.9`
+/// gives `100`.
+pub(crate) fn strip_red(label: &str) -> CuratomaticResult<&str> {
+    let (prefix, red) = split_red(label)?;
+    Ok(if red.is_some() {
+        prefix.strip_suffix(':').unwrap_or(prefix)
+    } else {
+        prefix
+    })
 }
 
 fn invalid(label: &str) -> CuratomaticError {

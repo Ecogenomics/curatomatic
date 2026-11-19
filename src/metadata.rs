@@ -111,13 +111,6 @@ impl Metadata {
     }
 
     /// Give `gid` a prior taxonomy, adding a row for it if there is none.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "nothing outside the tests supplies a prior taxonomy until `--taxonomy` is added"
-        )
-    )]
     pub(crate) fn set_taxonomy(&mut self, gid: GenomeId, taxonomy: Taxonomy) {
         self.has_prior_taxonomy = true;
         self.rows

@@ -32,6 +32,14 @@ pub(crate) enum CuratomaticError {
     MissingRed(char),
     /// No node was found that a novel taxon for the rank (identified by its prefix) can be placed on.
     NoCandidateNode { rank: char, gid: GenomeId },
+    /// A line of the taxonomy file (`--taxonomy`) could not be read.
+    TaxonomyFile {
+        path: String,
+        line: usize,
+        message: String,
+    },
+    /// Genomes on the tree that are not in the taxonomy file: how many, and the first of them.
+    MissingFromTaxonomyFile { n: usize, first: GenomeId },
     /// An internal expectation was violated.
     Invariant(String),
 }
@@ -69,6 +77,15 @@ impl fmt::Display for CuratomaticError {
                     "No node can hold a novel {rank}__ taxon for genome: {gid}"
                 )
             }
+            CuratomaticError::TaxonomyFile {
+                path,
+                line,
+                message,
+            } => write!(f, "Invalid taxonomy file {path}, line {line}: {message}"),
+            CuratomaticError::MissingFromTaxonomyFile { n, first } => write!(
+                f,
+                "{n} genome(s) on the tree are not in the taxonomy file, e.g. {first}"
+            ),
             CuratomaticError::Invariant(message) => write!(f, "Internal error: {message}"),
         }
     }

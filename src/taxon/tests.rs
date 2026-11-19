@@ -163,7 +163,7 @@ fn a_gid_name_of_another_rank_does_not_conflict() {
 }
 
 #[test]
-fn when_every_gid_name_is_known_the_lowest_gid_is_duplicated() {
+fn when_every_gid_name_is_known_the_taxon_is_unresolvable() {
     let known_taxa = ["g__G1", "g__G2"];
     let taxon = generate(
         Rank::Genus,
@@ -172,7 +172,22 @@ fn when_every_gid_name_is_known_the_lowest_gid_is_duplicated() {
         &known_taxa,
     )
     .unwrap();
-    assert_eq!(taxon, Taxon::new("g__G1"));
+    assert_eq!(taxon, Taxon::new("g__UNRESOLVABLE"));
+    assert!(taxon.is_unresolvable());
+}
+
+#[test]
+fn only_the_sentinel_is_unresolvable() {
+    for name in [
+        "g__G1",
+        "g__",
+        "s__{unresolved} sp1",
+        "f__UNRESOLVABLE_A",
+        "x__UNRESOLVABLE",
+    ] {
+        assert!(!Taxon::new(name).is_unresolvable(), "{name}");
+    }
+    assert!(Taxon::new("s__UNRESOLVABLE").is_unresolvable());
 }
 
 #[test]

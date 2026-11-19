@@ -11,10 +11,11 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | # | Area | Python (`main`) | Rust (`dev`) | Changes output? |
 | --- | --- | --- | --- | --- |
 | L1 | Refining up | A nested taxon can move up | A nested taxon never moves up | **Yes** |
-| L2 | Refining down | Active when metadata has a `gtdb_taxonomy` column | Never active: no way to supply a prior taxonomy | **Yes**, if a prior taxonomy was given |
-| L3 | Species placeholder | Replaces the **whole** label of the node | Replaces only the `s__` placeholder, keeps other taxa | **Yes**, when the node holds other taxa |
-| L4 | Novel names without WGS | `<rank>__NOVEL-<lowest gid>`, may duplicate an existing taxon | `<rank>__<lowest gid not already used>` | **Yes** |
+| L2 | Refining down | Prior taxonomy from the `gtdb_taxonomy` column of `--meta` | Prior taxonomy from `--taxonomy` | **Yes**, if a prior taxonomy was given |
+| L3 | Species placeholder | Replaces the **whole** label of the node with `s__{unresolved} <gid>` | Not rewritten: species come from `--taxonomy`, onto the leaves | **Yes**, for trees with an `s__` placeholder |
+| L4 | Novel names without WGS | `<rank>__NOVEL-<lowest gid>`, may duplicate an existing taxon | `<rank>__<lowest gid not already used>`, else `<rank>__UNRESOLVABLE` | **Yes** |
 | L5 | Novel domain | Uses the species median as the parent | Error | Stops the run instead of a wrong placement |
+| L6 | Leaf taxa | Leaves can't hold a taxon, the tree needs a species node above each leaf | `--taxonomy` assigns the ranks the tree can't hold to the leaves | **Yes**, a new input |
 
 All other refinement and novel-rank rules are the same; see
 [Unchanged logic](#unchanged-logic).
@@ -35,33 +36,29 @@ of the same rank could climb onto, or past, the node of the outer taxon and take
 Python version did have a nested-rank detector (`Tree.get_nested_ranks`), but only in the old,
 unreachable code path (see [Python code that was not ported](#python-code-that-was-not-ported)).
 
-### L2. Moving down needs a prior taxonomy, which Rust cannot read yet
+### L2. Moving down reads the prior taxonomy from `--taxonomy`
 
 The downward rules themselves are identical (see [Unchanged logic](#unchanged-logic)). What
 changed is where the prior taxonomy comes from.
 
 - **Python** (`Metadata.from_file`, `model/metadata.py`): `--meta` reads the `gtdb_taxonomy`
   column, if present, as each genome's prior taxonomy. That enables downward refinement.
-- **Rust** (`Metadata::from_file`, `src/metadata.rs`): reads only `accession` and the
-  `--novel-name-column`. No genome is given a taxonomy (`has_prior_taxonomy` is `false`), so the
-  downward search always finds nothing. It logs *"No prior taxonomy was given, downward refinement
-  is disabled."* `Metadata::set_taxonomy` exists for tests and a future `--taxonomy` option.
+- **Rust** (`main.rs`, `read_metadata`): the prior taxonomy is the `--taxonomy` file
+  (`src/taxonomy_file.rs`). `--novel-name-file` reads only `accession` and the
+  `--novel-name-column`. Without `--taxonomy` the log warns *"No prior taxonomy was given,
+  downward refinement is disabled."*
 
 The test data's `metadata.tsv` has a `taxonomy` column, not `gtdb_taxonomy`. So downward
 refinement did not run in the Python reference outputs either, and those outputs aren't affected
 by this.
 
-### L3. The species placeholder keeps the other taxa on the node
+### L3. The species placeholder is not rewritten
 
-At load time, a leaf's parent labelled with `s__` gets an unresolved species name.
-
-- **Python** (`Tree.from_file`, `model/tree.py`): sets the parent's label to
-  `s__{unresolved} <gid>|RED=…`. Any other taxon on that node (e.g. `g__X; s__`) is **dropped**.
-- **Rust** (`Tree::from_newick`, `src/tree.rs`): replaces just the `s__` entry, giving
-  `g__X; s__{unresolved} <gid>|RED=…`.
-
-The Python behaviour loses taxa. The end-of-run check (`tree_taxa_after - new == tree_taxa_before`)
-doesn't catch it, because `tree_taxa_before` is taken *after* the placeholder rewrite.
+- **Python** (`Tree.from_file`, `model/tree.py`): a leaf's parent labelled with `s__` has its
+  whole label set to `s__{unresolved} <gid>|RED=…`. Any other taxon on that node (e.g. `g__X; s__`)
+  is **dropped**.
+- **Rust**: the tree is read as is. No input tree has a species placeholder any more: the species
+  of each genome comes from `--taxonomy`, and is put on the leaf (see L6).
 
 ### L4. Naming novel taxa without a WGS prefix
 
@@ -71,7 +68,7 @@ doesn't catch it, because `tree_taxa_before` is taken *after* the placeholder re
 | --- | --- | --- |
 | A WGS prefix is available | Most readable, then alphabetical, excluding known taxa | Same |
 | No WGS prefix | `<rank>__NOVEL-<lowest gid>` | `<rank>__<gid>`: the lowest genome ID whose name isn't already a known taxon |
-| Every genome ID already taken | (not checked; may duplicate) | `<rank>__<lowest gid>`, duplicating the existing one |
+| Every genome ID already taken | (not checked; may duplicate) | `<rank>__UNRESOLVABLE`, the only taxon that may be on more than one node |
 
 The `NOVEL-` prefix was removed in commit `598ac97` ("remove __NOVEL"). Python doesn't check the
 fallback name against the known taxa. If two novel taxa of the same rank have the same lowest
@@ -84,6 +81,16 @@ genome, they get the same name.
   so the RED threshold is wrong.
 - **Rust** (`fill_in_missing_ranks`, `src/tree.rs`): `parent_rank` returns `NoParentRank` for the
   domain, which stops the run. Refining the domain is also an error, but it's never attempted.
+
+### L6. The ranks the tree can't hold are put on the leaves
+
+- **Python**: a leaf is labelled with its genome ID only. The species (and any rank below the
+  lowest one decorated above a genome) had to be on a dummy species node above each leaf.
+- **Rust** (`Tree::assign_leaf_taxonomy`, `src/tree.rs`): a leaf can hold a taxonomy
+  (`<gid>|<taxonomy>|RED=<red>`). `--taxonomy` gives each leaf the ranks below the lowest rank on
+  its path, before refinement (see [refinement.md](refinement.md#input-preparation)). Taxa can be
+  moved down onto a leaf, and novel taxa placed on one. The curated taxonomy of every genome is
+  written to `<stem>.curatomatic.taxonomy.tsv`.
 
 ## Failures that are now reported errors
 

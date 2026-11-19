@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::*;
 
 fn tree(newick: &str) -> CuratomaticResult<Tree> {
@@ -19,29 +21,13 @@ fn red_dict() -> Red {
 }
 
 /// Post-order: G1 (0), D-G1 (1), their species node (2), G2 (3), its species node (4), root (5).
-const TWO_GENOMES: &str = "((G1|RED=1.000:0.1,D-G1|RED=1.000:0.1)'g__A; s__|RED=1.000':0.1,\
+const TWO_GENOMES: &str = "((G1|RED=1.000:0.1,D-G1|RED=1.000:0.1)'g__A; s__A one|RED=1.000':0.1,\
      (G2|RED=1.000:0.1)'s__B b|RED=1.000':0.1)'90.0:f__F|RED=0.700';";
 
 #[test]
-fn a_species_placeholder_is_replaced_and_the_other_taxa_are_kept() {
+fn reading_a_tree_does_not_rewrite_its_labels() {
     let tree = tree(TWO_GENOMES).unwrap();
-    assert_eq!(label(&tree, 2), "g__A; s__{unresolved} G1|RED=1.000");
-    assert!(tree.taxon_labels.contains(&Taxon::new("g__A")));
-    assert!(
-        tree.taxon_labels
-            .contains(&Taxon::new("s__{unresolved} G1"))
-    );
-}
-
-#[test]
-fn a_species_placeholder_on_its_own_is_replaced() {
-    let tree = tree("((G1|RED=1.000:0.1)'s__|RED=1.000':0.1)'90.0:g__A|RED=0.900';").unwrap();
-    assert_eq!(label(&tree, 1), "s__{unresolved} G1|RED=1.000");
-}
-
-#[test]
-fn a_label_without_a_species_placeholder_is_not_rewritten() {
-    let tree = tree(TWO_GENOMES).unwrap();
+    assert_eq!(label(&tree, 2), "g__A; s__A one|RED=1.000");
     assert_eq!(label(&tree, 4), "s__B b|RED=1.000");
     assert_eq!(label(&tree, 5), "90.0:f__F|RED=0.700");
 }
@@ -73,20 +59,22 @@ fn transfer_taxon_keeps_a_node_without_a_bootstrap_that_has_another_taxon() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let (root, species) = (node(&tree, 5), node(&tree, 2));
     transfer_taxon(&mut tree.newick, species, root, &Taxon::new("g__A")).unwrap();
-    assert_eq!(label(&tree, 2), "s__{unresolved} G1|RED=1.000");
+    assert_eq!(label(&tree, 2), "s__A one|RED=1.000");
     assert_eq!(label(&tree, 5), "90.0:f__F; g__A|RED=0.700");
 }
 
 #[test]
-fn transfer_taxon_does_not_move_a_taxon_to_a_leaf() {
+fn transfer_taxon_moves_a_taxon_to_and_from_a_leaf() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let (root, leaf) = (node(&tree, 5), node(&tree, 3));
-    assert!(matches!(
-        transfer_taxon(&mut tree.newick, root, leaf, &Taxon::new("f__F")),
-        Err(CuratomaticError::Invariant(_))
-    ));
-    assert_eq!(label(&tree, 5), "90.0:f__F|RED=0.700");
+    transfer_taxon(&mut tree.newick, root, leaf, &Taxon::new("f__F")).unwrap();
+    assert_eq!(label(&tree, 5), "90.0|RED=0.700");
+    assert_eq!(label(&tree, 3), "G2|f__F|RED=1.000");
+
+    // A leaf keeps its genome ID, so its last taxon can be moved away.
+    transfer_taxon(&mut tree.newick, leaf, root, &Taxon::new("f__F")).unwrap();
     assert_eq!(label(&tree, 3), "G2|RED=1.000");
+    assert_eq!(label(&tree, 5), "90.0:f__F|RED=0.700");
 }
 
 #[test]
@@ -206,4 +194,263 @@ fn nested_inside_finds_the_closest_named_ancestor_of_the_same_rank() {
         Some(&Taxon::new("g__A"))
     );
     assert_eq!(tree.nested_inside(b, Rank::Family, &family), None);
+}
+
+// ---- The taxonomy file (`--taxonomy`) ----
+
+fn taxonomy_file(contents: &str) -> TaxonomyFile {
+    TaxonomyFile::from_reader(contents.as_bytes(), Path::new("taxonomy.tsv")).unwrap()
+}
+
+/// A tree in the r237 format: leaves without a RED, and `|red=`. Post-order: G1 (0), G2 (1),
+/// `g__A` (2), G3 (3), `f__F` (4), G4 (5), D-G4 (6), `c__C` (7), root (8).
+const NEW_STYLE: &str = "(((G1:0.1,G2:0.1)'100:g__A|red=0.95':0.1,G3:0.1)'100:f__F|red=0.70':0.1,\
+     (G4:0.1,D-G4:0.1)'100:c__C|red=0.40':0.1)'d__D|red=0.0000';";
+
+/// The taxonomy file for [`NEW_STYLE`], where the file disagrees with the tree for G1's genus,
+/// G3's genus is a placeholder, and G4 has a phylum that the tree doesn't.
+const NEW_STYLE_TAXONOMY: &str = "\
+G1\td__D;p__P;c__C;o__O;f__F;g__Other;s__A one
+G2\td__D;p__P;c__C;o__O;f__F;g__A;s__{unresolved} sp2
+G3\td__D;p__P;c__C;o__O;f__F;g__;s__B three
+G4\td__D;p__Q;c__C;o__O2;f__F2;g__G;s__G four
+G9\td__D;p__P;c__C;o__O;f__F;g__A;s__A nine
+";
+
+fn assigned(newick: &str, taxonomy: &str) -> (Tree, LeafAssignment) {
+    let mut tree = tree(newick).unwrap();
+    let assignment = tree.assign_leaf_taxonomy(&taxonomy_file(taxonomy)).unwrap();
+    (tree, assignment)
+}
+
+#[test]
+fn a_leaf_gets_the_ranks_below_the_lowest_rank_on_its_path() {
+    let (tree, assignment) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    // The lowest rank above G1 and G2 is the genus: only the species is assigned.
+    assert_eq!(label(&tree, 0), "G1|s__A one|RED=1.000");
+    // The lowest rank above G4 is the class: the order down to the species.
+    assert_eq!(
+        label(&tree, 5),
+        "G4|o__O2; f__F2; g__G; s__G four|RED=1.000"
+    );
+    assert_eq!(assignment.n_leaves, 4);
+    assert_eq!(
+        assignment.n_taxa,
+        BTreeMap::from([
+            (Rank::Order, 1),
+            (Rank::Family, 1),
+            (Rank::Genus, 1),
+            (Rank::Species, 4)
+        ])
+    );
+    assert!(assignment.skipped.is_empty());
+}
+
+#[test]
+fn the_taxa_on_the_tree_are_never_changed_by_the_taxonomy_file() {
+    let before = tree(NEW_STYLE).unwrap();
+    let (after, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    // G1 is in `g__Other` in the file, the tree's `g__A` wins.
+    assert!(!after.taxon_labels.contains(&Taxon::new("g__Other")));
+    for index in [2, 4, 7, 8] {
+        assert_eq!(label(&after, index), label(&before, index));
+    }
+    assert!(after.taxon_labels.is_superset(&before.taxon_labels));
+}
+
+#[test]
+fn a_placeholder_in_the_taxonomy_file_is_never_assigned() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    // G3's genus is `g__` in the file.
+    assert_eq!(label(&tree, 3), "G3|s__B three|RED=1.000");
+}
+
+#[test]
+fn a_gap_above_the_lowest_rank_is_not_filled() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    // G4 has no phylum on its path, but its class is the lowest rank, so `p__Q` is not assigned.
+    assert!(!tree.taxon_labels.contains(&Taxon::new("p__Q")));
+    let missing = tree.get_leaf_nodes_missing_rank().unwrap();
+    assert_eq!(
+        missing.get(&node(&tree, 5)),
+        Some(&BTreeSet::from([Rank::Phylum]))
+    );
+}
+
+#[test]
+fn an_unresolved_species_reaches_the_leaf_unchanged() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    assert_eq!(label(&tree, 1), "G2|s__{unresolved} sp2|RED=1.000");
+    let taxonomies = tree.leaf_taxonomies().unwrap();
+    assert_eq!(
+        taxonomies[1].1.last(),
+        Some(&Taxon::new("s__{unresolved} sp2"))
+    );
+}
+
+#[test]
+fn zombies_get_nothing_from_the_taxonomy_file() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    assert_eq!(label(&tree, 6), "D-G4");
+}
+
+#[test]
+fn an_old_style_tree_gets_nothing_from_the_taxonomy_file() {
+    let taxonomy = "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A other\n\
+                    G2\td__D;p__P;c__C;o__O;f__F;g__B;s__B other\n";
+    let (tree, assignment) = assigned(TWO_GENOMES, taxonomy);
+    assert_eq!(assignment, LeafAssignment::default());
+    assert_eq!(label(&tree, 0), "G1|RED=1.000");
+    assert_eq!(label(&tree, 3), "G2|RED=1.000");
+}
+
+#[test]
+fn a_leaf_missing_from_the_taxonomy_file_is_an_error() {
+    let mut tree = tree(NEW_STYLE).unwrap();
+    let file = taxonomy_file("G1\td__D;s__A one\n");
+    assert_eq!(
+        tree.assign_leaf_taxonomy(&file),
+        Err(CuratomaticError::MissingFromTaxonomyFile {
+            n: 1,
+            first: GenomeId::new("G2")
+        })
+    );
+}
+
+#[test]
+fn a_taxon_already_on_the_tree_or_wanted_by_two_leaves_is_skipped() {
+    // G3 and G4 both want `g__G`, and G4 wants `f__F`, which is already on the tree.
+    let taxonomy = "\
+G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one
+G2\td__D;p__P;c__C;o__O;f__F;g__A;s__A two
+G3\td__D;p__P;c__C;o__O;f__F;g__G;s__G three
+G4\td__D;p__P;c__C;o__O2;f__F;g__G;s__G four
+";
+    let (tree, assignment) = assigned(NEW_STYLE, taxonomy);
+    assert_eq!(
+        assignment.skipped,
+        BTreeSet::from([Taxon::new("f__F"), Taxon::new("g__G")])
+    );
+    assert_eq!(label(&tree, 3), "G3|s__G three|RED=1.000");
+    assert_eq!(label(&tree, 5), "G4|o__O2; s__G four|RED=1.000");
+}
+
+#[test]
+fn leaf_taxonomies_read_the_ranks_in_order_from_the_leaf_and_its_ancestors() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    let taxonomies = tree.leaf_taxonomies().unwrap();
+    let rows: Vec<(&str, String)> = taxonomies
+        .iter()
+        .map(|(gid, taxa)| {
+            let taxa: Vec<&str> = taxa.iter().map(Taxon::as_str).collect();
+            (gid.as_str(), taxa.join(";"))
+        })
+        .collect();
+    // Zombies are skipped, and a rank that no node holds is a placeholder.
+    assert_eq!(
+        rows,
+        vec![
+            ("G1", "d__D;p__;c__;o__;f__F;g__A;s__A one".to_owned()),
+            (
+                "G2",
+                "d__D;p__;c__;o__;f__F;g__A;s__{unresolved} sp2".to_owned()
+            ),
+            ("G3", "d__D;p__;c__;o__;f__F;g__;s__B three".to_owned()),
+            ("G4", "d__D;p__;c__C;o__O2;f__F2;g__G;s__G four".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn leaf_taxonomies_use_the_nearest_of_two_nested_taxa() {
+    let tree = tree(
+        "((('G1|s__A one':0.1,'G2|s__A two':0.1)'100:g__Inner|red=0.95':0.1,\
+         'G3|s__B three':0.1)'100:g__Outer|red=0.9':0.1)'d__D; g__|red=0.0';",
+    )
+    .unwrap();
+    let taxonomies = tree.leaf_taxonomies().unwrap();
+    let genus = |idx: usize| taxonomies[idx].1[5].as_str();
+    assert_eq!(genus(0), "g__Inner");
+    assert_eq!(genus(2), "g__Outer");
+}
+
+#[test]
+fn a_genus_is_moved_down_onto_a_leaf() {
+    // `g__A` (bootstrap 50) is on a node above G1 and G2, but only G1 is in it.
+    let mut tree =
+        tree("((G1:0.1,G2:0.1)'50:g__A|red=0.95':0.1,G3:0.1)'100:f__F|red=0.70';").unwrap();
+    let mut metadata = Metadata::default();
+    for (gid, taxonomy) in [
+        ("G1", "f__F;g__A"),
+        ("G2", "f__F;g__B"),
+        ("G3", "f__F;g__C"),
+    ] {
+        metadata.set_taxonomy(GenomeId::new(gid), Taxonomy::from_string(taxonomy).unwrap());
+    }
+    let min_bs = BootstrapValue::new(95.0);
+    let refinement = tree
+        .refine_existing_labels(Rank::Genus, min_bs, &red_dict(), &metadata)
+        .unwrap();
+    let moves = tree
+        .process_refinement(&refinement, Rank::Genus, min_bs, &red_dict())
+        .unwrap();
+    tree.reload().unwrap();
+    assert_eq!(moves.len(), 1);
+    assert_eq!(label(&tree, 0), "G1|g__A|RED=1.000");
+    assert_eq!(label(&tree, 2), "50.0|RED=0.950");
+}
+
+#[test]
+fn a_novel_taxon_can_be_placed_on_a_leaf() {
+    // Neither node above G1 is supported, so the novel genus can only go on the leaf.
+    let mut tree = tree(
+        "(((G1:0.1,G2:0.1)'50:red=0.97':0.1,G3:0.1)'50:f__F|red=0.70':0.1,\
+         (G4:0.1)'100:f__X;g__X|red=0.5')'d__D;p__P;c__C;o__O|red=0.0';",
+    )
+    .unwrap();
+    let file = taxonomy_file(
+        "G1\td__D;s__A one\nG2\td__D;s__A two\nG3\td__D;s__B three\nG4\td__D;s__X four\n",
+    );
+    tree.assign_leaf_taxonomy(&file).unwrap();
+    let missing = tree.get_leaf_nodes_missing_rank().unwrap();
+    let known = tree.taxon_labels.clone();
+    let novel = fill_in_missing_ranks(
+        &mut tree,
+        &missing,
+        BootstrapValue::new(95.0),
+        &red_dict(),
+        &Metadata::default(),
+        known,
+    )
+    .unwrap();
+    assert_eq!(
+        novel,
+        BTreeSet::from([
+            Taxon::new("g__G1"),
+            Taxon::new("g__G2"),
+            Taxon::new("g__G3")
+        ])
+    );
+    assert_eq!(label(&tree, 0), "G1|g__G1; s__A one|RED=1.000");
+}
+
+#[test]
+fn an_unresolvable_taxon_may_be_on_more_than_one_node() {
+    let tree = tree(
+        "(('G1|g__UNRESOLVABLE; s__A one':0.1,'G2|g__UNRESOLVABLE; s__A two':0.1)\
+         '100:f__F|red=0.7')'d__D|red=0.0';",
+    )
+    .unwrap();
+    assert!(
+        tree.taxon_labels
+            .contains(&Taxon::unresolvable(Rank::Genus))
+    );
+}
+
+#[test]
+fn any_other_taxon_on_more_than_one_node_is_an_error() {
+    assert!(matches!(
+        tree("(('G1|g__X':0.1,'G2|g__X':0.1)'100:f__F|red=0.7')'d__D|red=0.0';"),
+        Err(CuratomaticError::NonUniqueTaxon(_))
+    ));
 }

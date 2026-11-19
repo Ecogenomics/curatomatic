@@ -33,6 +33,7 @@ The following options are available:
 
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level (default = info).
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
+- `--taxonomy PATH` = The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, and is the prior taxonomy for downward refinement.
 - `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
 - `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.
 - `-h, --help` = Print the help.
@@ -55,6 +56,25 @@ Genus	0.9068450718741943
 - The domain is always `0.0` and the species always `1.0`. They need no row; a row for either must have that value.
 - A missing column, a median that is not a number, an unknown rank, or a rank given twice is an error.
 
+### Taxonomy file (`--taxonomy`)
+
+A tab separated file with no header and two columns, the genome ID and its taxonomy string, e.g. the
+`decorate_classifications.tsv` of gDecorate (see `example/gtdb_r237_decorated_taxonomy.tsv`):
+
+```
+G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobacterales;f__Enterobacteriaceae;g__Escherichia;s__Escherichia coli
+```
+
+- Genome IDs are matched to the tree the same way as the novel name file (`GB_GCA_003697165.1` is `G003697165`).
+- Each leaf is given the taxa of its row whose rank is below the lowest rank on its path in the tree, e.g. only its
+  species when its genus is on the tree. The taxa already on the tree are never changed, and a gap higher up (e.g. a
+  missing phylum above a class) is left for curatomatic to create a novel taxon.
+- A placeholder (e.g. `g__`) is not a name, and is never assigned. A species such as `s__{unresolved} sp053939565` is
+  a name, and is kept exactly as read.
+- A taxon that is already on the tree, or that more than one leaf would get, is not assigned (a warning is logged).
+- A genome on the tree that is not in the file is an error. A genome in the file that is not on the tree is a warning.
+- A line without two columns, an invalid taxonomy, or a genome given twice is an error.
+
 ### Novel name file (`--novel-name-file`)
 
 A tab separated file with a header, giving the name (e.g. the NCBI WGS prefix) used for each genome when a novel
@@ -70,9 +90,17 @@ GB_GCA_123456789.1	FOO
   other column is ignored.
 - A value of `none`, `n/a`, `null` or empty (after trimming, in any case) means the genome has no name.
 - A missing `accession` or name column, or a row too short to hold either, is an error.
-- Genomes without a name are given novel taxa named after their genome ID.
+- Genomes without a name are given novel taxa named after their genome ID. If that name is already taken, the novel
+  taxon is `<rank>__UNRESOLVABLE` (e.g. `g__UNRESOLVABLE`), for a curator to name.
 
 ### Example
+
+```shell
+./target/release/curatomatic --min-bs 95.0 \
+    --taxonomy example/gtdb_r237_decorated_taxonomy.tsv \
+    --novel-name-file test_data/r237/gtdb_r237_bac120_metadata.tsv --novel-name-column ncbi_wgs_formatted \
+    example/gtdb_r237_median_red_marked.nwk example/gtdb_r237_median_red_rank_distribution.tsv /tmp/output
+```
 
 ```shell
 ./target/release/curatomatic --min-bs 95.0 \
@@ -84,7 +112,9 @@ GB_GCA_123456789.1	FOO
 
 The following files are written to `OUT_DIR`:
 
-- `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`).
+- `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`). A leaf that holds taxa is labelled `<gid>|<taxonomy>`.
+- `<tree stem>.curatomatic.report.tsv` = The taxa that curatomatic changed or flagged, for review.
+- `<tree stem>.curatomatic.taxonomy.tsv` = The curated taxonomy of each genome, in the format of the [taxonomy file](#taxonomy-file---taxonomy), one row per genome in tree order (zombies are skipped). Each rank is the taxon nearest the leaf on its path in the curated tree.
 - `curatomatic.log` = The log of the run.
 
 ## Testing

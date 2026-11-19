@@ -127,3 +127,78 @@ fn the_novel_name_file_requires_a_column_and_the_column_requires_a_file() {
 fn meta_is_no_longer_an_option() {
     assert!(parse_cli(&["--meta", "meta.tsv"]).is_err());
 }
+
+#[test]
+fn the_taxonomy_file_is_optional() {
+    let cli = parse_cli(&["--taxonomy", "taxonomy.tsv"]).unwrap();
+    assert_eq!(cli.taxonomy, Some(PathBuf::from("taxonomy.tsv")));
+    assert_eq!(parse_cli(&[]).unwrap().taxonomy, None);
+}
+
+/// Run `curate` on a small r237 style tree in a new directory, and return the output directory.
+fn run_curate(name: &str, taxonomy: &str) -> (PathBuf, CuratomaticResult<()>) {
+    let dir = std::env::temp_dir().join(format!("curatomatic-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tree = dir.join("tree.nwk");
+    std::fs::write(
+        &tree,
+        "((G1:0.1,G2:0.1)'100:g__A|red=0.95':0.1,G3:0.1)\
+         'd__D;p__P;c__C;o__O;f__F|red=0.0000';\n",
+    )
+    .unwrap();
+    let red = dir.join("red.tsv");
+    std::fs::write(
+        &red,
+        "rank\tmedian\nPhylum\t0.3\nClass\t0.4\nOrder\t0.5\nFamily\t0.7\nGenus\t0.9\n",
+    )
+    .unwrap();
+    let path_taxonomy = dir.join("taxonomy.tsv");
+    std::fs::write(&path_taxonomy, taxonomy).unwrap();
+    let out_dir = dir.join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+
+    let cli = Cli::try_parse_from([
+        "curatomatic".as_ref(),
+        tree.as_os_str(),
+        red.as_os_str(),
+        out_dir.as_os_str(),
+        "--taxonomy".as_ref(),
+        path_taxonomy.as_os_str(),
+    ])
+    .unwrap();
+    let result = curate(&cli);
+    (out_dir, result)
+}
+
+#[test]
+fn curate_writes_one_seven_rank_row_per_genome_from_the_final_tree() {
+    let (out_dir, result) = run_curate(
+        "writes",
+        "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;s__{unresolved} sp2\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n\
+         G9\td__D;p__P;c__C;o__O;f__F;g__B;s__B nine\n",
+    );
+    result.unwrap();
+    let taxonomy = std::fs::read_to_string(out_dir.join("tree.curatomatic.taxonomy.tsv")).unwrap();
+    assert_eq!(
+        taxonomy,
+        "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;s__{unresolved} sp2\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n"
+    );
+    let tree = std::fs::read_to_string(out_dir.join("tree.curatomatic.tree")).unwrap();
+    assert!(tree.contains("'G2|s__{unresolved} sp2'"), "{tree}");
+}
+
+#[test]
+fn curate_fails_when_a_tree_genome_is_not_in_the_taxonomy_file() {
+    let (_, result) = run_curate("missing", "G1\td__D;s__A one\n");
+    assert_eq!(
+        result,
+        Err(CuratomaticError::MissingFromTaxonomyFile {
+            n: 2,
+            first: GenomeId::new("G2")
+        })
+    );
+}
