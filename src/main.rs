@@ -1,4 +1,5 @@
 mod bootstrap;
+mod cli;
 mod error;
 mod genome;
 mod log;
@@ -15,7 +16,7 @@ mod tree;
 
 use std::collections::BTreeSet;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use ::log::{Level, debug, error, info, log, warn};
@@ -23,59 +24,16 @@ use clap::Parser;
 use strum::IntoEnumIterator;
 use thousands::Separable;
 
-use crate::bootstrap::BootstrapValue;
+use crate::cli::Cli;
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::log::LogLevel;
-use crate::metadata::{COL_ACCESSION, Metadata};
+use crate::metadata::Metadata;
 use crate::rank::Rank;
 use crate::red::Red;
 use crate::report::{ReportInput, build_report, write_report};
 use crate::taxon::Taxon;
 use crate::taxonomy_file::TaxonomyFile;
 use crate::tree::{Tree, fill_in_missing_ranks};
-
-/// Semi-automatic curation of decorated phylogenetic trees.
-#[derive(Debug, Parser)]
-#[command(version, about)]
-struct Cli {
-    /// Path to the RED decorated and scaled tree.
-    tree: PathBuf,
-
-    /// Path to the median RED of each rank: a TSV with `rank` and `median` columns
-    /// (e.g. `median_red_rank_distribution.tsv`).
-    #[arg(value_name = "MEDIAN_RED")]
-    red_dict: PathBuf,
-
-    /// Output directory to write to.
-    out_dir: PathBuf,
-
-    /// Output logging messages equal, or above this level.
-    #[arg(long, value_enum, default_value_t = LogLevel::Info)]
-    log: LogLevel,
-
-    /// Minimum bootstrap value to consider for decoration.
-    #[arg(long, default_value_t = BootstrapValue::new(95.0))]
-    min_bs: BootstrapValue,
-
-    /// Tab separated file with no header giving the taxonomy of each genome (e.g. the
-    /// `decorate_classifications.tsv` of gDecorate). It names the ranks the tree can't hold, and
-    /// is the prior taxonomy for downward refinement.
-    #[arg(long, value_name = "PATH")]
-    taxonomy: Option<PathBuf>,
-
-    /// Tab separated file with a header (e.g. the GTDB metadata file) giving the name used for
-    /// novel taxa of each genome, in the `--novel-accession` and `--novel-name-column` columns.
-    #[arg(long, value_name = "PATH", requires = "novel_name_column")]
-    novel_name_file: Option<PathBuf>,
-
-    /// Column of `--novel-name-file` holding the genome IDs (e.g. `db_name`).
-    #[arg(long, value_name = "NAME", default_value = COL_ACCESSION, requires = "novel_name_file")]
-    novel_accession: String,
-
-    /// Column of `--novel-name-file` holding the names (e.g. `ncbi_wgs_formatted`).
-    #[arg(long, value_name = "NAME", requires = "novel_name_file")]
-    novel_name_column: Option<String>,
-}
 
 fn run(cli: &Cli) -> io::Result<ExitCode> {
     if cli.log != LogLevel::Debug && cli.out_dir.exists() {
