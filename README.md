@@ -4,6 +4,15 @@ Semi-automated curation of GTDB reference trees for new releases.
 
 _This tool was developed for internal use, it is not supported for public use._
 
+
+## To add later:
+- The taxonomy file comes from gDecorate (this is the `decorate_classifications.tsv` file`)
+- The tree comes from gDecorate and must have RED annotations (this is the `decorated.red.tree` file)
+- The metadata file is the GTDB metadata file and must have the `ncbi_wgs_formatted` column (configurable) to do novel taxon creation.
+- The red distribution comes from gDecorate from the median red rank distribution
+
+
+
 See [docs/refinement.md](docs/refinement.md) for the rules curatomatic follows when refining the taxa on the tree.
 
 ## Building

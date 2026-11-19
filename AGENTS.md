@@ -63,7 +63,7 @@ After finishing a task, commit the changes using semantic commit messages. Never
 
 Test data are available here:
 
-- `example/gtdb_r237_final_taxonomy.tsv` = taxonomy file
+- `example/gtdb_r237_decorated_taxonomy.tsv` = taxonomy file
 - `example/gtdb_r237_median_red_marked.nwk` = tree file
 - `example/gtdb_r237_bac120_metadata_slim.tsv` = novel rank creation candidate file
 - `example/gtdb_r237_median_red_rank_distribution.tsv` = red distribution per-rank file
