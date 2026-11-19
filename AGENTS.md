@@ -3,7 +3,7 @@
 
 ## About
 Curatomatic was originally written as a Python library to perform pre-curation of a domain-specific prokaryotic phylogenetic tree.
-The logic of the program follows several cases that have been identified as manual steps that curators of the tree perform. The aim is to remove as much manual work as possisble.
+The logic of the program follows several cases that have been identified as manual steps that curators of the tree perform. The aim is to remove as much manual work as possible.
 
 The goal of this project is to re-write this project using the Rust framework to ensure type safety and improve performance for large trees. 
 The tree uses information based on Relative Evolutionary Divergence (RED) and a pre-decoration of the tree using a different software package.
@@ -18,8 +18,7 @@ Each domain (ar53 - archaea, bac120 - bacteria) has been run three times using d
 
 You are to compare the output of the Rust program to ensure that the decorated trees remain the same. The structure of the tree should always remain the same, bootstrap values should never change, the only changes to the final tree are the labels at each node (which form the taxonomy).
 
-Ensure that there is 1:1 parity for each of the input/output data using the curomatic output as a source of truth.
-
+Ensure that there is 1:1 parity for each of the input/output data using the curatomatic output as a source of truth.
 
 ## Rules
 - Tests live in a separate file, never inline: declare `#[cfg(test)] mod tests;` in `foo.rs` and put the tests in `foo/tests.rs` (see `src/taxonomy.rs`).
