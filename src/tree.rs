@@ -55,7 +55,7 @@ pub(crate) struct Move {
 /// A RED decorated tree: leaf nodes are labelled `<gid>|RED=<red>`, and internal nodes
 /// `[<bootstrap>][:][<taxonomy>]|RED=<red>`.
 pub(crate) struct Tree {
-    tree: NewickTree,
+    newick: NewickTree,
     /// The label of every node, indexed by node. Call [`Tree::reload`] after changing the tree.
     node_labels: Vec<NodeLabel>,
     /// The genome ID of every leaf node that is not a zombie.
@@ -70,7 +70,7 @@ impl Tree {
         let gids = Self::get_gids(&tree, &node_labels);
         let taxon_labels = Self::get_taxon_labels(&node_labels)?;
         Ok(Tree {
-            tree,
+            newick: tree,
             node_labels,
             gids,
             taxon_labels,
@@ -79,7 +79,7 @@ impl Tree {
 
     /// Recalculate everything that is derived from the labels of the nodes.
     pub(crate) fn reload(&mut self) -> CuratomaticResult<()> {
-        self.node_labels = Self::get_node_labels(&self.tree)?;
+        self.node_labels = Self::get_node_labels(&self.newick)?;
         self.taxon_labels = Self::get_taxon_labels(&self.node_labels)?;
         Ok(())
     }
@@ -101,7 +101,10 @@ impl Tree {
     /// Every taxon on the tree, which must be on one node only.
     fn get_taxon_labels(node_labels: &[NodeLabel]) -> CuratomaticResult<BTreeSet<Taxon>> {
         let mut out = BTreeSet::new();
-        for taxonomy in node_labels.iter().filter_map(|label| label.taxonomy.as_ref()) {
+        for taxonomy in node_labels
+            .iter()
+            .filter_map(|label| label.taxonomy.as_ref())
+        {
             for taxon in taxonomy.iter_ranks() {
                 if !out.insert(taxon.clone()) {
                     return Err(CuratomaticError::NonUniqueTaxon(taxon.to_string()));
@@ -119,16 +122,20 @@ impl Tree {
 
     /// The underlying Newick tree.
     pub(crate) fn newick(&self) -> &NewickTree {
-        &self.tree
+        &self.newick
     }
 
     /// The node that holds each taxon. Call [`Tree::reload`] first if the tree was changed.
     pub(crate) fn taxon_nodes(&self) -> BTreeMap<Taxon, NodeId> {
-        self.tree
+        self.newick
             .ids()
             .zip(&self.node_labels)
             .filter_map(|(node, label)| Some((node, label.taxonomy.as_ref()?)))
-            .flat_map(|(node, taxonomy)| taxonomy.iter_ranks().map(move |taxon| (taxon.clone(), node)))
+            .flat_map(|(node, taxonomy)| {
+                taxonomy
+                    .iter_ranks()
+                    .map(move |taxon| (taxon.clone(), node))
+            })
             .collect()
     }
 
@@ -163,12 +170,22 @@ impl Tree {
                 return Err(CuratomaticError::InvalidNodeLabel(parent_label.to_owned()));
             }
 
-            let taxa: Vec<&str> = taxon.unwrap_or_default().split(';').map(str::trim).collect();
+            let taxa: Vec<&str> = taxon
+                .unwrap_or_default()
+                .split(';')
+                .map(str::trim)
+                .collect();
             if taxa.contains(&SPECIES_PLACEHOLDER) {
                 let unresolved = format!("{SPECIES_PLACEHOLDER}{{unresolved}} {gid}");
                 let taxa = taxa
                     .into_iter()
-                    .map(|taxon| if taxon == SPECIES_PLACEHOLDER { unresolved.as_str() } else { taxon })
+                    .map(|taxon| {
+                        if taxon == SPECIES_PLACEHOLDER {
+                            unresolved.as_str()
+                        } else {
+                            taxon
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join("; ");
                 tree.set_label(parent, format!("{taxa}{RED_SEPARATOR}{red:.3}"));
@@ -180,20 +197,20 @@ impl Tree {
 
     /// Write the tree to a Newick file.
     pub(crate) fn to_file(&self, path: &Path) -> CuratomaticResult<()> {
-        self.tree.to_file(path)
+        self.newick.to_file(path)
     }
 
     /// The number of leaf nodes that are not zombies, and the number that are.
-    pub(crate) fn n_nodes_and_zombies(&self) -> CuratomaticResult<(usize, usize)> {
+    pub(crate) fn n_nodes_and_zombies(&self) -> (usize, usize) {
         let (mut n_nodes, mut n_zombies) = (0_usize, 0_usize);
-        for leaf in self.tree.leaves() {
-            if leaf_gid(&self.tree, leaf).is_zombie() {
+        for leaf in self.newick.leaves() {
+            if leaf_gid(&self.newick, leaf).is_zombie() {
                 n_zombies = n_zombies.saturating_add(1);
             } else {
                 n_nodes = n_nodes.saturating_add(1);
             }
         }
-        Ok((n_nodes, n_zombies))
+        (n_nodes, n_zombies)
     }
 
     /// The leaf nodes that are missing one or more ranks, and the ranks that they are missing.
@@ -202,16 +219,16 @@ impl Tree {
     pub(crate) fn get_leaf_nodes_missing_rank(&self) -> CuratomaticResult<MissingRanks> {
         let mut out = MissingRanks::new();
 
-        for leaf in self.tree.leaves() {
-            if leaf_gid(&self.tree, leaf).is_zombie() {
+        for leaf in self.newick.leaves() {
+            if leaf_gid(&self.newick, leaf).is_zombie() {
                 continue;
             }
 
             // Go up the tree and read the taxonomy from it.
             let mut taxonomy = Taxonomy::default();
-            let mut current = self.tree.parent(leaf);
+            let mut current = self.newick.parent(leaf);
             while let Some(node) = current {
-                if let Some(node_taxonomy) = NodeLabel::from_node(&self.tree, node)?.taxonomy {
+                if let Some(node_taxonomy) = NodeLabel::from_node(&self.newick, node)?.taxonomy {
                     for taxon in node_taxonomy.iter_ranks() {
                         taxonomy.add_taxon(taxon.clone())?;
                     }
@@ -221,7 +238,7 @@ impl Tree {
                 current = if taxonomy.all_assigned() {
                     None
                 } else {
-                    self.tree.parent(node)
+                    self.newick.parent(node)
                 };
             }
 
@@ -234,13 +251,13 @@ impl Tree {
 
     /// Remove the RED value from the label of every node.
     pub(crate) fn remove_red_labels(&mut self) -> CuratomaticResult<()> {
-        for node in self.tree.ids() {
+        for node in self.newick.ids() {
             let label = self
-                .tree
+                .newick
                 .label(node)
                 .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("node {node}")))?;
             let label = label.split('|').next().unwrap_or_default().to_owned();
-            self.tree.set_label(node, label);
+            self.newick.set_label(node, label);
         }
         Ok(())
     }
@@ -248,8 +265,8 @@ impl Tree {
     /// Every taxon that is on the tree, read from the labels of the nodes themselves.
     pub(crate) fn extract_all_taxa_from_tree(&self) -> CuratomaticResult<BTreeSet<Taxon>> {
         let mut out = BTreeSet::new();
-        for node in self.tree.ids() {
-            if let Some(taxonomy) = NodeLabel::from_node(&self.tree, node)?.taxonomy {
+        for node in self.newick.ids() {
+            if let Some(taxonomy) = NodeLabel::from_node(&self.newick, node)?.taxonomy {
                 out.extend(taxonomy.iter_ranks().cloned());
             }
         }
@@ -278,7 +295,7 @@ impl Tree {
         let parent_red_thresh = red_dict.get(parent_rank(rank)?)?.midpoint(median_red);
         let child_red_thresh = red_dict.get(child_rank)?.midpoint(median_red);
 
-        for (node, node_label) in self.tree.ids().zip(&self.node_labels) {
+        for (node, node_label) in self.newick.ids().zip(&self.node_labels) {
             // Skip those that are not set (i.e. leaf nodes).
             let (Some(taxonomy), Some(original_bs)) = (&node_label.taxonomy, node_label.bootstrap)
             else {
@@ -293,7 +310,7 @@ impl Tree {
                 let mut current = if self.nested_inside(node, rank, taxon).is_some() {
                     None
                 } else {
-                    self.tree.parent(node)
+                    self.newick.parent(node)
                 };
                 while let Some(cur_node) = current {
                     let cur_label = self.label(cur_node)?;
@@ -332,7 +349,7 @@ impl Tree {
                         }
                     }
 
-                    current = self.tree.parent(cur_node);
+                    current = self.newick.parent(cur_node);
                 }
 
                 // A well supported taxon is not moved down if it would move the RED further
@@ -391,7 +408,7 @@ impl Tree {
 
     /// True if any node below `node` has a taxon for `rank`.
     fn any_descendant_has_rank(&self, node: NodeId, rank: Rank) -> bool {
-        self.tree.descendants(node).any(|desc| {
+        self.newick.descendants(node).any(|desc| {
             self.node_labels
                 .get(desc.index())
                 .and_then(|label| label.taxonomy.as_ref())
@@ -403,12 +420,20 @@ impl Tree {
     ///
     /// Taxa that are only the rank prefix (e.g. `g__`) are placeholders, and are ignored.
     fn would_cause_conflicts(&self, node: NodeId, rank: Rank, taxon: &Taxon) -> bool {
-        self.tree.descendants(node).any(|desc| {
-            let Some(taxonomy) = self.node_labels.get(desc.index()).and_then(|l| l.taxonomy.as_ref())
+        self.newick.descendants(node).any(|desc| {
+            let Some(taxonomy) = self
+                .node_labels
+                .get(desc.index())
+                .and_then(|l| l.taxonomy.as_ref())
             else {
                 return false;
             };
-            let named = || taxonomy.get_rank(rank).iter().filter(|other| other.is_named());
+            let named = || {
+                taxonomy
+                    .get_rank(rank)
+                    .iter()
+                    .filter(|other| other.is_named())
+            };
             named().next().is_some() && !named().any(|other| other == taxon)
         })
     }
@@ -417,7 +442,7 @@ impl Tree {
     ///
     /// If there is one, then `taxon` is nested inside it. Placeholders (e.g. `g__`) are ignored.
     pub(crate) fn nested_inside(&self, node: NodeId, rank: Rank, taxon: &Taxon) -> Option<&Taxon> {
-        let mut current = self.tree.parent(node);
+        let mut current = self.newick.parent(node);
         while let Some(ancestor) = current {
             let found = self
                 .node_labels
@@ -432,7 +457,7 @@ impl Tree {
             if found.is_some() {
                 return found;
             }
-            current = self.tree.parent(ancestor);
+            current = self.newick.parent(ancestor);
         }
         None
     }
@@ -445,9 +470,9 @@ impl Tree {
         gid_to_taxonomy: &BTreeMap<&GenomeId, &'a Taxonomy>,
     ) -> CuratomaticResult<BTreeMap<NodeId, BTreeSet<&'a Taxon>>> {
         let mut out: BTreeMap<NodeId, BTreeSet<&'a Taxon>> = BTreeMap::new();
-        for &child in self.tree.children(node) {
-            for desc in self.tree.descendants(child) {
-                if !self.tree.is_leaf(desc) {
+        for &child in self.newick.children(node) {
+            for desc in self.newick.descendants(child) {
+                if !self.newick.is_leaf(desc) {
                     continue;
                 }
                 let gid = self.label(desc)?.gid.as_ref();
@@ -498,7 +523,10 @@ impl Tree {
 
                 for (node, change) in [
                     (to_node, (target_red_delta, target_bs, target_bs >= min_bs)),
-                    (from_node, (original_red_delta, original_bs, original_bs >= min_bs)),
+                    (
+                        from_node,
+                        (original_red_delta, original_bs, original_bs >= min_bs),
+                    ),
                 ] {
                     match changes.iter_mut().find(|(existing, _)| *existing == node) {
                         Some((_, existing)) => *existing = change,
@@ -523,10 +551,10 @@ impl Tree {
 
             info!(
                 "Moving {taxon} from {} to {}",
-                self.tree.label(original_node).unwrap_or("None"),
-                self.tree.label(best_node).unwrap_or("None")
+                self.newick.label(original_node).unwrap_or("None"),
+                self.newick.label(best_node).unwrap_or("None")
             );
-            transfer_taxon(&mut self.tree, original_node, best_node, taxon)?;
+            transfer_taxon(&mut self.newick, original_node, best_node, taxon)?;
             moves.push(Move {
                 taxon: taxon.clone(),
                 from: original_node,
@@ -552,7 +580,9 @@ pub(crate) fn parse_node_label(
     let (Some(prefix), Some(suffix), None) = (parts.next(), parts.next(), parts.next()) else {
         return Err(invalid());
     };
-    let red = suffix.parse::<RedValue>().map_err(|_not_a_float| invalid())?;
+    let red = suffix
+        .parse::<RedValue>()
+        .map_err(|_not_a_float| invalid())?;
 
     // Either the taxonomy, the bootstrap, or the bootstrap and taxonomy.
     if prefix.contains(':') {
@@ -587,7 +617,9 @@ fn transfer_taxon(
     }
 
     let old_taxonomy = old_info.taxonomy.as_mut().ok_or_else(|| {
-        CuratomaticError::Invariant(format!("node {old_node} has no taxonomy to remove {taxon} from"))
+        CuratomaticError::Invariant(format!(
+            "node {old_node} has no taxonomy to remove {taxon} from"
+        ))
     })?;
     old_taxonomy.remove_taxon(taxon)?;
 
@@ -637,7 +669,7 @@ pub(crate) fn fill_in_missing_ranks(
 
             // Go up the tree to find a suitable node that won't conflict.
             let mut candidates = Vec::new();
-            let mut current = tree.tree.parent(leaf);
+            let mut current = tree.newick.parent(leaf);
             while let Some(node) = current {
                 if tree.any_descendant_has_rank(node, rank) {
                     break;
@@ -649,7 +681,7 @@ pub(crate) fn fill_in_missing_ranks(
                 if bs_supported && label.red >= midpoint_red {
                     candidates.push(node);
                 }
-                current = tree.tree.parent(node);
+                current = tree.newick.parent(node);
             }
 
             rank_to_leaf_candidates
@@ -666,10 +698,13 @@ pub(crate) fn fill_in_missing_ranks(
         let mut candidate_to_leaves: Vec<(NodeId, BTreeSet<NodeId>)> = Vec::new();
         let mut index: HashMap<NodeId, usize> = HashMap::new();
         for (leaf, candidates) in leaf_candidates {
-            let &candidate = candidates.last().ok_or_else(|| CuratomaticError::NoCandidateNode {
-                rank: rank.prefix(),
-                gid: leaf_gid(&tree.tree, *leaf),
-            })?;
+            let &candidate =
+                candidates
+                    .last()
+                    .ok_or_else(|| CuratomaticError::NoCandidateNode {
+                        rank: rank.prefix(),
+                        gid: leaf_gid(&tree.newick, *leaf),
+                    })?;
             let idx = *index.entry(candidate).or_insert_with(|| {
                 candidate_to_leaves.push((candidate, BTreeSet::new()));
                 candidate_to_leaves.len().saturating_sub(1)
@@ -683,7 +718,7 @@ pub(crate) fn fill_in_missing_ranks(
         for (candidate, leaves) in &candidate_to_leaves {
             let gids = leaves
                 .iter()
-                .map(|&leaf| NodeLabel::from_node(&tree.tree, leaf).map(|label| label.gid))
+                .map(|&leaf| NodeLabel::from_node(&tree.newick, leaf).map(|label| label.gid))
                 .collect::<CuratomaticResult<Vec<_>>>()?
                 .into_iter()
                 .flatten()
@@ -693,11 +728,11 @@ pub(crate) fn fill_in_missing_ranks(
             new_taxa_created.insert(new_taxon.clone());
 
             // Add the taxon to the label of the node.
-            let mut info = NodeLabel::from_node(&tree.tree, *candidate)?;
+            let mut info = NodeLabel::from_node(&tree.newick, *candidate)?;
             info.taxonomy
                 .get_or_insert_with(Taxonomy::default)
                 .add_taxon(new_taxon)?;
-            tree.tree.set_label(*candidate, info.to_label()?);
+            tree.newick.set_label(*candidate, info.to_label()?);
         }
     }
 

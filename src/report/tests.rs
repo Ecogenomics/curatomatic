@@ -39,7 +39,13 @@ fn report(newick: &str, metadata: &Metadata) -> Vec<ReportRow> {
     let taxa_before = tree.taxon_nodes();
 
     let mut moves = Vec::new();
-    for rank in [Rank::Phylum, Rank::Class, Rank::Order, Rank::Family, Rank::Genus] {
+    for rank in [
+        Rank::Phylum,
+        Rank::Class,
+        Rank::Order,
+        Rank::Family,
+        Rank::Genus,
+    ] {
         let refinement = tree
             .refine_existing_labels(rank, min_bs, &red_dict, metadata)
             .unwrap();
@@ -96,7 +102,10 @@ fn a_move_up_that_gains_five_times_the_genomes_is_a_large_gain() {
     assert_eq!(b.action, Some(Action::MovedUp));
     assert_eq!(flags(&rows, "g__B"), vec![Flag::LargeGain]);
     let before = b.before.unwrap();
-    assert_eq!((before.n_genomes, before.bootstrap, before.red), (1, Some(BootstrapValue::new(50.0)), RedValue::new(0.93)));
+    assert_eq!(
+        (before.n_genomes, before.bootstrap, before.red),
+        (1, Some(BootstrapValue::new(50.0)), RedValue::new(0.93))
+    );
     assert_eq!((b.after.n_genomes, b.after.red), (5, RedValue::new(0.88)));
     assert_eq!(rows.len(), 1, "only g__B was changed or flagged");
 }
@@ -110,9 +119,15 @@ fn a_taxon_inside_another_of_the_same_rank_is_nested() {
     let rows = report(&newick, &Metadata::default());
     let b = row(&rows, "g__B");
     assert_eq!(b.action, None);
-    assert_eq!(flags(&rows, "g__B"), vec![Flag::NestedInSameRank, Flag::UnsupportedLabel]);
+    assert_eq!(
+        flags(&rows, "g__B"),
+        vec![Flag::NestedInSameRank, Flag::UnsupportedLabel]
+    );
     assert_eq!(b.nested_in, Some(Taxon::new("g__A")));
-    assert!(rows.iter().all(|row| row.taxon.as_str() != "g__A"), "g__A is not flagged");
+    assert!(
+        rows.iter().all(|row| row.taxon.as_str() != "g__A"),
+        "g__A is not flagged"
+    );
 }
 
 /// G1 and G2 have no genus, and sit below a supported node at RED 0.84 (q = 0.4). G3 keeps the
@@ -135,7 +150,10 @@ fn a_novel_taxon_of_former_members_of_a_genus_is_displaced_from_prior() {
     assert_eq!(novel.action, Some(Action::Novel));
     assert_eq!(novel.before, None);
     assert_eq!(novel.after.n_genomes, 2);
-    assert_eq!(flags(&rows, "g__ABC01"), vec![Flag::NovelLowRed, Flag::DisplacedFromPrior]);
+    assert_eq!(
+        flags(&rows, "g__ABC01"),
+        vec![Flag::NovelLowRed, Flag::DisplacedFromPrior]
+    );
     assert_eq!(novel.prior_taxa, taxa(&["g__Old"]));
 }
 
@@ -156,14 +174,22 @@ fn a_taxon_missing_from_the_prior_taxonomy_is_new_in_decoration() {
     ));
     let rows = report(&novel_tree(), &meta);
     assert_eq!(flags(&rows, "g__C"), vec![Flag::NewInDecoration]);
-    assert!(!flags(&rows, "g__ABC01").contains(&Flag::NewInDecoration), "novel taxa are not");
+    assert!(
+        !flags(&rows, "g__ABC01").contains(&Flag::NewInDecoration),
+        "novel taxa are not"
+    );
 }
 
 #[test]
 fn nothing_is_new_in_decoration_without_a_prior_taxonomy() {
-    let meta = metadata(&format!("{HEAD}G1\tABC01\tnone\nG2\tnone\tnone\nG3\tnone\tnone\n"));
+    let meta = metadata(&format!(
+        "{HEAD}G1\tABC01\tnone\nG2\tnone\tnone\nG3\tnone\tnone\n"
+    ));
     let rows = report(&novel_tree(), &meta);
-    assert!(rows.iter().all(|row| !row.flags.contains(&Flag::NewInDecoration)));
+    assert!(
+        rows.iter()
+            .all(|row| !row.flags.contains(&Flag::NewInDecoration))
+    );
 }
 
 #[test]
@@ -180,7 +206,10 @@ fn sisters_that_join_past_the_child_threshold_are_flagged_together() {
     assert_eq!(row(&rows, "g__B").sister_taxa, taxa(&["g__A"]));
 
     let rows = report(&join("0.940"), &Metadata::default());
-    assert!(rows.is_empty(), "a join below the child threshold is not flagged");
+    assert!(
+        rows.is_empty(),
+        "a join below the child threshold is not flagged"
+    );
 }
 
 #[test]
@@ -231,7 +260,9 @@ fn the_tsv_has_a_header_and_leaves_unset_values_empty() {
         taxon: Taxon::new("g__ABC01"),
         rank: Rank::Genus,
         action: Some(Action::Novel),
-        flags: [Flag::DisplacedFromPrior, Flag::NovelLowRed].into_iter().collect(),
+        flags: [Flag::DisplacedFromPrior, Flag::NovelLowRed]
+            .into_iter()
+            .collect(),
         before: None,
         after: NodeStats {
             n_genomes: 2,

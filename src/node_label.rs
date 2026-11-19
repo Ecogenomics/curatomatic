@@ -59,17 +59,15 @@ impl NodeLabel {
 
     /// Format as the label of a node, the inverse of [`NodeLabel::from_node`].
     pub(crate) fn to_label(&self) -> CuratomaticResult<String> {
-        let tax_string = self
-            .taxonomy
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let tax_string = self.taxonomy.as_ref().map_or_default(ToString::to_string);
         let red = self.red;
 
         if let Some(gid) = &self.gid {
             // This is a leaf node.
             if !tax_string.is_empty() {
-                return Err(invalid(&format!("leaf {gid} cannot hold a taxonomy: {tax_string}")));
+                return Err(invalid(&format!(
+                    "leaf {gid} cannot hold a taxonomy: {tax_string}"
+                )));
             }
             return Ok(format!("{gid}{RED_SEPARATOR}{red:.3}"));
         }
@@ -79,9 +77,9 @@ impl NodeLabel {
             (None, true) => Err(invalid("node has neither a bootstrap nor a taxonomy")),
             (None, false) => Ok(format!("{tax_string}{RED_SEPARATOR}{red:.3}")),
             (Some(bootstrap), true) => Ok(format!("{bootstrap:.1}{RED_SEPARATOR}{red:.3}")),
-            (Some(bootstrap), false) => {
-                Ok(format!("{bootstrap:.1}:{tax_string}{RED_SEPARATOR}{red:.3}"))
-            }
+            (Some(bootstrap), false) => Ok(format!(
+                "{bootstrap:.1}:{tax_string}{RED_SEPARATOR}{red:.3}"
+            )),
         }
     }
 }

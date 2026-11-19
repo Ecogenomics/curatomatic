@@ -4,14 +4,23 @@ use super::*;
 fn strips_prefix_and_version() {
     assert_eq!(gid_to_canonical("GCA_947480885.1").as_str(), "G947480885");
     assert_eq!(gid_to_canonical("GCF_947480885.2").as_str(), "G947480885");
-    assert_eq!(gid_to_canonical("GB_GCA_947480885.1").as_str(), "G947480885");
-    assert_eq!(gid_to_canonical("RS_GCF_947480885.1").as_str(), "G947480885");
+    assert_eq!(
+        gid_to_canonical("GB_GCA_947480885.1").as_str(),
+        "G947480885"
+    );
+    assert_eq!(
+        gid_to_canonical("RS_GCF_947480885.1").as_str(),
+        "G947480885"
+    );
 }
 
 #[test]
 fn leaves_other_ids_unchanged() {
     assert_eq!(gid_to_canonical("G947480885").as_str(), "G947480885");
-    assert_eq!(gid_to_canonical("GB_GCF_947480885.1").as_str(), "GB_GCF_947480885.1");
+    assert_eq!(
+        gid_to_canonical("GB_GCF_947480885.1").as_str(),
+        "GB_GCF_947480885.1"
+    );
     assert_eq!(gid_to_canonical("").as_str(), "");
 }
 

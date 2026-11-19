@@ -75,7 +75,8 @@ impl Metadata {
 
         let mut rows = BTreeMap::new();
         for (line_idx, line) in lines.enumerate() {
-            let line = line.map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
+            let line =
+                line.map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
             if line.trim().is_empty() {
                 continue;
             }
@@ -84,12 +85,12 @@ impl Metadata {
             // Values are not trimmed as a line, so empty trailing values keep their columns.
             let cols: Vec<&str> = split_line(&line).collect();
             let value = |idx: usize, name: &str| {
-                cols.get(idx)
-                    .map(|value| value.trim())
-                    .ok_or_else(|| CuratomaticError::MissingValue {
+                cols.get(idx).map(|value| value.trim()).ok_or_else(|| {
+                    CuratomaticError::MissingValue {
                         line: line_no,
                         column: name.to_owned(),
-                    })
+                    }
+                })
             };
 
             let accession = gid_to_canonical(value(accession_idx, COL_ACCESSION)?);
@@ -110,8 +111,13 @@ impl Metadata {
     }
 
     /// Give `gid` a prior taxonomy, adding a row for it if there is none.
-    // Nothing outside the tests supplies a prior taxonomy until `--taxonomy` is added.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "nothing outside the tests supplies a prior taxonomy until `--taxonomy` is added"
+        )
+    )]
     pub(crate) fn set_taxonomy(&mut self, gid: GenomeId, taxonomy: Taxonomy) {
         self.has_prior_taxonomy = true;
         self.rows
@@ -156,7 +162,10 @@ impl Metadata {
     }
 
     pub(crate) fn n_with_taxonomy(&self) -> usize {
-        self.rows.values().filter(|row| row.taxonomy.is_some()).count()
+        self.rows
+            .values()
+            .filter(|row| row.taxonomy.is_some())
+            .count()
     }
 
     /// The taxonomy of each genome in `gids` that has one.

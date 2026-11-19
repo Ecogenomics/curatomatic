@@ -100,7 +100,11 @@ fn leaves_are_left_to_right() {
 #[test]
 fn descendants_are_the_contiguous_subtree_range() {
     let tree = parse("((A,B)X,(C,(D,E)Z)Y)R;");
-    let find = |label: &str| tree.ids().find(|&id| tree.label(id) == Some(label)).unwrap();
+    let find = |label: &str| {
+        tree.ids()
+            .find(|&id| tree.label(id) == Some(label))
+            .unwrap()
+    };
     let labels = |id| -> Vec<&str> {
         tree.descendants(id)
             .map(|d| tree.label(d).unwrap())
@@ -171,11 +175,20 @@ fn node_ids_order_numerically_in_post_order_and_display_their_position() {
     let tree = parse("((A,B)X,(C,D)Y)R;");
     let ids: Vec<NodeId> = tree.ids().collect();
     assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
-    assert_eq!(ids.iter().map(|id| id.index()).collect::<Vec<_>>(), [0, 1, 2, 3, 4, 5, 6]);
+    assert_eq!(
+        ids.iter().map(|id| id.index()).collect::<Vec<_>>(),
+        [0, 1, 2, 3, 4, 5, 6]
+    );
     assert_eq!(ids.last().unwrap().to_string(), "6");
     assert_eq!(tree.root.to_string(), "6");
 
-    let big = format!("({});", (0..11).map(|i| format!("L{i}")).collect::<Vec<_>>().join(","));
+    let big = format!(
+        "({});",
+        (0..11)
+            .map(|i| format!("L{i}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let big = parse(&big);
     let ids: Vec<NodeId> = big.ids().collect();
     assert!(ids[9] < ids[10]);

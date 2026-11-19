@@ -64,7 +64,10 @@ impl fmt::Display for CuratomaticError {
                 write!(f, "The median RED file has no value for rank: {rank}")
             }
             CuratomaticError::NoCandidateNode { rank, gid } => {
-                write!(f, "No node can hold a novel {rank}__ taxon for genome: {gid}")
+                write!(
+                    f,
+                    "No node can hold a novel {rank}__ taxon for genome: {gid}"
+                )
             }
             CuratomaticError::Invariant(message) => write!(f, "Internal error: {message}"),
         }

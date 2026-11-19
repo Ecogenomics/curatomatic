@@ -133,7 +133,9 @@ struct Thresholds {
 impl Thresholds {
     fn new(rank: Rank, red_dict: &Red) -> CuratomaticResult<Self> {
         let median = red_dict.get(rank)?;
-        let parent = rank.parent().ok_or(CuratomaticError::NoParentRank(rank.prefix()))?;
+        let parent = rank
+            .parent()
+            .ok_or(CuratomaticError::NoParentRank(rank.prefix()))?;
         let child = rank.child().ok_or_else(|| {
             CuratomaticError::Invariant(format!("the {}__ rank has no child rank", rank.prefix()))
         })?;
@@ -171,7 +173,12 @@ impl<'a> TreeIndex<'a> {
         let mut n_genomes = Vec::new();
         for node in newick.ids() {
             let n = if newick.is_leaf(node) {
-                usize::from(tree.label(node)?.gid.as_ref().is_some_and(|gid| !gid.is_zombie()))
+                usize::from(
+                    tree.label(node)?
+                        .gid
+                        .as_ref()
+                        .is_some_and(|gid| !gid.is_zombie()),
+                )
             } else {
                 newick
                     .children(node)
@@ -189,7 +196,10 @@ impl<'a> TreeIndex<'a> {
     }
 
     fn n_genomes(&self, node: NodeId) -> usize {
-        self.n_genomes.get(node.index()).copied().unwrap_or_default()
+        self.n_genomes
+            .get(node.index())
+            .copied()
+            .unwrap_or_default()
     }
 
     fn stats(&self, node: NodeId) -> CuratomaticResult<NodeStats> {
@@ -221,8 +231,13 @@ impl<'a> TreeIndex<'a> {
             .label(node)?
             .taxonomy
             .as_ref()
-            .map(|taxonomy| taxonomy.get_rank(rank).iter().filter(|t| t.is_named()).collect())
-            .unwrap_or_default())
+            .map_or_default(|taxonomy| {
+                taxonomy
+                    .get_rank(rank)
+                    .iter()
+                    .filter(|t| t.is_named())
+                    .collect()
+            }))
     }
 
     fn is_ancestor(&self, ancestor: NodeId, node: NodeId) -> bool {
@@ -460,7 +475,7 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
 
 /// Format an optional value, an empty string if it is not set.
 fn optional<T>(value: Option<T>, format: impl Fn(T) -> String) -> String {
-    value.map(format).unwrap_or_default()
+    value.map_or_default(format)
 }
 
 fn join<T: fmt::Display>(values: impl IntoIterator<Item = T>) -> String {

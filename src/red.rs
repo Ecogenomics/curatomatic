@@ -31,7 +31,7 @@ impl RedValue {
 
     /// The RED value halfway between two RED values.
     pub(crate) fn midpoint(self, other: RedValue) -> RedValue {
-        RedValue((self.0 + other.0) / 2.0)
+        RedValue(f64::midpoint(self.0, other.0))
     }
 
     /// The RED value halfway from this RED value to another, as `self + (other - self) / 2`.
@@ -86,11 +86,12 @@ impl Red {
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
         let text = fs::read_to_string(path)
             .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_tsv(&text).map_err(|e| match e {
-            CuratomaticError::Red(message) => {
+        Self::from_tsv(&text).map_err(|e| {
+            if let CuratomaticError::Red(message) = e {
                 CuratomaticError::Red(format!("{}: {message}", path.display()))
+            } else {
+                e
             }
-            other => other,
         })
     }
 
@@ -142,13 +143,13 @@ impl Red {
                 ))
             })?;
 
-            if let Some(fixed) = fixed_red(rank) {
-                if red != fixed {
-                    return Err(CuratomaticError::Red(format!(
-                        "line {line_no}: the {} median must be {fixed}, not {median}",
-                        rank.name()
-                    )));
-                }
+            if let Some(fixed) = fixed_red(rank)
+                && red != fixed
+            {
+                return Err(CuratomaticError::Red(format!(
+                    "line {line_no}: the {} median must be {fixed}, not {median}",
+                    rank.name()
+                )));
             }
             if data.insert(rank, red).is_some() {
                 return Err(CuratomaticError::Red(format!(

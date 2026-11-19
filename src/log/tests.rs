@@ -47,6 +47,9 @@ fn timestamp_format_is_twenty_two_characters_with_the_bracket_and_space() {
     assert_eq!(timestamp, "2026-11-09 01:02:03");
     // The parity check strips the first 22 characters: `[<timestamp>] `.
     let line = format_line(&timestamp, Level::Info, &"x");
-    assert_eq!(line.chars().take(22).collect::<String>(), "[2026-11-09 01:02:03] ");
+    assert_eq!(
+        line.chars().take(22).collect::<String>(),
+        "[2026-11-09 01:02:03] "
+    );
     assert_eq!(line.chars().skip(22).collect::<String>(), "[ INFO] - x\n");
 }

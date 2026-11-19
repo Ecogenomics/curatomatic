@@ -29,6 +29,7 @@ use crate::metadata::Metadata;
 use crate::rank::Rank;
 use crate::red::Red;
 use crate::report::{ReportInput, build_report, write_report};
+use crate::taxon::Taxon;
 use crate::tree::{Tree, fill_in_missing_ranks};
 
 /// Semi-automatic curation of decorated phylogenetic trees.
@@ -124,6 +125,39 @@ fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(
     out
 }
 
+/// Read the novel names, subset to the genomes on the tree, and every taxon of the previous
+/// release for the report. Both are empty if no novel name file is given.
+fn read_metadata(
+    cli: &Cli,
+    tree: &Tree,
+    tree_n_nodes: usize,
+) -> CuratomaticResult<(Metadata, BTreeSet<Taxon>)> {
+    let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) else {
+        return Ok((Metadata::default(), BTreeSet::new()));
+    };
+    info!("Reading novel names");
+    let mut metadata = Metadata::from_file(path, column)?;
+    let prior_taxa = metadata.all_taxa();
+    let n_meta_rows_before = metadata.rows.len();
+    metadata.subset_to_ids(&tree.gids);
+    let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());
+    info!(
+        "Found {} records, matched {} IDs to the tree.",
+        n_meta_rows_before.separate_with_commas(),
+        metadata.rows.len().separate_with_commas()
+    );
+    if n_meta_mismatch > 0 {
+        warn!(
+            "Found {} IDs in the tree that do not have a novel name entry.",
+            n_meta_mismatch.separate_with_commas()
+        );
+    }
+    for (level, message) in taxonomy_coverage_messages(&metadata, tree_n_nodes) {
+        log!(level, "{message}");
+    }
+    Ok((metadata, prior_taxa))
+}
+
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
@@ -136,41 +170,14 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let taxon_nodes_before = tree.taxon_nodes();
 
     // Get the number of tree nodes, and zombie nodes (i.e. prefixed with "D-").
-    let (tree_n_nodes, tree_n_zombies) = tree.n_nodes_and_zombies()?;
+    let (tree_n_nodes, tree_n_zombies) = tree.n_nodes_and_zombies();
     info!(
         "Found: {} leaf nodes, and {} zombies in the tree.",
         tree_n_nodes.separate_with_commas(),
         tree_n_zombies.separate_with_commas()
     );
 
-    // Read the novel names, keeping every taxon of the previous release for the report.
-    let mut prior_taxa = BTreeSet::new();
-    let metadata = if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column)
-    {
-        info!("Reading novel names");
-        let mut metadata = Metadata::from_file(path, column)?;
-        prior_taxa = metadata.all_taxa();
-        let n_meta_rows_before = metadata.rows.len();
-        metadata.subset_to_ids(&tree.gids);
-        let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());
-        info!(
-            "Found {} records, matched {} IDs to the tree.",
-            n_meta_rows_before.separate_with_commas(),
-            metadata.rows.len().separate_with_commas()
-        );
-        if n_meta_mismatch > 0 {
-            warn!(
-                "Found {} IDs in the tree that do not have a novel name entry.",
-                n_meta_mismatch.separate_with_commas()
-            );
-        }
-        for (level, message) in taxonomy_coverage_messages(&metadata, tree_n_nodes) {
-            log!(level, "{message}");
-        }
-        metadata
-    } else {
-        Metadata::default()
-    };
+    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes)?;
 
     // Read the median RED of each rank.
     info!("Reading median RED values");
@@ -205,7 +212,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         &metadata,
         known_taxa,
     )?;
-    info!("Created {} novel ranks.", new_taxa_created.len().separate_with_commas());
+    info!(
+        "Created {} novel ranks.",
+        new_taxa_created.len().separate_with_commas()
+    );
 
     let tree_taxa_after = tree.extract_all_taxa_from_tree()?;
     let taxa_without_new: BTreeSet<_> = tree_taxa_after
@@ -237,7 +247,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     info!("Writing tree to disk.");
     tree.to_file(&path_tree_out)?;
 
-    info!("Writing report to disk ({} rows).", report.len().separate_with_commas());
+    info!(
+        "Writing report to disk ({} rows).",
+        report.len().separate_with_commas()
+    );
     write_report(&path_report_out, &report)?;
 
     info!("Done.");

@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt::Write as _;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -18,10 +19,14 @@ fn known(taxa: &[&str]) -> BTreeSet<Taxon> {
 fn metadata(rows: &[(&str, &str)]) -> Metadata {
     let mut tsv = String::from("accession\tncbi_wgs_formatted\n");
     for (accession, wgs) in rows {
-        tsv.push_str(&format!("{accession}\t{wgs}\n"));
+        writeln!(tsv, "{accession}\t{wgs}").unwrap();
     }
-    Metadata::from_reader(Cursor::new(tsv), Path::new("names.tsv"), "ncbi_wgs_formatted")
-        .unwrap()
+    Metadata::from_reader(
+        Cursor::new(tsv),
+        Path::new("names.tsv"),
+        "ncbi_wgs_formatted",
+    )
+    .unwrap()
 }
 
 fn generate(
@@ -36,8 +41,16 @@ fn generate(
 #[test]
 fn score_is_one_for_each_bad_pair_in_either_order() {
     for (a, b) in BAD_PAIRS {
-        for name in [format!("g__{a}{b}"), format!("g__{b}{a}"), format!("g__x{a}y{b}z")] {
-            assert_eq!(score_candidate_taxon(&Taxon::new(name.clone())), 1, "{name}");
+        for name in [
+            format!("g__{a}{b}"),
+            format!("g__{b}{a}"),
+            format!("g__x{a}y{b}z"),
+        ] {
+            assert_eq!(
+                score_candidate_taxon(&Taxon::new(name.clone())),
+                1,
+                "{name}"
+            );
         }
     }
 }
@@ -133,7 +146,13 @@ fn when_every_wgs_is_known_it_falls_back_to_the_gid() {
 
 #[test]
 fn a_known_gid_name_falls_back_to_the_next_lowest_gid() {
-    let taxon = generate(Rank::Genus, &["G3", "G1", "G2"], &Metadata::default(), &["g__G1"]).unwrap();
+    let taxon = generate(
+        Rank::Genus,
+        &["G3", "G1", "G2"],
+        &Metadata::default(),
+        &["g__G1"],
+    )
+    .unwrap();
     assert_eq!(taxon, Taxon::new("g__G2"));
 }
 
@@ -146,7 +165,13 @@ fn a_gid_name_of_another_rank_does_not_conflict() {
 #[test]
 fn when_every_gid_name_is_known_the_lowest_gid_is_duplicated() {
     let known_taxa = ["g__G1", "g__G2"];
-    let taxon = generate(Rank::Genus, &["G2", "G1"], &Metadata::default(), &known_taxa).unwrap();
+    let taxon = generate(
+        Rank::Genus,
+        &["G2", "G1"],
+        &Metadata::default(),
+        &known_taxa,
+    )
+    .unwrap();
     assert_eq!(taxon, Taxon::new("g__G1"));
 }
 

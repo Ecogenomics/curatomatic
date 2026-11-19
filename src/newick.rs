@@ -196,7 +196,9 @@ impl NewickTree {
     }
 
     pub(crate) fn is_leaf(&self, id: NodeId) -> bool {
-        self.nodes.get(id.0).is_some_and(|node| node.children.is_empty())
+        self.nodes
+            .get(id.0)
+            .is_some_and(|node| node.children.is_empty())
     }
 
     pub(crate) fn parent(&self, id: NodeId) -> Option<NodeId> {
@@ -211,10 +213,7 @@ impl NewickTree {
 
     /// Every node below this one, excluding the node itself.
     pub(crate) fn descendants(&self, id: NodeId) -> impl Iterator<Item = NodeId> + use<> {
-        let range = self
-            .nodes
-            .get(id.0)
-            .map_or(0..0, |node| node.first.0..id.0);
+        let range = self.nodes.get(id.0).map_or(0..0, |node| node.first.0..id.0);
         range.map(NodeId)
     }
 

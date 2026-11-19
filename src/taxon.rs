@@ -88,7 +88,10 @@ pub(crate) fn generate_unique_rank(
 
     // Score the WGS sequences by how readable they are, the sets are sorted so the first of the
     // best scoring is also the lowest.
-    if let Some(taxon) = wgs_available.iter().min_by_key(|taxon| score_candidate_taxon(taxon)) {
+    if let Some(taxon) = wgs_available
+        .iter()
+        .min_by_key(|taxon| score_candidate_taxon(taxon))
+    {
         return Ok(taxon.clone());
     }
 

@@ -77,7 +77,10 @@ fn a_domain_or_species_with_another_value_is_an_error() {
 #[test]
 fn a_rank_without_a_row_has_no_value() {
     let red = Red::from_tsv("rank\tmedian\nGenus\t0.9\n").unwrap();
-    assert_eq!(red.get(Rank::Family), Err(CuratomaticError::MissingRed('f')));
+    assert_eq!(
+        red.get(Rank::Family),
+        Err(CuratomaticError::MissingRed('f'))
+    );
 }
 
 #[test]
@@ -95,22 +98,33 @@ fn a_missing_column_is_an_error() {
 #[test]
 fn a_row_too_short_for_a_column_is_an_error() {
     let message = red_error(Red::from_tsv("rank\tnum_taxa\tmedian\nPhylum\t161\n"));
-    assert!(message.contains("line 2 has no value for column: median"), "{message}");
+    assert!(
+        message.contains("line 2 has no value for column: median"),
+        "{message}"
+    );
 }
 
 #[test]
 fn a_median_that_is_not_a_number_is_an_error() {
     for median in ["x", "", "0.3.1"] {
         let message = red_error(Red::from_tsv(&format!("rank\tmedian\nPhylum\t{median}\n")));
-        assert!(message.contains("line 2 has an invalid median for Phylum"), "{message}");
+        assert!(
+            message.contains("line 2 has an invalid median for Phylum"),
+            "{message}"
+        );
     }
 }
 
 #[test]
 fn a_duplicate_rank_is_an_error() {
     // Also when the two rows differ only in case.
-    let message = red_error(Red::from_tsv("rank\tmedian\nPhylum\t0.3\nGenus\t0.9\nphylum\t0.3\n"));
-    assert!(message.contains("line 4: Phylum is given more than once"), "{message}");
+    let message = red_error(Red::from_tsv(
+        "rank\tmedian\nPhylum\t0.3\nGenus\t0.9\nphylum\t0.3\n",
+    ));
+    assert!(
+        message.contains("line 4: Phylum is given more than once"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -123,7 +137,10 @@ fn blank_lines_and_crlf_are_ignored() {
 #[test]
 fn full_precision_is_kept() {
     let red = Red::from_tsv("rank\tmedian\nPhylum\t0.23103292252099542\n").unwrap();
-    assert_eq!(red.get(Rank::Phylum), Ok(RedValue::new(0.231_032_922_520_995_42)));
+    assert_eq!(
+        red.get(Rank::Phylum),
+        Ok(RedValue::new(0.231_032_922_520_995_42))
+    );
 }
 
 // Expected value from Python: `RED({...}).to_str()` is
@@ -143,7 +160,8 @@ fn to_str_is_in_rank_order_with_three_decimals() {
 #[test]
 fn to_str_rounds_like_python() {
     // Python `'%.3f' % x`: 0.0625 -> 0.062, 0.0635 -> 0.064, 0.9995 -> 1.000.
-    let red = Red::from_tsv("rank\tmedian\nPhylum\t0.0625\nClass\t0.0635\nOrder\t0.9995\n").unwrap();
+    let red =
+        Red::from_tsv("rank\tmedian\nPhylum\t0.0625\nClass\t0.0635\nOrder\t0.9995\n").unwrap();
     assert_eq!(red.to_str(), "d=0.000, p=0.062, c=0.064, o=1.000, s=1.000");
 }
 
@@ -220,7 +238,10 @@ fn red_value_display_respects_the_precision() {
 fn halfway_to_matches_the_python_arithmetic() {
     // Python: 0.098 + ((0.472 - 0.098) / 2) == 0.28500000000000003, but (0.098 + 0.472) / 2 == 0.285.
     let (parent, rank) = (RedValue::new(0.098), RedValue::new(0.472));
-    assert_eq!(parent.halfway_to(rank), RedValue::new(0.285_000_000_000_000_03));
+    assert_eq!(
+        parent.halfway_to(rank),
+        RedValue::new(0.285_000_000_000_000_03)
+    );
     assert_eq!(parent.midpoint(rank), RedValue::new(0.285));
     assert!(RedValue::new(0.285) < parent.halfway_to(rank));
     assert_eq!(parent.halfway_to(parent), parent);

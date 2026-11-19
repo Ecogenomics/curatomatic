@@ -40,8 +40,9 @@ fn sample() -> Metadata {
 
 #[test]
 fn parses_rows() {
-    let meta = parse("accession\tncbi_wgs_formatted\nGB_GCA_000000001.1\tABC\nRS_GCF_000000002.1\tnone\n")
-        .unwrap();
+    let meta =
+        parse("accession\tncbi_wgs_formatted\nGB_GCA_000000001.1\tABC\nRS_GCF_000000002.1\tnone\n")
+            .unwrap();
     assert_eq!(meta.rows.len(), 2);
     let row = &meta.rows[&gid("G000000001")];
     assert_eq!(row.accession, gid("G000000001"));
@@ -74,8 +75,11 @@ fn reads_a_custom_column_and_ignores_the_others() {
 
 #[test]
 fn a_missing_name_column_is_an_error_with_the_path() {
-    let err = parse_column("accession\tncbi_wgs_formatted\nGCA_000000001.1\tABC\n", "my_names")
-        .unwrap_err();
+    let err = parse_column(
+        "accession\tncbi_wgs_formatted\nGCA_000000001.1\tABC\n",
+        "my_names",
+    )
+    .unwrap_err();
     assert_eq!(
         err,
         CuratomaticError::MissingColumn {
@@ -83,7 +87,10 @@ fn a_missing_name_column_is_an_error_with_the_path() {
             column: "my_names".to_owned()
         }
     );
-    assert_eq!(err.to_string(), "Missing required column my_names in: names.tsv");
+    assert_eq!(
+        err.to_string(),
+        "Missing required column my_names in: names.tsv"
+    );
 }
 
 #[test]
@@ -98,7 +105,9 @@ fn a_missing_accession_column_is_an_error_with_the_path() {
 
 #[test]
 fn each_placeholder_means_no_name() {
-    for placeholder in ["none", "None", "NONE", "n/a", "N/A", "null", "NULL", "", " ", " none "] {
+    for placeholder in [
+        "none", "None", "NONE", "n/a", "N/A", "null", "NULL", "", " ", " none ",
+    ] {
         let meta = parse(&format!(
             "accession\tncbi_wgs_formatted\tother\nGCA_000000001.1\t{placeholder}\tx\n"
         ))
@@ -111,8 +120,8 @@ fn each_placeholder_means_no_name() {
 #[test]
 fn an_empty_last_value_is_no_name() {
     // The line is not trimmed as a whole, so the trailing empty value keeps its column.
-    let meta = parse("accession\tncbi_wgs_formatted\nGCA_000000001.1\t\nGCA_000000002.1\t\r\n")
-        .unwrap();
+    let meta =
+        parse("accession\tncbi_wgs_formatted\nGCA_000000001.1\t\nGCA_000000002.1\t\r\n").unwrap();
     assert_eq!(wgs(&meta, "G000000001"), None);
     assert_eq!(wgs(&meta, "G000000002"), None);
 }
@@ -175,14 +184,18 @@ fn from_file_reads_a_file() {
 
 #[test]
 fn the_last_row_wins_for_a_duplicate_accession() {
-    let meta = parse("accession\tncbi_wgs_formatted\nGCA_000000001.1\tAAA\nGB_GCA_000000001.2\tBBB\n").unwrap();
+    let meta =
+        parse("accession\tncbi_wgs_formatted\nGCA_000000001.1\tAAA\nGB_GCA_000000001.2\tBBB\n")
+            .unwrap();
     assert_eq!(meta.rows.len(), 1);
     assert_eq!(wgs(&meta, "G000000001"), Some("BBB"));
 }
 
 #[test]
 fn the_last_column_wins_for_a_duplicate_header_name() {
-    let meta = parse("accession\tncbi_wgs_formatted\tncbi_wgs_formatted\nGCA_000000001.1\tAAA\tBBB\n").unwrap();
+    let meta =
+        parse("accession\tncbi_wgs_formatted\tncbi_wgs_formatted\nGCA_000000001.1\tAAA\tBBB\n")
+            .unwrap();
     assert_eq!(wgs(&meta, "G000000001"), Some("BBB"));
 }
 
@@ -228,7 +241,10 @@ fn taxonomy_from_gids() {
     let meta = sample();
     let out = meta.get_taxonomy_from_gids(&ids(&["G000000001", "G000000003", "G999"]));
     // G000000003 has no taxonomy, and G999 is unknown.
-    assert_eq!(out.keys().map(|gid| gid.as_str()).collect::<Vec<_>>(), ["G000000001"]);
+    assert_eq!(
+        out.keys().map(|gid| gid.as_str()).collect::<Vec<_>>(),
+        ["G000000001"]
+    );
 }
 
 #[test]

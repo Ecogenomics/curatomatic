@@ -36,7 +36,10 @@ fn coverage_warns_when_no_prior_taxonomy_is_given() {
                 Level::Warn,
                 "No prior taxonomy was given, downward refinement is disabled.".to_owned()
             ),
-            (Level::Info, "0 of 1,500 tree genomes have a prior taxonomy.".to_owned()),
+            (
+                Level::Info,
+                "0 of 1,500 tree genomes have a prior taxonomy.".to_owned()
+            ),
         ]
     );
 }
@@ -44,12 +47,18 @@ fn coverage_warns_when_no_prior_taxonomy_is_given() {
 #[test]
 fn coverage_warns_when_no_tree_genome_has_a_taxonomy() {
     let mut meta = metadata("accession\twgs\nG1\tnone\n");
-    meta.set_taxonomy(GenomeId::new("G9"), Taxonomy::from_string("d__Bacteria").unwrap());
+    meta.set_taxonomy(
+        GenomeId::new("G9"),
+        Taxonomy::from_string("d__Bacteria").unwrap(),
+    );
     meta.subset_to_ids(&[GenomeId::new("G1")].into());
     assert_eq!(
         taxonomy_coverage_messages(&meta, 2),
         vec![
-            (Level::Info, "0 of 2 tree genomes have a prior taxonomy.".to_owned()),
+            (
+                Level::Info,
+                "0 of 2 tree genomes have a prior taxonomy.".to_owned()
+            ),
             (
                 Level::Warn,
                 "No tree genomes have a prior taxonomy, downward refinement is disabled."
@@ -62,15 +71,25 @@ fn coverage_warns_when_no_tree_genome_has_a_taxonomy() {
 #[test]
 fn coverage_only_reports_the_count_when_genomes_have_a_taxonomy() {
     let mut meta = metadata("accession\twgs\nG1\tABC\nG2\tnone\n");
-    meta.set_taxonomy(GenomeId::new("G1"), Taxonomy::from_string("d__Bacteria").unwrap());
+    meta.set_taxonomy(
+        GenomeId::new("G1"),
+        Taxonomy::from_string("d__Bacteria").unwrap(),
+    );
     assert_eq!(
         taxonomy_coverage_messages(&meta, 2),
-        vec![(Level::Info, "1 of 2 tree genomes have a prior taxonomy.".to_owned())]
+        vec![(
+            Level::Info,
+            "1 of 2 tree genomes have a prior taxonomy.".to_owned()
+        )]
     );
 }
 
 fn parse_cli(args: &[&str]) -> Result<Cli, clap::Error> {
-    Cli::try_parse_from(["curatomatic", "tree.nwk", "red.tsv", "out"].iter().chain(args))
+    Cli::try_parse_from(
+        ["curatomatic", "tree.nwk", "red.tsv", "out"]
+            .iter()
+            .chain(args),
+    )
 }
 
 #[test]
@@ -96,7 +115,11 @@ fn the_novel_name_file_requires_a_column_and_the_column_requires_a_file() {
         &["--novel-name-column", "ncbi_wgs_formatted"][..],
     ] {
         let err = parse_cli(args).unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument, "{args:?}");
+        assert_eq!(
+            err.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument,
+            "{args:?}"
+        );
     }
 }
 

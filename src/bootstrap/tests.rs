@@ -45,7 +45,10 @@ fn total_cmp_orders_by_value() {
 fn total_cmp_is_total_for_nan_and_signed_zero() {
     let nan = BootstrapValue::new(f64::NAN);
     assert_eq!(nan.total_cmp(nan), Ordering::Equal);
-    assert_eq!(nan.total_cmp(BootstrapValue::new(f64::INFINITY)), Ordering::Greater);
+    assert_eq!(
+        nan.total_cmp(BootstrapValue::new(f64::INFINITY)),
+        Ordering::Greater
+    );
     assert_eq!(
         BootstrapValue::new(-0.0).total_cmp(BootstrapValue::new(0.0)),
         Ordering::Less

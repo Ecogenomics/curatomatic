@@ -6,22 +6,22 @@ use super::*;
 
 /// The label of the root of a two leaf tree whose root is labelled `label`.
 fn internal(label: &str) -> CuratomaticResult<NodeLabel> {
-    let tree = NewickTree::parse(&format!(
-        "('G1|RED=1.0':1.0,'G2|RED=1.0':1.0)'{label}';"
-    ))
-    .unwrap();
+    let tree = NewickTree::parse(&format!("('G1|RED=1.0':1.0,'G2|RED=1.0':1.0)'{label}';"))?;
     // The root is the last node in post-order.
-    let root = tree.ids().last().unwrap();
+    let root = tree
+        .ids()
+        .last()
+        .ok_or_else(|| CuratomaticError::Invariant("the tree has no nodes".to_owned()))?;
     NodeLabel::from_node(&tree, root)
 }
 
 /// The label of the first leaf of a two leaf tree whose first leaf is labelled `label`.
 fn leaf(label: &str) -> CuratomaticResult<NodeLabel> {
-    let tree = NewickTree::parse(&format!(
-        "('{label}':1.0,'G2|RED=1.0':1.0)'50.0|RED=0.5';"
-    ))
-    .unwrap();
-    let first = tree.leaves().next().unwrap();
+    let tree = NewickTree::parse(&format!("('{label}':1.0,'G2|RED=1.0':1.0)'50.0|RED=0.5';"))?;
+    let first = tree
+        .leaves()
+        .next()
+        .ok_or_else(|| CuratomaticError::Invariant("the tree has no leaves".to_owned()))?;
     NodeLabel::from_node(&tree, first)
 }
 
@@ -47,7 +47,10 @@ fn leaf_has_a_gid_and_a_red_of_one() {
 
 #[test]
 fn leaf_red_may_be_written_as_an_integer() {
-    assert_eq!(leaf("G1|RED=1").unwrap().to_label().unwrap(), "G1|RED=1.000");
+    assert_eq!(
+        leaf("G1|RED=1").unwrap().to_label().unwrap(),
+        "G1|RED=1.000"
+    );
 }
 
 #[test]
@@ -91,7 +94,10 @@ fn taxonomy_only() {
     let label = internal("f__X; g__Y|RED=0.5").unwrap();
     assert_eq!(label.red, RedValue::new(0.5));
     assert_eq!(label.bootstrap, None);
-    assert_eq!(label.taxonomy, Some(Taxonomy::from_string("f__X; g__Y").unwrap()));
+    assert_eq!(
+        label.taxonomy,
+        Some(Taxonomy::from_string("f__X; g__Y").unwrap())
+    );
     assert_eq!(label.gid, None);
     assert_eq!(label.to_label().unwrap(), "f__X; g__Y|RED=0.500");
 }

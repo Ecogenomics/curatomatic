@@ -6,11 +6,11 @@ fn tree(newick: &str) -> CuratomaticResult<Tree> {
 
 /// The node at a position in post-order.
 fn node(tree: &Tree, index: usize) -> NodeId {
-    tree.tree.ids().nth(index).unwrap()
+    tree.newick.ids().nth(index).unwrap()
 }
 
 fn label(tree: &Tree, index: usize) -> &str {
-    tree.tree.label(node(tree, index)).unwrap()
+    tree.newick.label(node(tree, index)).unwrap()
 }
 
 fn red_dict() -> Red {
@@ -27,7 +27,10 @@ fn a_species_placeholder_is_replaced_and_the_other_taxa_are_kept() {
     let tree = tree(TWO_GENOMES).unwrap();
     assert_eq!(label(&tree, 2), "g__A; s__{unresolved} G1|RED=1.000");
     assert!(tree.taxon_labels.contains(&Taxon::new("g__A")));
-    assert!(tree.taxon_labels.contains(&Taxon::new("s__{unresolved} G1")));
+    assert!(
+        tree.taxon_labels
+            .contains(&Taxon::new("s__{unresolved} G1"))
+    );
 }
 
 #[test]
@@ -47,7 +50,7 @@ fn a_label_without_a_species_placeholder_is_not_rewritten() {
 fn transfer_taxon_moves_the_taxon_and_rewrites_both_labels() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let (root, species) = (node(&tree, 5), node(&tree, 4));
-    transfer_taxon(&mut tree.tree, root, species, &Taxon::new("f__F")).unwrap();
+    transfer_taxon(&mut tree.newick, root, species, &Taxon::new("f__F")).unwrap();
     assert_eq!(label(&tree, 5), "90.0|RED=0.700");
     assert_eq!(label(&tree, 4), "f__F; s__B b|RED=1.000");
 }
@@ -57,7 +60,7 @@ fn transfer_taxon_does_not_strip_a_node_that_has_no_bootstrap() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let (root, species) = (node(&tree, 5), node(&tree, 4));
     assert!(matches!(
-        transfer_taxon(&mut tree.tree, species, root, &Taxon::new("s__B b")),
+        transfer_taxon(&mut tree.newick, species, root, &Taxon::new("s__B b")),
         Err(CuratomaticError::Invariant(_))
     ));
     // Nothing was changed.
@@ -69,7 +72,7 @@ fn transfer_taxon_does_not_strip_a_node_that_has_no_bootstrap() {
 fn transfer_taxon_keeps_a_node_without_a_bootstrap_that_has_another_taxon() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let (root, species) = (node(&tree, 5), node(&tree, 2));
-    transfer_taxon(&mut tree.tree, species, root, &Taxon::new("g__A")).unwrap();
+    transfer_taxon(&mut tree.newick, species, root, &Taxon::new("g__A")).unwrap();
     assert_eq!(label(&tree, 2), "s__{unresolved} G1|RED=1.000");
     assert_eq!(label(&tree, 5), "90.0:f__F; g__A|RED=0.700");
 }
@@ -79,7 +82,7 @@ fn transfer_taxon_does_not_move_a_taxon_to_a_leaf() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let (root, leaf) = (node(&tree, 5), node(&tree, 3));
     assert!(matches!(
-        transfer_taxon(&mut tree.tree, root, leaf, &Taxon::new("f__F")),
+        transfer_taxon(&mut tree.newick, root, leaf, &Taxon::new("f__F")),
         Err(CuratomaticError::Invariant(_))
     ));
     assert_eq!(label(&tree, 5), "90.0:f__F|RED=0.700");
@@ -153,9 +156,16 @@ fn refine_genus(newick: &str) -> Tree {
 
 /// The label of the only node whose label contains `needle`.
 fn label_with<'a>(tree: &'a Tree, needle: &str) -> &'a str {
-    let mut found = tree.tree.ids().filter_map(|node| tree.tree.label(node)).filter(|l| l.contains(needle));
+    let mut found = tree
+        .newick
+        .ids()
+        .filter_map(|node| tree.newick.label(node))
+        .filter(|l| l.contains(needle));
     let label = found.next().unwrap();
-    assert!(found.next().is_none(), "more than one label contains {needle}");
+    assert!(
+        found.next().is_none(),
+        "more than one label contains {needle}"
+    );
     label
 }
 
@@ -186,11 +196,14 @@ fn a_nested_taxon_is_not_moved_onto_the_node_of_its_ancestor() {
 fn nested_inside_finds_the_closest_named_ancestor_of_the_same_rank() {
     let tree = tree(&nested_tree("100.0:g__A; g__")).unwrap();
     let b = tree
-        .tree
+        .newick
         .ids()
-        .find(|&node| tree.tree.label(node).is_some_and(|l| l.contains("g__B")))
+        .find(|&node| tree.newick.label(node).is_some_and(|l| l.contains("g__B")))
         .unwrap();
     let (genus, family) = (Taxon::new("g__B"), Taxon::new("f__F"));
-    assert_eq!(tree.nested_inside(b, Rank::Genus, &genus), Some(&Taxon::new("g__A")));
+    assert_eq!(
+        tree.nested_inside(b, Rank::Genus, &genus),
+        Some(&Taxon::new("g__A"))
+    );
     assert_eq!(tree.nested_inside(b, Rank::Family, &family), None);
 }
