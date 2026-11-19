@@ -11,13 +11,11 @@ pub(crate) const RED_SEPARATOR: &str = "|RED=";
 /// The spellings of the RED key that are read, which follow a `|` or a `:`.
 const RED_KEYS: [&str; 2] = ["RED=", "red="];
 
-/// Separates the genome ID of a leaf from its taxonomy.
-const LEAF_SEPARATOR: char = '|';
-
 /// The information held in the label of a node.
 ///
-/// A leaf is labelled `<gid>[|<taxonomy>][|RED=<red>]`, a leaf without a RED has a RED of
-/// [`RedValue::LEAF`]. An internal node is labelled `[<bootstrap>][:][<taxonomy>]|RED=<red>`, with
+/// A leaf is labelled `<gid>[|RED=<red>]`, a leaf without a RED has a RED of [`RedValue::LEAF`].
+/// A leaf label never holds a taxonomy, and is never written: the taxa of a leaf are kept on
+/// [`crate::tree::Leaf`]. An internal node is labelled `[<bootstrap>][:][<taxonomy>]|RED=<red>`, with
 /// at least one of the bootstrap and taxonomy. The RED key may also be written `|red=`, or `:red=`
 /// straight after a bootstrap (e.g. `100:red=0.889`).
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +27,8 @@ pub(crate) struct NodeLabel {
 }
 
 impl NodeLabel {
-    /// Read the label of a node.
+    /// Read the label of a node. The `taxonomy` of a leaf is always `None`, its taxa are kept on
+    /// [`crate::tree::Leaf`].
     pub(crate) fn from_node(tree: &NewickTree, node: NodeId) -> CuratomaticResult<Self> {
         let label = tree
             .label(node)
@@ -48,22 +47,18 @@ impl NodeLabel {
         })
     }
 
-    /// Format as the label of a node, the inverse of [`NodeLabel::from_node`].
+    /// Format as the label of an internal node, the inverse of [`NodeLabel::from_node`].
+    ///
+    /// A leaf label is never written (it is always the genome ID it was read with), so formatting
+    /// the label of a leaf is an error.
     pub(crate) fn to_label(&self) -> CuratomaticResult<String> {
+        if let Some(gid) = &self.gid {
+            return Err(CuratomaticError::Invariant(format!(
+                "the label of leaf {gid} is never rewritten"
+            )));
+        }
         let tax_string = self.taxonomy.as_ref().map_or_default(ToString::to_string);
         let red = self.red;
-
-        if let Some(gid) = &self.gid {
-            // This is a leaf node.
-            if tax_string.is_empty() {
-                return Ok(format!("{gid}{RED_SEPARATOR}{red:.3}"));
-            }
-            return Ok(format!(
-                "{gid}{LEAF_SEPARATOR}{tax_string}{RED_SEPARATOR}{red:.3}"
-            ));
-        }
-
-        // This is an internal node.
         match (self.bootstrap, tax_string.is_empty()) {
             (None, true) => Err(invalid("node has neither a bootstrap nor a taxonomy")),
             (None, false) => Ok(format!("{tax_string}{RED_SEPARATOR}{red:.3}")),
@@ -75,21 +70,21 @@ impl NodeLabel {
     }
 }
 
-/// Read the label of a leaf: `<gid>[|<taxonomy>][|RED=<red>]`.
+/// Read the label of a leaf: `<gid>[|RED=<red>]`. Anything else after the genome ID (e.g. a
+/// taxonomy, `<gid>|g__A`) is an error.
 fn parse_leaf_label(label: &str) -> CuratomaticResult<NodeLabel> {
-    let (prefix, red) = split_red(label)?;
+    let (gid, red) = split_red(label)?;
     let red = red.unwrap_or(RedValue::LEAF);
-    if red != RedValue::LEAF {
+    if red != RedValue::LEAF || gid.is_empty() {
         return Err(invalid(label));
     }
-    let (gid, taxonomy) = prefix.split_once(LEAF_SEPARATOR).unwrap_or((prefix, ""));
-    if gid.is_empty() {
-        return Err(invalid(label));
+    if gid.contains('|') {
+        return Err(CuratomaticError::TaxonomyOnLeaf(label.to_owned()));
     }
     Ok(NodeLabel {
         red,
         bootstrap: None,
-        taxonomy: parse_taxonomy(taxonomy)?,
+        taxonomy: None,
         gid: Some(GenomeId::new(gid)),
     })
 }

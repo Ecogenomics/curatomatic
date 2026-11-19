@@ -221,10 +221,26 @@ impl NewickTree {
         self.nodes.get(id.0)?.label.as_deref()
     }
 
-    pub(crate) fn set_label(&mut self, id: NodeId, label: String) {
-        if let Some(node) = self.nodes.get_mut(id.0) {
-            node.label = Some(label);
+    /// Replace the label of an internal node.
+    ///
+    /// The label of a leaf is its genome ID, and is never changed: trying to is an error.
+    pub(crate) fn set_internal_label(
+        &mut self,
+        id: NodeId,
+        label: String,
+    ) -> CuratomaticResult<()> {
+        let node = self
+            .nodes
+            .get_mut(id.0)
+            .ok_or_else(|| CuratomaticError::Invariant(format!("node {id} is not on the tree")))?;
+        if node.children.is_empty() {
+            return Err(CuratomaticError::Invariant(format!(
+                "the label of leaf {id} ({}) is never changed",
+                node.label.as_deref().unwrap_or_default()
+            )));
         }
+        node.label = Some(label);
+        Ok(())
     }
 }
 

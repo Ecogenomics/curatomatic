@@ -60,11 +60,28 @@ pub(crate) struct Move {
     pub(crate) to: NodeId,
 }
 
-/// A RED decorated tree: leaf nodes are labelled `<gid>|RED=<red>`, and internal nodes
+/// A leaf of the tree, which is a genome.
+///
+/// The label of a leaf on the Newick tree is its genome ID, and is never changed: the taxa that the
+/// leaf holds are kept here, and are written to the taxonomy file (see [`Tree::leaf_taxonomies`]).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Leaf {
+    pub(crate) gid: GenomeId,
+    /// The taxa on the leaf itself (not those of its ancestors).
+    pub(crate) taxonomy: Taxonomy,
+}
+
+/// A RED decorated tree: leaf nodes are labelled `<gid>[|RED=<red>]`, and internal nodes
 /// `[<bootstrap>][:][<taxonomy>]|RED=<red>`.
+///
+/// The taxa of an internal node are kept in its label, and those of a leaf on its [`Leaf`]. Leaf
+/// labels are never changed.
 pub(crate) struct Tree {
     newick: NewickTree,
-    /// The label of every node, indexed by node. Call [`Tree::reload`] after changing the tree.
+    /// Every leaf node, and the taxa it holds.
+    leaves: BTreeMap<NodeId, Leaf>,
+    /// The label of every node, indexed by node, where the taxonomy of a leaf is that of its
+    /// [`Leaf`]. Call [`Tree::reload`] after changing the tree.
     node_labels: Vec<NodeLabel>,
     /// The genome ID of every leaf node.
     pub(crate) gids: BTreeSet<GenomeId>,
@@ -74,35 +91,81 @@ pub(crate) struct Tree {
 
 impl Tree {
     fn new(tree: NewickTree) -> CuratomaticResult<Self> {
-        let node_labels = Self::get_node_labels(&tree)?;
-        let gids = Self::get_gids(&tree, &node_labels);
+        let mut leaves = BTreeMap::new();
+        for node in tree.leaves() {
+            let gid = NodeLabel::from_node(&tree, node)?.gid.ok_or_else(|| {
+                CuratomaticError::Invariant(format!("leaf {node} has no genome ID"))
+            })?;
+            leaves.insert(
+                node,
+                Leaf {
+                    gid,
+                    taxonomy: Taxonomy::default(),
+                },
+            );
+        }
+        let node_labels = Self::get_node_labels(&tree, &leaves)?;
+        let gids = leaves.values().map(|leaf| leaf.gid.clone()).collect();
         let taxon_labels = Self::get_taxon_labels(&node_labels)?;
         Ok(Tree {
             newick: tree,
+            leaves,
             node_labels,
             gids,
             taxon_labels,
         })
     }
 
-    /// Recalculate everything that is derived from the labels of the nodes.
+    /// Recalculate everything that is derived from the labels of the nodes and the leaves.
     pub(crate) fn reload(&mut self) -> CuratomaticResult<()> {
-        self.node_labels = Self::get_node_labels(&self.newick)?;
+        self.node_labels = Self::get_node_labels(&self.newick, &self.leaves)?;
         self.taxon_labels = Self::get_taxon_labels(&self.node_labels)?;
         Ok(())
     }
 
-    fn get_node_labels(tree: &NewickTree) -> CuratomaticResult<Vec<NodeLabel>> {
+    fn get_node_labels(
+        tree: &NewickTree,
+        leaves: &BTreeMap<NodeId, Leaf>,
+    ) -> CuratomaticResult<Vec<NodeLabel>> {
         tree.ids()
-            .map(|node| NodeLabel::from_node(tree, node))
+            .map(|node| {
+                let mut label = NodeLabel::from_node(tree, node)?;
+                if let Some(leaf) = leaves.get(&node) {
+                    label.taxonomy = non_empty(leaf.taxonomy.clone());
+                }
+                Ok(label)
+            })
             .collect()
     }
 
-    fn get_gids(tree: &NewickTree, node_labels: &[NodeLabel]) -> BTreeSet<GenomeId> {
-        tree.leaves()
-            .filter_map(|node| node_labels.get(node.index())?.gid.as_ref())
-            .cloned()
-            .collect()
+    /// The taxa held by a node, read from the tree as it is now (not from [`Tree::label`], which
+    /// is only up to date after [`Tree::reload`]).
+    fn node_taxonomy(&self, node: NodeId) -> CuratomaticResult<Taxonomy> {
+        if let Some(leaf) = self.leaves.get(&node) {
+            return Ok(leaf.taxonomy.clone());
+        }
+        Ok(NodeLabel::from_node(&self.newick, node)?
+            .taxonomy
+            .unwrap_or_default())
+    }
+
+    /// Replace the taxa held by a node: on its [`Leaf`] for a leaf, and in the label of an
+    /// internal node. The label of a leaf is never changed.
+    fn set_node_taxonomy(&mut self, node: NodeId, taxonomy: Taxonomy) -> CuratomaticResult<()> {
+        if let Some(leaf) = self.leaves.get_mut(&node) {
+            leaf.taxonomy = taxonomy;
+            return Ok(());
+        }
+        let mut info = NodeLabel::from_node(&self.newick, node)?;
+        info.taxonomy = non_empty(taxonomy);
+        self.newick.set_internal_label(node, info.to_label()?)
+    }
+
+    /// Add a taxon to a node, see [`Tree::set_node_taxonomy`].
+    fn add_node_taxon(&mut self, node: NodeId, taxon: Taxon) -> CuratomaticResult<()> {
+        let mut taxonomy = self.node_taxonomy(node)?;
+        taxonomy.add_taxon(taxon)?;
+        self.set_node_taxonomy(node, taxonomy)
     }
 
     /// Every taxon on the tree, which must be on one node only (except [`Taxon::unresolvable`]).
@@ -168,7 +231,7 @@ impl Tree {
 
     /// The genome ID of a leaf, `None` if `node` is not a leaf.
     fn leaf_gid(&self, node: NodeId) -> Option<&GenomeId> {
-        self.node_labels.get(node.index())?.gid.as_ref()
+        self.leaves.get(&node).map(|leaf| &leaf.gid)
     }
 
     /// The lowest rank of any taxon (placeholders included) on the path from each node (included)
@@ -238,7 +301,11 @@ impl Tree {
 
         let mut out = LeafAssignment::default();
         for (leaf, taxa) in wanted {
-            let mut info = self.label(leaf)?.clone();
+            let leaf_taxonomy = &mut self
+                .leaves
+                .get_mut(&leaf)
+                .ok_or_else(|| CuratomaticError::Invariant(format!("node {leaf} is not a leaf")))?
+                .taxonomy;
             let mut assigned = false;
             for taxon in taxa {
                 if self.taxon_labels.contains(taxon) || n_wanting.get(taxon).is_some_and(|&n| n > 1)
@@ -248,14 +315,11 @@ impl Tree {
                 }
                 let n = out.n_taxa.entry(taxon.rank()?).or_default();
                 *n = n.saturating_add(1);
-                info.taxonomy
-                    .get_or_insert_with(Taxonomy::default)
-                    .add_taxon(taxon.clone())?;
+                leaf_taxonomy.add_taxon(taxon.clone())?;
                 assigned = true;
             }
             if assigned {
                 out.n_leaves = out.n_leaves.saturating_add(1);
-                self.newick.set_label(leaf, info.to_label()?);
             }
         }
 
@@ -331,35 +395,30 @@ impl Tree {
         Ok(out)
     }
 
-    /// Set the labels to those of the output tree: a leaf is labelled with its genome ID only (its
-    /// taxa are written to the taxonomy file, see [`Tree::leaf_taxonomies`]), and the RED value is
-    /// removed from the label of every internal node.
-    pub(crate) fn set_output_labels(&mut self) -> CuratomaticResult<()> {
-        for node in self.newick.ids() {
-            let label = if self.newick.is_leaf(node) {
-                NodeLabel::from_node(&self.newick, node)?
-                    .gid
-                    .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("leaf {node}")))?
-                    .to_string()
-            } else {
-                let label = self
-                    .newick
-                    .label(node)
-                    .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("node {node}")))?;
-                strip_red(label)?.to_owned()
-            };
-            self.newick.set_label(node, label);
+    /// Remove the RED value from the label of every internal node. Leaf labels are never changed.
+    pub(crate) fn remove_red_labels(&mut self) -> CuratomaticResult<()> {
+        let internal: Vec<NodeId> = self
+            .newick
+            .ids()
+            .filter(|&node| !self.newick.is_leaf(node))
+            .collect();
+        for node in internal {
+            let label = self
+                .newick
+                .label(node)
+                .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("node {node}")))?;
+            let label = strip_red(label)?.to_owned();
+            self.newick.set_internal_label(node, label)?;
         }
         Ok(())
     }
 
-    /// Every taxon that is on the tree, read from the labels of the nodes themselves.
+    /// Every taxon that is on the tree, read from the labels of the internal nodes and the
+    /// leaves as they are now.
     pub(crate) fn extract_all_taxa_from_tree(&self) -> CuratomaticResult<BTreeSet<Taxon>> {
         let mut out = BTreeSet::new();
         for node in self.newick.ids() {
-            if let Some(taxonomy) = NodeLabel::from_node(&self.newick, node)?.taxonomy {
-                out.extend(taxonomy.iter_ranks().cloned());
-            }
+            out.extend(self.node_taxonomy(node)?.iter_ranks().cloned());
         }
         Ok(out)
     }
@@ -646,7 +705,7 @@ impl Tree {
                 self.newick.label(original_node).unwrap_or("None"),
                 self.newick.label(best_node).unwrap_or("None")
             );
-            transfer_taxon(&mut self.newick, original_node, best_node, taxon)?;
+            transfer_taxon(self, original_node, best_node, taxon)?;
             moves.push(Move {
                 taxon: taxon.clone(),
                 from: original_node,
@@ -657,42 +716,39 @@ impl Tree {
     }
 }
 
-/// Move a taxon from one node to another, rewriting the labels of both.
+/// Move a taxon from one node to another. Either node may be a leaf, whose label is never changed:
+/// its taxa are on its [`Leaf`].
 fn transfer_taxon(
-    tree: &mut NewickTree,
+    tree: &mut Tree,
     old_node: NodeId,
     new_node: NodeId,
     taxon: &Taxon,
 ) -> CuratomaticResult<()> {
-    let mut old_info = NodeLabel::from_node(tree, old_node)?;
-    let mut new_info = NodeLabel::from_node(tree, new_node)?;
-
-    let old_taxonomy = old_info.taxonomy.as_mut().ok_or_else(|| {
-        CuratomaticError::Invariant(format!(
-            "node {old_node} has no taxonomy to remove {taxon} from"
-        ))
-    })?;
+    let mut old_taxonomy = tree.node_taxonomy(old_node)?;
     old_taxonomy.remove_taxon(taxon)?;
 
     // An internal node without a bootstrap is labelled by its taxonomy alone, so removing its last
-    // taxon would leave nothing to label it with (a leaf keeps its genome ID). Neither label has
+    // taxon would leave nothing to label it with (a leaf keeps its genome ID). Neither node has
     // been changed at this point.
-    if old_info.gid.is_none()
-        && old_info.bootstrap.is_none()
+    if !tree.leaves.contains_key(&old_node)
+        && NodeLabel::from_node(&tree.newick, old_node)?
+            .bootstrap
+            .is_none()
         && old_taxonomy.iter_ranks().next().is_none()
     {
         return Err(CuratomaticError::Invariant(format!(
             "moving {taxon} would leave node {old_node} with neither a bootstrap nor a taxonomy"
         )));
     }
-    new_info
-        .taxonomy
-        .get_or_insert_with(Taxonomy::default)
-        .add_taxon(taxon.clone())?;
 
-    tree.set_label(old_node, old_info.to_label()?);
-    tree.set_label(new_node, new_info.to_label()?);
-    Ok(())
+    tree.set_node_taxonomy(old_node, old_taxonomy)?;
+    tree.add_node_taxon(new_node, taxon.clone())
+}
+
+/// `None` for a taxonomy without any taxa.
+fn non_empty(taxonomy: Taxonomy) -> Option<Taxonomy> {
+    let has_taxa = taxonomy.iter_ranks().next().is_some();
+    has_taxa.then_some(taxonomy)
 }
 
 /// Create a novel taxon for every rank that a leaf is missing, and place them on the tree.
@@ -777,21 +833,14 @@ pub(crate) fn fill_in_missing_ranks(
         for (candidate, leaves) in &candidate_to_leaves {
             let gids = leaves
                 .iter()
-                .map(|&leaf| NodeLabel::from_node(&tree.newick, leaf).map(|label| label.gid))
-                .collect::<CuratomaticResult<Vec<_>>>()?
-                .into_iter()
-                .flatten()
+                .filter_map(|&leaf| tree.leaf_gid(leaf).cloned())
                 .collect::<BTreeSet<GenomeId>>();
             let new_taxon = generate_unique_rank(*rank, &gids, metadata, &known_taxa)?;
             known_taxa.insert(new_taxon.clone());
             new_taxa_created.insert(new_taxon.clone());
 
-            // Add the taxon to the label of the node.
-            let mut info = NodeLabel::from_node(&tree.newick, *candidate)?;
-            info.taxonomy
-                .get_or_insert_with(Taxonomy::default)
-                .add_taxon(new_taxon)?;
-            tree.newick.set_label(*candidate, info.to_label()?);
+            // Add the taxon to the node (the leaf itself may be the candidate).
+            tree.add_node_taxon(*candidate, new_taxon)?;
         }
     }
 

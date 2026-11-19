@@ -1,4 +1,5 @@
 use super::*;
+use crate::newick::NewickTree;
 
 // Python formats counts with `f'{n:,}'`.
 #[test]
@@ -227,12 +228,17 @@ fn curate_writes_one_seven_rank_row_per_genome_from_the_final_tree() {
          G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n"
     );
     let tree = std::fs::read_to_string(out_dir.join("tree.curatomatic.tree")).unwrap();
-    // A leaf is labelled with its genome ID only, its taxa are in the taxonomy file.
-    for gid in ["G1", "G2", "G3"] {
-        assert!(tree.contains(&format!("{gid}:")), "{tree}");
-    }
-    assert!(!tree.contains("s__"), "{tree}");
-    assert!(!tree.contains('|'), "{tree}");
+    // Leaf labels are never changed: the taxa of a leaf are in the taxonomy file only.
+    let leaf_labels = |text: &str| {
+        let newick = NewickTree::parse(text).unwrap();
+        newick
+            .leaves()
+            .map(|leaf| newick.label(leaf).unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let tree_in = std::fs::read_to_string(out_dir.join("../tree.nwk")).unwrap();
+    assert_eq!(leaf_labels(&tree), leaf_labels(&tree_in));
+    assert_eq!(leaf_labels(&tree), ["G1", "G2", "G3"]);
 }
 
 #[test]

@@ -135,11 +135,23 @@ fn parent_and_children_agree() {
 }
 
 #[test]
-fn set_label_replaces_the_label() {
+fn set_internal_label_replaces_the_label() {
     let mut tree = parse("(A,B)R;");
     let root = tree.root;
-    tree.set_label(root, "s__A b".to_string());
+    tree.set_internal_label(root, "s__A b".to_string()).unwrap();
     assert_eq!(tree.to_newick(), "(A,B)'s__A b';\n");
+}
+
+#[test]
+fn the_label_of_a_leaf_can_never_be_changed() {
+    let mut tree = parse("(A,B)R;");
+    for leaf in tree.leaves().collect::<Vec<_>>() {
+        assert!(matches!(
+            tree.set_internal_label(leaf, "A|g__A".to_string()),
+            Err(CuratomaticError::Invariant(_))
+        ));
+    }
+    assert_eq!(tree.to_newick(), "(A,B)R;\n");
 }
 
 // The input is already in the form dendropy writes, so reading and writing it is the identity.

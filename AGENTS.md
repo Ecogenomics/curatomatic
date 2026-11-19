@@ -75,6 +75,9 @@ Test data are available here:
 - Tests live in a separate file, never inline: declare `#[cfg(test)] mod tests;` in `foo.rs` and put the tests in
   `foo/tests.rs` (see `src/taxonomy.rs`).
 - When possible, use newtypes.
+- Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
+  taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
+  file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.
 - Species names can be given in the format `s__{unresolved} NAME`. These are not to be changed by curatomatic.
 - An internal node within the tree can have multiple taxa in the same rank. These cases can still be refined by
   curatomatic, but deciding which of them should be kept must be done manually.

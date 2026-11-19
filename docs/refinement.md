@@ -160,7 +160,8 @@ beaten by a supported candidate closer to the median (or equally close with a hi
 
 A chosen move fails with an error, stopping the run, if removing the taxon would leave an internal
 original node with **neither a bootstrap nor a taxonomy**, so it would have nothing to be labelled
-with. A leaf can hold a taxon, and keeps its genome ID when its last taxon is moved away.
+with. A leaf can hold a taxon (on its `Leaf`, not its label), so its last taxon can always be
+moved away.
 
 Neither node is changed in that case.
 
@@ -173,15 +174,18 @@ These are checked during or after the refinement, and break the run if violated:
 - Assigning the taxonomy file to the leaves only adds taxa, it never removes one.
 - At the end of the run, the set of taxa on the tree equals the set after the leaf assignment plus
   the novel taxa that were created: refinement moves taxa, it never adds or loses them.
-- The output tree labels each leaf with its genome ID only, and no node with a RED value
-  (`Tree::set_output_labels`). The taxa held by the leaves are written to the taxonomy file.
+- The label of a leaf is never changed (`NewickTree::set_internal_label` refuses a leaf): the
+  output tree labels each leaf exactly as it was read. The taxa held by a leaf are kept on its
+  `Leaf`, and are written to the taxonomy file only. The RED is removed from every internal node
+  (`Tree::remove_red_labels`).
 
 ## Input preparation
 
 Before refinement, when the tree is read:
 
-- A leaf is labelled `<gid>[|<taxonomy>][|RED=<red>]`. A leaf without a RED has a RED of `1.0`, and
-  any other leaf RED is invalid. An internal node is labelled
+- A leaf is labelled `<gid>[|RED=<red>]`. A leaf without a RED has a RED of `1.0`, and any other
+  leaf RED is invalid. A leaf label that holds a taxonomy (e.g. `<gid>|g__A`) is an error
+  (`TaxonomyOnLeaf`): the taxa of a leaf come only from `--taxonomy`. An internal node is labelled
   `[<bootstrap>][:][<taxonomy>]|RED=<red>`. The RED key may be written `RED=` or `red=`, after a
   `|`, or after the `:` of a bootstrap with no taxonomy (`100:red=0.889`).
 - If `--taxonomy` is given, every leaf is given the ranks the tree can't hold,

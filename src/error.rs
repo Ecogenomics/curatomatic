@@ -24,6 +24,9 @@ pub(crate) enum CuratomaticError {
     Newick(String),
     /// A node label does not have the expected `<bootstrap>:<taxonomy>|RED=<value>` format.
     InvalidNodeLabel(String),
+    /// A leaf label holds more than its genome ID and RED: the taxa of a leaf are given by the
+    /// taxonomy file (`--taxonomy`), never by its label.
+    TaxonomyOnLeaf(String),
     /// A taxon label is found on more than one node of the tree.
     NonUniqueTaxon(String),
     /// The median RED file could not be parsed.
@@ -64,6 +67,11 @@ impl fmt::Display for CuratomaticError {
             }
             CuratomaticError::Newick(message) => write!(f, "Invalid Newick tree: {message}"),
             CuratomaticError::InvalidNodeLabel(label) => write!(f, "Invalid node label: {label}"),
+            CuratomaticError::TaxonomyOnLeaf(label) => write!(
+                f,
+                "Leaf {label} holds a taxonomy: a leaf is labelled with its genome ID, and its \
+                 taxa are given by --taxonomy"
+            ),
             CuratomaticError::NonUniqueTaxon(taxon) => {
                 write!(f, "Taxon label {taxon} is not unique on the tree.")
             }

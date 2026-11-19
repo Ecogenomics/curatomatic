@@ -1,7 +1,5 @@
 use super::*;
 
-use crate::taxon::Taxon;
-
 // Expected values in this file come from the Python implementation
 // (`curatomatic/model/node_label.py`, `NodeLabel.from_node` and `to_string`), run with dendropy
 // on the same labels.
@@ -44,15 +42,11 @@ fn leaf_has_a_gid_and_a_red_of_one() {
             gid: Some(GenomeId::new("G1")),
         }
     );
-    assert_eq!(label.to_label().unwrap(), "G1|RED=1.000");
 }
 
 #[test]
 fn leaf_red_may_be_written_as_an_integer() {
-    assert_eq!(
-        leaf("G1|RED=1").unwrap().to_label().unwrap(),
-        "G1|RED=1.000"
-    );
+    assert_eq!(leaf("G1|RED=1").unwrap().red, RedValue::LEAF);
 }
 
 #[test]
@@ -210,51 +204,45 @@ fn to_label_of_a_node_with_neither_bootstrap_nor_taxonomy_is_an_error() {
     ));
 }
 
-/// Read a leaf label, and write it back out.
-fn leaf_round_trip(label: &str) -> String {
-    leaf(label).unwrap().to_label().unwrap()
+#[test]
+fn leaf_is_read_as_its_genome_id() {
+    for text in ["G1", "G1|RED=1.000", "G1|red=1.0"] {
+        assert_eq!(
+            leaf(text).unwrap(),
+            NodeLabel {
+                red: RedValue::LEAF,
+                bootstrap: None,
+                taxonomy: None,
+                gid: Some(GenomeId::new("G1")),
+            },
+            "label {text:?}"
+        );
+    }
 }
 
 #[test]
-fn leaf_with_a_taxonomy_round_trips() {
-    let label = leaf("G1|g__Foo; s__Foo bar|RED=1.000").unwrap();
-    assert_eq!(
-        label,
-        NodeLabel {
-            red: RedValue::LEAF,
-            bootstrap: None,
-            taxonomy: Some(Taxonomy::from_string("g__Foo; s__Foo bar").unwrap()),
-            gid: Some(GenomeId::new("G1")),
-        }
-    );
-    assert_eq!(label.to_label().unwrap(), "G1|g__Foo; s__Foo bar|RED=1.000");
-    assert_eq!(
-        leaf_round_trip("G1|g__Foo; s__Foo bar|RED=1.000"),
-        "G1|g__Foo; s__Foo bar|RED=1.000"
-    );
+fn leaf_with_a_taxonomy_is_an_error() {
+    // The taxa of a leaf are given by the taxonomy file, never by its label.
+    for text in [
+        "G1|g__Foo; s__Foo bar|RED=1.000",
+        "G1|s__{unresolved} sp1",
+        "G1|s__A b|red=1.0",
+    ] {
+        assert_eq!(
+            leaf(text),
+            Err(CuratomaticError::TaxonomyOnLeaf(text.to_owned())),
+            "label {text:?}"
+        );
+    }
 }
 
 #[test]
-fn leaf_with_a_taxonomy_and_no_red_is_read() {
-    assert_eq!(
-        leaf_round_trip("G1|s__{unresolved} sp1"),
-        "G1|s__{unresolved} sp1|RED=1.000"
-    );
-}
-
-#[test]
-fn leaf_red_may_be_written_in_lower_case() {
-    assert_eq!(leaf_round_trip("G1|red=1.0"), "G1|RED=1.000");
-    assert_eq!(leaf_round_trip("G1|s__A b|red=1.0"), "G1|s__A b|RED=1.000");
-}
-
-#[test]
-fn an_unresolved_species_on_a_leaf_is_kept_as_is() {
-    let label = leaf("G1|s__{unresolved} sp053939565|RED=1.0").unwrap();
-    assert_eq!(
-        label.taxonomy.unwrap().s,
-        vec![Taxon::new("s__{unresolved} sp053939565")]
-    );
+fn the_label_of_a_leaf_is_never_written() {
+    let label = leaf("G1|RED=1.000").unwrap();
+    assert!(matches!(
+        label.to_label(),
+        Err(CuratomaticError::Invariant(_))
+    ));
 }
 
 #[test]

@@ -86,12 +86,13 @@ genome, they get the same name.
 
 - **Python**: a leaf is labelled with its genome ID only. The species (and any rank below the
   lowest one decorated above a genome) had to be on a dummy species node above each leaf.
-- **Rust** (`Tree::assign_leaf_taxonomy`, `src/tree.rs`): a leaf can hold a taxonomy
-  (`<gid>|<taxonomy>|RED=<red>`). `--taxonomy` gives each leaf the ranks below the lowest rank on
-  its path, before refinement (see [refinement.md](refinement.md#input-preparation)). Taxa can be
-  moved down onto a leaf, and novel taxa placed on one. The curated taxonomy of every genome is
-  written to `<stem>.curatomatic.taxonomy.tsv`. The output tree labels each leaf with its genome
-  ID only, as in Python (`Tree::set_output_labels`).
+- **Rust** (`Tree::assign_leaf_taxonomy`, `src/tree.rs`): a leaf can hold taxa, which are kept
+  in the `Taxonomy` of its `Leaf`, never in its label. `--taxonomy` gives each leaf the ranks
+  below the lowest rank on its path, before refinement (see
+  [refinement.md](refinement.md#input-preparation)). Taxa can be moved down onto a leaf, and
+  novel taxa placed on one. The curated taxonomy of every genome is written to
+  `<stem>.curatomatic.taxonomy.tsv`. Leaf labels are never changed, so the output tree labels
+  each leaf with its genome ID, as in Python.
 
 ## Failures that are now reported errors
 
