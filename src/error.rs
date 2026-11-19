@@ -43,6 +43,8 @@ pub(crate) enum CuratomaticError {
     },
     /// Genomes on the tree that are not in the taxonomy file: how many, and the first of them.
     MissingFromTaxonomyFile { n: usize, first: GenomeId },
+    /// The run changed the taxa on the tree by more than moving them and creating novel taxa.
+    TaxaChanged(String),
     /// An internal expectation was violated.
     Invariant(String),
 }
@@ -93,6 +95,11 @@ impl fmt::Display for CuratomaticError {
             CuratomaticError::MissingFromTaxonomyFile { n, first } => write!(
                 f,
                 "{n} genome(s) on the tree are not in the taxonomy file, e.g. {first}"
+            ),
+            CuratomaticError::TaxaChanged(message) => write!(
+                f,
+                "Curatomatic may only move taxa or create novel taxa, never remove them or edit \
+                 their text, but the taxa on the tree changed: {message}"
             ),
             CuratomaticError::Invariant(message) => write!(f, "Internal error: {message}"),
         }

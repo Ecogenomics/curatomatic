@@ -651,3 +651,28 @@ fn a_genome_that_is_not_skipped_still_gets_its_lower_ranks() {
     assert!(novel.contains(&Taxon::new("p__G1")));
     assert!(novel.contains(&Taxon::new("f__G1")));
 }
+
+#[test]
+fn taxon_counts_include_the_taxa_of_internal_nodes_and_leaves() {
+    let tree = tree_with_leaf_taxa(
+        "((G1:0.1,G2:0.1)'100:f__F; g__A|red=0.9':0.1,G3:0.1)'d__D; p__|red=0.0';",
+        &[(0, "s__A one"), (1, "s__A two"), (3, "g__B; s__B three")],
+    )
+    .unwrap();
+    let counts = tree.taxon_counts().unwrap();
+    assert_eq!(
+        counts
+            .iter()
+            .map(|(taxon, n)| (taxon.as_str(), n))
+            .collect::<Vec<_>>(),
+        [
+            ("d__D", 1),
+            ("f__F", 1),
+            ("g__A", 1),
+            ("g__B", 1),
+            ("s__A one", 1),
+            ("s__A two", 1),
+            ("s__B three", 1),
+        ]
+    );
+}

@@ -12,7 +12,7 @@ use crate::newick::{NewickTree, NodeId};
 use crate::node_label::{NodeLabel, strip_red};
 use crate::rank::Rank;
 use crate::red::Red;
-use crate::taxon::{Taxon, generate_unique_rank};
+use crate::taxon::{Taxon, TaxonCounts, generate_unique_rank};
 use crate::taxonomy::Taxonomy;
 use crate::taxonomy_file::TaxonomyFile;
 
@@ -447,6 +447,16 @@ impl Tree {
             out.extend(self.node_taxonomy(node)?.iter_ranks().cloned());
         }
         Ok(out)
+    }
+
+    /// The number of nodes that hold each named taxon, read from the labels of the internal
+    /// nodes and the leaves as they are now.
+    pub(crate) fn taxon_counts(&self) -> CuratomaticResult<TaxonCounts> {
+        let mut taxa = Vec::new();
+        for node in self.newick.ids() {
+            taxa.extend(self.node_taxonomy(node)?.iter_ranks().cloned());
+        }
+        Ok(TaxonCounts::from_taxa(&taxa))
     }
 
     /// Find the nodes that each taxon of `rank` could be moved to.

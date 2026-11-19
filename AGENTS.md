@@ -72,6 +72,9 @@ Test data are available here:
 
 - Curatomatic must never change the structure of the tree, its bootstrap values, or RED values: the only changes to
   the final tree are the taxon labels at each node (which form the taxonomy).
+- Curatomatic can only ever move taxa or create novel taxa. It never removes a taxon, and never edits the text of one.
+  Placeholders (e.g. `g__`) are not names, and are exempt. This is checked at the end of every run, before any output
+  is written, by `check_taxa_unchanged` (`src/main.rs`), which fails the run with `CuratomaticError::TaxaChanged`.
 - Tests live in a separate file, never inline: declare `#[cfg(test)] mod tests;` in `foo.rs` and put the tests in
   `foo/tests.rs` (see `src/taxonomy.rs`).
 - When possible, use newtypes.

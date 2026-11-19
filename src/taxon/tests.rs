@@ -269,3 +269,31 @@ fn a_valid_name_is_named_and_not_an_unresolved_species() {
     assert!(Taxon::new("s__{unresolved} G1").is_unresolved_species());
     assert!(!Taxon::new("s__Chlorobium limicola").is_unresolved_species());
 }
+
+#[test]
+fn taxon_counts_count_each_named_taxon_and_skip_placeholders() {
+    let taxa: Vec<Taxon> = [
+        "g__A",
+        "g__",
+        "g__UNRESOLVABLE",
+        "s__A one",
+        "g__UNRESOLVABLE",
+        "p__",
+    ]
+    .into_iter()
+    .map(Taxon::new)
+    .collect();
+    let counts = TaxonCounts::from_taxa(&taxa);
+    assert_eq!(counts.get(&Taxon::new("g__A")), 1);
+    assert_eq!(counts.get(&Taxon::new("g__UNRESOLVABLE")), 2);
+    assert_eq!(counts.get(&Taxon::new("s__A one")), 1);
+    assert_eq!(counts.get(&Taxon::new("g__")), 0);
+    assert_eq!(counts.get(&Taxon::new("g__B")), 0);
+    assert_eq!(
+        counts
+            .iter()
+            .map(|(taxon, n)| (taxon.as_str(), n))
+            .collect::<Vec<_>>(),
+        [("g__A", 1), ("g__UNRESOLVABLE", 2), ("s__A one", 1)]
+    );
+}

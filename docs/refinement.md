@@ -172,8 +172,13 @@ These are checked during or after the refinement, and break the run if violated:
 - Every taxon is on **exactly one** node (checked whenever the labels are loaded). The only
   exception is the sentinel `<rank>__UNRESOLVABLE` (see [Novel taxa](#novel-taxa)).
 - Assigning the taxonomy file to the leaves only adds taxa, it never removes one.
-- At the end of the run, the set of taxa on the tree equals the set after the leaf assignment plus
-  the novel taxa that were created: refinement moves taxa, it never adds or loses them.
+- Curatomatic only moves taxa or creates novel taxa, it never removes a taxon or edits its text
+  (`check_taxa_unchanged`). After the novel taxa are created, and before anything is written, the
+  named taxa on the tree are compared with those after the leaf assignment, counting the nodes
+  that hold each one. Every taxon must still be on as many nodes as before (moved, not removed or
+  copied), and with the same text. Every other taxon must be a novel taxon that does not reuse an
+  existing name. Placeholders (e.g. `g__`) are not counted. A violation fails the run with an
+  error that lists each taxon that was removed, copied, reused or gained.
 - The label of a leaf is never changed (`NewickTree::set_internal_label` refuses a leaf): the
   output tree labels each leaf exactly as it was read. The taxa held by a leaf are kept on its
   `Leaf`, and are written to the taxonomy file only. The RED is removed from every internal node

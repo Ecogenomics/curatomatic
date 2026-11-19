@@ -31,7 +31,7 @@ use crate::metadata::Metadata;
 use crate::rank::Rank;
 use crate::red::Red;
 use crate::report::{ReportInput, build_report, write_report};
-use crate::taxon::Taxon;
+use crate::taxon::{Taxon, TaxonCounts};
 use crate::taxonomy_file::TaxonomyFile;
 use crate::tree::{Tree, fill_in_missing_ranks};
 
@@ -190,32 +190,63 @@ fn read_metadata(
     Ok((metadata, prior_taxa))
 }
 
-/// Check that the taxa on the tree are those it started with, plus the novel taxa.
+/// Check that curatomatic only moved or created taxa (see the rules in `AGENTS.md`).
+///
+/// `before` counts the named taxa on the tree before refinement, and `after` the named taxa at the
+/// end of the run. Every taxon of `before` must still be on the tree, on as many nodes as before
+/// (it was moved, not removed or copied), with its text unchanged. Every other taxon on the tree
+/// must be one of the `novel` taxa that were created, and a novel taxon must not reuse a name that
+/// was already on the tree. Placeholders (e.g. `g__`) are not counted, they can be refined freely.
 fn check_taxa_unchanged(
-    before: &BTreeSet<Taxon>,
-    tree: &Tree,
+    before: &TaxonCounts,
+    after: &TaxonCounts,
     novel: &BTreeSet<Taxon>,
 ) -> CuratomaticResult<()> {
-    let after = tree.extract_all_taxa_from_tree()?;
-    let lost: Vec<String> = before
+    let join = |taxa: Vec<String>| taxa.join(", ");
+    let removed: Vec<String> = before
         .iter()
-        .filter(|taxon| !after.contains(*taxon) || novel.contains(*taxon))
+        .filter(|&(taxon, _)| after.get(taxon) == 0)
+        .map(|(taxon, _)| taxon.to_string())
+        .collect();
+    let count_changed: Vec<String> = before
+        .iter()
+        .filter(|&(taxon, n)| after.get(taxon) != 0 && after.get(taxon) != n)
+        .map(|(taxon, n)| format!("{taxon} ({n} -> {})", after.get(taxon)))
+        .collect();
+    let reused: Vec<String> = novel
+        .iter()
+        .filter(|taxon| before.get(taxon) != 0)
         .map(ToString::to_string)
         .collect();
     let gained: Vec<String> = after
         .iter()
-        .filter(|taxon| !before.contains(*taxon) && !novel.contains(*taxon))
-        .map(ToString::to_string)
+        .filter(|&(taxon, _)| before.get(taxon) == 0 && !novel.contains(taxon))
+        .map(|(taxon, _)| taxon.to_string())
         .collect();
-    if lost.is_empty() && gained.is_empty() {
+
+    let mut problems = Vec::new();
+    if !removed.is_empty() {
+        problems.push(format!("removed: [{}]", join(removed)));
+    }
+    if !count_changed.is_empty() {
+        problems.push(format!(
+            "on a different number of nodes: [{}]",
+            join(count_changed)
+        ));
+    }
+    if !reused.is_empty() {
+        problems.push(format!("reused by a novel taxon: [{}]", join(reused)));
+    }
+    if !gained.is_empty() {
+        problems.push(format!(
+            "gained, but not created as a novel taxon: [{}]",
+            join(gained)
+        ));
+    }
+    if problems.is_empty() {
         return Ok(());
     }
-    Err(CuratomaticError::Invariant(format!(
-        "the taxa on the tree changed by more than the novel taxa that were created \
-         (lost or reused by a novel taxon: [{}], gained: [{}])",
-        lost.join(", "),
-        gained.join(", ")
-    )))
+    Err(CuratomaticError::TaxaChanged(problems.join("; ")))
 }
 
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
@@ -243,7 +274,8 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         None => None,
     };
 
-    let tree_taxa_before = tree.extract_all_taxa_from_tree()?;
+    // Every change to the taxa from here on must be a move or a novel taxon.
+    let tree_taxa_before = tree.taxon_counts()?;
 
     let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, taxonomy.as_ref())?;
     drop(taxonomy);
@@ -285,7 +317,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         new_taxa_created.len().separate_with_commas()
     );
 
-    check_taxa_unchanged(&tree_taxa_before, &tree, &new_taxa_created)?;
+    // Refinement and novel taxa are the only steps that change the taxa, so this is checked
+    // before anything is written: a run that breaks the rule fails without any output.
+    info!("Checking that taxa were only moved or created");
+    check_taxa_unchanged(&tree_taxa_before, &tree.taxon_counts()?, &new_taxa_created)?;
 
     info!("Building report");
     tree.reload()?;

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
@@ -83,6 +83,35 @@ impl From<String> for Taxon {
 impl From<&str> for Taxon {
     fn from(name: &str) -> Self {
         Taxon(name.to_owned())
+    }
+}
+
+/// The number of nodes that hold each named taxon (placeholders, e.g. `g__`, are not counted).
+///
+/// A taxon is on one node only, except [`Taxon::unresolvable`], so a count is above `1` only for
+/// that sentinel, or when a taxon has been copied instead of moved.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct TaxonCounts(BTreeMap<Taxon, usize>);
+
+impl TaxonCounts {
+    /// Count each named taxon, one for each time it is given.
+    pub(crate) fn from_taxa<'a>(taxa: impl IntoIterator<Item = &'a Taxon>) -> Self {
+        let mut out = BTreeMap::new();
+        for taxon in taxa.into_iter().filter(|taxon| taxon.is_named()) {
+            let n: &mut usize = out.entry(taxon.clone()).or_default();
+            *n = n.saturating_add(1);
+        }
+        TaxonCounts(out)
+    }
+
+    /// The number of nodes that hold `taxon`, `0` if none do.
+    pub(crate) fn get(&self, taxon: &Taxon) -> usize {
+        self.0.get(taxon).copied().unwrap_or_default()
+    }
+
+    /// Every taxon and its count, ordered by taxon.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Taxon, usize)> {
+        self.0.iter().map(|(taxon, &n)| (taxon, n))
     }
 }
 
