@@ -12,15 +12,7 @@ _This tool was developed for internal use, it is not supported for public use._
 - The red distribution comes from gDecorate from the median red rank distribution
 
 ```shell
-cargo run --release -- \
-  --min-bs 95.0 \
-  --taxonomy example/gtdb_r237_decorated_taxonomy.tsv \
-  --novel-name-file example/gtdb_r237_bac120_metadata_slim.tsv \
-  --novel-accession db_name \
-  --novel-name-column ncbi_wgs_formatted \
-  example/gtdb_r237_median_red_marked.nwk \
-  example/gtdb_r237_median_red_rank_distribution.tsv \
-  /tmp/curatomatic
+cargo run --release -- --min-bs 95.0 --taxonomy example/gtdb_r237_decorated_taxonomy.tsv --novel-name-file example/gtdb_r237_bac120_metadata_slim.tsv --novel-accession db_name --novel-name-column ncbi_wgs_formatted example/gtdb_r237_median_red_marked.nwk example/gtdb_r237_median_red_rank_distribution.tsv /tmp/curatomatic
 ```
 
 
