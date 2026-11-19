@@ -20,6 +20,7 @@ use std::process::ExitCode;
 use ::log::{Level, debug, error, info, log, warn};
 use clap::Parser;
 use strum::IntoEnumIterator;
+use thousands::Separable;
 
 use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
@@ -87,19 +88,6 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Format a count with thousands separators, e.g. `1,234`.
-fn thousands(n: usize) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && digits.len().saturating_sub(i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
-}
-
 /// Log lines that report how many tree genomes have a prior taxonomy, warning when downward
 /// refinement can't run because none do.
 fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(Level, String)> {
@@ -116,8 +104,8 @@ fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(
         Level::Info,
         format!(
             "{} of {} tree genomes have a gtdb_taxonomy.",
-            thousands(n_taxonomy),
-            thousands(tree_n_nodes)
+            n_taxonomy.separate_with_commas(),
+            tree_n_nodes.separate_with_commas()
         ),
     ));
     if metadata.has_taxonomy_column && n_taxonomy == 0 {
@@ -144,8 +132,8 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let (tree_n_nodes, tree_n_zombies) = tree.n_nodes_and_zombies()?;
     info!(
         "Found: {} leaf nodes, and {} zombies in the tree.",
-        thousands(tree_n_nodes),
-        thousands(tree_n_zombies)
+        tree_n_nodes.separate_with_commas(),
+        tree_n_zombies.separate_with_commas()
     );
 
     // Read the metadata file, keeping every taxon of the previous release for the report.
@@ -159,13 +147,13 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());
         info!(
             "Found {} records, matched {} IDs to the tree.",
-            thousands(n_meta_rows_before),
-            thousands(metadata.rows.len())
+            n_meta_rows_before.separate_with_commas(),
+            metadata.rows.len().separate_with_commas()
         );
         if n_meta_mismatch > 0 {
             warn!(
                 "Found {} IDs in the tree that do not have a metadata entry.",
-                thousands(n_meta_mismatch)
+                n_meta_mismatch.separate_with_commas()
             );
         }
         for (level, message) in taxonomy_coverage_messages(&metadata, tree_n_nodes) {
@@ -197,7 +185,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let leaf_to_ranks_missing = tree.get_leaf_nodes_missing_rank()?;
     info!(
         "Found {} genomes missing one or more ranks.",
-        thousands(leaf_to_ranks_missing.len())
+        leaf_to_ranks_missing.len().separate_with_commas()
     );
 
     info!("Creating novel ranks");
@@ -210,7 +198,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         &metadata,
         known_taxa,
     )?;
-    info!("Created {} novel ranks.", thousands(new_taxa_created.len()));
+    info!("Created {} novel ranks.", new_taxa_created.len().separate_with_commas());
     tree.check_no_same_rank_taxa()?;
 
     let tree_taxa_after = tree.extract_all_taxa_from_tree()?;
@@ -243,7 +231,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     info!("Writing tree to disk.");
     tree.to_file(&path_tree_out)?;
 
-    info!("Writing report to disk ({} rows).", thousands(report.len()));
+    info!("Writing report to disk ({} rows).", report.len().separate_with_commas());
     write_report(&path_report_out, &report)?;
 
     info!("Done.");
