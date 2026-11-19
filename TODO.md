@@ -1,47 +1,6 @@
 # TODO
 
 
-## Job 4: Read the median RED values from a TSV instead of the JSON `.dict`
-
-### Problem
-`Red::from_file` reads the median RED for each rank from a JSON object, e.g.
-`test_data/r226_ar53/gtdb_r226_ar53.decorated.dict`:
-`{"phylum":0.231,"class":0.356,"order":0.529,"family":0.723,"genus":0.907,"species":1.0}`. The RED tooling now writes
-these values as a TSV, so curatomatic should read that instead.
-
-### Input format
-`test_data/r237/median_red_rank_distribution.tsv`: tab separated, with a header and one row per rank:
-```
-rank	num_taxa	num_taxa_pass_filter	median	mean	std_dev	p1	p5	p10	p90	p95	p99
-Phylum	161	46	0.3095	0.3314	0.0692	0.2261	0.2368	0.2549	0.4243	0.4684	0.4987
-...
-Genus	20066	19408	0.9189	0.9175	0.0394	0.8208	0.8508	0.8657	0.9694	0.9804	0.9918
-```
-- Look up the `rank` and `median` columns by header name, not position. Ignore the other columns.
-- Rank names are capitalised (`Phylum`); `Rank::of_taxon` already uses only the first character, but match the name
-  case-insensitively and reject names that aren't a rank.
-- There is no `Domain` or `Species` row. Domain stays `0.0` (as now). Species must be `1.0` (`RedValue::LEAF`):
-  `fill_in_missing_ranks`/upward refinement for genera call `red_dict.get(Species)` via `rank.child()`, and the old
-  `.dict` supplied `species: 1.0`.
-
-### Where
-- Rust: `src/red.rs` → `Red::from_file` / `Red::from_json` (replace with `from_tsv`), `src/main.rs` (`red_dict` arg doc
-  and the "Reading RED dictionary" log line), `src/error.rs` (`Red`/`MissingRed` messages say "dictionary").
-- Tests: `src/red/tests.rs`, and the `from_json` call in `src/tree/tests.rs`.
-
-### What to do
-1. Parse the TSV into `Red` with the rules above. Error (with the path) on a missing `rank`/`median` column, an
-   unparsable median, an unknown rank, or a duplicate rank.
-2. Drop the JSON parser and `serde_json` if nothing else uses it.
-3. Update the tests to build `Red` from TSV text, including the missing-column, bad-value and duplicate-rank errors.
-4. Convert the `.dict` files under `test_data/r226_*` to this TSV format (rank + median columns are enough) so the
-   existing runs still work, and update the README/usage if they mention the `.dict`.
-
-### Done when
-`curatomatic` runs on `test_data/r237` with `median_red_rank_distribution.tsv`, the `debug` line for the RED values
-lists every rank including `s=1.000`, and the r226 runs give the same trees as with the old `.dict` files.
-
-
 ## Job 5: Replace `--meta` with `--novel-name-file PATH --novel-name-column NAME`
 
 ### Problem
