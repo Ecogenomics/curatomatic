@@ -26,7 +26,7 @@ use thousands::Separable;
 use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::log::LogLevel;
-use crate::metadata::Metadata;
+use crate::metadata::{COL_ACCESSION, Metadata};
 use crate::rank::Rank;
 use crate::red::Red;
 use crate::report::{ReportInput, build_report, write_report};
@@ -64,9 +64,13 @@ struct Cli {
     taxonomy: Option<PathBuf>,
 
     /// Tab separated file with a header (e.g. the GTDB metadata file) giving the name used for
-    /// novel taxa of each genome, in the `accession` and `--novel-name-column` columns.
+    /// novel taxa of each genome, in the `--novel-accession` and `--novel-name-column` columns.
     #[arg(long, value_name = "PATH", requires = "novel_name_column")]
     novel_name_file: Option<PathBuf>,
+
+    /// Column of `--novel-name-file` holding the genome IDs (e.g. `db_name`).
+    #[arg(long, value_name = "NAME", default_value = COL_ACCESSION, requires = "novel_name_file")]
+    novel_accession: String,
 
     /// Column of `--novel-name-file` holding the names (e.g. `ncbi_wgs_formatted`).
     #[arg(long, value_name = "NAME", requires = "novel_name_file")]
@@ -97,6 +101,7 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     debug!("min_bs: {}", cli.min_bs);
     debug!("taxonomy: {:?}", cli.taxonomy);
     debug!("novel_name_file: {:?}", cli.novel_name_file);
+    debug!("novel_accession: {}", cli.novel_accession);
     debug!("novel_name_column: {:?}", cli.novel_name_column);
 
     if let Err(e) = curate(cli) {
@@ -199,7 +204,7 @@ fn read_metadata(
     let mut metadata = Metadata::default();
     if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) {
         info!("Reading novel names");
-        metadata = Metadata::from_file(path, column)?;
+        metadata = Metadata::from_file(path, &cli.novel_accession, column)?;
         let n_meta_rows_before = metadata.rows.len();
         metadata.subset_to_ids(&tree.gids);
         let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());

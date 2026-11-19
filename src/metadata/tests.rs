@@ -5,8 +5,21 @@ const TAX_A: &str = "d__Bacteria;p__Pseudomonadota;g__Escherichia";
 const TAX_B: &str = "d__Bacteria;p__Bacillota;g__Bacillus";
 const COL: &str = "ncbi_wgs_formatted";
 
+fn parse_columns(
+    contents: &str,
+    accession_column: &str,
+    column: &str,
+) -> CuratomaticResult<Metadata> {
+    Metadata::from_reader(
+        Cursor::new(contents),
+        Path::new("names.tsv"),
+        accession_column,
+        column,
+    )
+}
+
 fn parse_column(contents: &str, column: &str) -> CuratomaticResult<Metadata> {
-    Metadata::from_reader(Cursor::new(contents), Path::new("names.tsv"), column)
+    parse_columns(contents, COL_ACCESSION, column)
 }
 
 fn parse(contents: &str) -> CuratomaticResult<Metadata> {
@@ -104,6 +117,51 @@ fn a_missing_accession_column_is_an_error_with_the_path() {
 }
 
 #[test]
+fn reads_a_custom_accession_column() {
+    let meta = parse_columns(
+        "other\tdb_name\tncbi_wgs_formatted\n\
+         x\tG000008885\tABC\n\
+         x\t GB_GCA_000000001.1 \tnone\n",
+        "db_name",
+        COL,
+    )
+    .unwrap();
+    assert_eq!(
+        meta.rows.keys().map(GenomeId::as_str).collect::<Vec<_>>(),
+        ["G000000001", "G000008885"]
+    );
+    assert_eq!(wgs(&meta, "G000008885"), Some("ABC"));
+    assert_eq!(wgs(&meta, "G000000001"), None);
+}
+
+#[test]
+fn a_missing_custom_accession_column_names_the_requested_column() {
+    let err = parse_columns(
+        "accession\tncbi_wgs_formatted\nGCA_000000001.1\tABC\n",
+        "db_name",
+        COL,
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        CuratomaticError::MissingColumn {
+            path: "names.tsv".to_owned(),
+            column: "db_name".to_owned()
+        }
+    );
+    assert_eq!(
+        err.to_string(),
+        "Missing required column db_name in: names.tsv"
+    );
+}
+
+#[test]
+fn the_accession_and_name_columns_may_be_the_same() {
+    let meta = parse_columns("db_name\nGCA_000000001.1\n", "db_name", "db_name").unwrap();
+    assert_eq!(wgs(&meta, "G000000001"), Some("GCA_000000001.1"));
+}
+
+#[test]
 fn each_placeholder_means_no_name() {
     for placeholder in [
         "none", "None", "NONE", "n/a", "N/A", "null", "NULL", "", " ", " none ",
@@ -169,7 +227,7 @@ fn a_row_too_short_for_the_accession_column_is_an_error() {
 
 #[test]
 fn missing_file() {
-    let err = Metadata::from_file(Path::new("does/not/exist.tsv"), COL).unwrap_err();
+    let err = Metadata::from_file(Path::new("does/not/exist.tsv"), COL_ACCESSION, COL).unwrap_err();
     assert!(matches!(err, CuratomaticError::Io(message) if message.contains("does/not/exist.tsv")));
 }
 
@@ -177,7 +235,7 @@ fn missing_file() {
 fn from_file_reads_a_file() {
     let path = std::env::temp_dir().join(format!("curatomatic_meta_{}.tsv", std::process::id()));
     std::fs::write(&path, "accession\tmy_names\nGCA_000000001.1\tABC\n").unwrap();
-    let meta = Metadata::from_file(&path, "my_names");
+    let meta = Metadata::from_file(&path, COL_ACCESSION, "my_names");
     std::fs::remove_file(&path).unwrap();
     assert_eq!(wgs(&meta.unwrap(), "G000000001"), Some("ABC"));
 }

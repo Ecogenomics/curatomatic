@@ -9,8 +9,8 @@ use crate::rank::Rank;
 use crate::taxon::Taxon;
 use crate::taxonomy::Taxonomy;
 
-/// Column holding the genome accession.
-const COL_ACCESSION: &str = "accession";
+/// The default column holding the genome accession (the GTDB metadata file), used by the CLI.
+pub(crate) const COL_ACCESSION: &str = "accession";
 /// Values (compared after trimming, ignoring case) that mean a genome has no novel name.
 const NO_NAME_VALUES: [&str; 4] = ["", "none", "n/a", "null"];
 
@@ -35,13 +35,18 @@ pub(crate) struct Metadata {
 impl Metadata {
     /// Read the novel names from a tab separated file with a header (e.g. the GTDB metadata file).
     ///
-    /// Only the `accession` column and `column` are read, both found by header name; any other
-    /// column is ignored. A value of `none`, `n/a`, `null` or empty (see [`NO_NAME_VALUES`]) means
-    /// the genome has no name. No genome is given a prior taxonomy.
-    pub(crate) fn from_file(path: &Path, column: &str) -> CuratomaticResult<Self> {
+    /// Only `accession_column` (the genome IDs, made canonical with [`gid_to_canonical`]) and
+    /// `column` (the names) are read, both found by header name; any other column is ignored. A
+    /// value of `none`, `n/a`, `null` or empty (see [`NO_NAME_VALUES`]) means the genome has no
+    /// name. No genome is given a prior taxonomy.
+    pub(crate) fn from_file(
+        path: &Path,
+        accession_column: &str,
+        column: &str,
+    ) -> CuratomaticResult<Self> {
         let file = File::open(path)
             .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_reader(BufReader::new(file), path, column)
+        Self::from_reader(BufReader::new(file), path, accession_column, column)
     }
 
     /// Read the novel names from a reader, see [`Metadata::from_file`]. `path` is only used in
@@ -49,6 +54,7 @@ impl Metadata {
     pub(crate) fn from_reader(
         reader: impl BufRead,
         path: &Path,
+        accession_column: &str,
         column: &str,
     ) -> CuratomaticResult<Self> {
         let mut lines = reader.lines();
@@ -70,7 +76,7 @@ impl Metadata {
                     column: name.to_owned(),
                 })
         };
-        let accession_idx = find_column(COL_ACCESSION)?;
+        let accession_idx = find_column(accession_column)?;
         let name_idx = find_column(column)?;
 
         let mut rows = BTreeMap::new();
@@ -93,7 +99,7 @@ impl Metadata {
                 })
             };
 
-            let accession = gid_to_canonical(value(accession_idx, COL_ACCESSION)?);
+            let accession = gid_to_canonical(value(accession_idx, accession_column)?);
             let wgs = named(value(name_idx, column)?).map(str::to_owned);
             rows.insert(
                 accession.clone(),

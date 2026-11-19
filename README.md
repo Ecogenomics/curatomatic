@@ -49,6 +49,7 @@ The following options are available:
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
 - `--taxonomy PATH` = The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, and is the prior taxonomy for downward refinement.
 - `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
+- `--novel-accession NAME` = The column of `--novel-name-file` that holds the genome IDs, e.g. `db_name` (default = `accession`). Requires `--novel-name-file`.
 - `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.
 - `-h, --help` = Print the help.
 - `-V, --version` = Print the version.
@@ -100,10 +101,13 @@ accession	ncbi_wgs_formatted
 GB_GCA_123456789.1	FOO
 ```
 
-- Only the `accession` column and the column named by `--novel-name-column` are read, both found by header name. Any
-  other column is ignored.
+- Only the genome ID column (named by `--novel-accession`, `accession` by default) and the column named by
+  `--novel-name-column` are read, both found by header name. Any other column is ignored. A file whose genome IDs are
+  in another column, e.g. `example/gtdb_r237_bac120_metadata_slim.tsv` (`db_name`), is read with
+  `--novel-accession db_name`.
+- Genome IDs are trimmed and matched to the tree in their canonical form (`GB_GCA_000008885.1` is `G000008885`).
 - A value of `none`, `n/a`, `null` or empty (after trimming, in any case) means the genome has no name.
-- A missing `accession` or name column, or a row too short to hold either, is an error.
+- A missing genome ID or name column, or a row too short to hold either, is an error.
 - Genomes without a name are given novel taxa named after their genome ID. If that name is already taken, the novel
   taxon is `<rank>__UNRESOLVABLE` (e.g. `g__UNRESOLVABLE`), for a curator to name.
 
@@ -113,6 +117,14 @@ GB_GCA_123456789.1	FOO
 ./target/release/curatomatic --min-bs 95.0 \
     --taxonomy example/gtdb_r237_decorated_taxonomy.tsv \
     --novel-name-file test_data/r237/gtdb_r237_bac120_metadata.tsv --novel-name-column ncbi_wgs_formatted \
+    example/gtdb_r237_median_red_marked.nwk example/gtdb_r237_median_red_rank_distribution.tsv /tmp/output
+```
+
+```shell
+./target/release/curatomatic --min-bs 95.0 \
+    --taxonomy example/gtdb_r237_decorated_taxonomy.tsv \
+    --novel-name-file example/gtdb_r237_bac120_metadata_slim.tsv \
+    --novel-accession db_name --novel-name-column ncbi_wgs_formatted \
     example/gtdb_r237_median_red_marked.nwk example/gtdb_r237_median_red_rank_distribution.tsv /tmp/output
 ```
 

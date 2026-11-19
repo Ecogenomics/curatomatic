@@ -24,6 +24,7 @@ fn metadata(rows: &[(&str, &str)]) -> Metadata {
     Metadata::from_reader(
         Cursor::new(tsv),
         Path::new("names.tsv"),
+        "accession",
         "ncbi_wgs_formatted",
     )
     .unwrap()

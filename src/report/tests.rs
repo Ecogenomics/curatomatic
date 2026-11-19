@@ -15,8 +15,13 @@ fn red_dict() -> Red {
 /// is the prior taxonomy (`none` if the genome has none).
 fn metadata(contents: &str) -> Metadata {
     let path = Path::new("names.tsv");
-    let mut meta =
-        Metadata::from_reader(io::Cursor::new(contents), path, "ncbi_wgs_formatted").unwrap();
+    let mut meta = Metadata::from_reader(
+        io::Cursor::new(contents),
+        path,
+        "accession",
+        "ncbi_wgs_formatted",
+    )
+    .unwrap();
     for line in contents.lines().skip(1) {
         let cols: Vec<&str> = line.split('\t').collect();
         if cols[2] != "none" {

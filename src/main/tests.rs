@@ -23,7 +23,13 @@ use crate::genome::GenomeId;
 use crate::taxonomy::Taxonomy;
 
 fn metadata(contents: &str) -> Metadata {
-    Metadata::from_reader(io::Cursor::new(contents), Path::new("names.tsv"), "wgs").unwrap()
+    Metadata::from_reader(
+        io::Cursor::new(contents),
+        Path::new("names.tsv"),
+        COL_ACCESSION,
+        "wgs",
+    )
+    .unwrap()
 }
 
 #[test]
@@ -121,6 +127,39 @@ fn the_novel_name_file_requires_a_column_and_the_column_requires_a_file() {
             "{args:?}"
         );
     }
+}
+
+#[test]
+fn the_novel_accession_column_defaults_to_accession() {
+    assert_eq!(parse_cli(&[]).unwrap().novel_accession, "accession");
+    let cli = parse_cli(&[
+        "--novel-name-file",
+        "meta.tsv",
+        "--novel-name-column",
+        "ncbi_wgs_formatted",
+    ])
+    .unwrap();
+    assert_eq!(cli.novel_accession, "accession");
+}
+
+#[test]
+fn the_novel_accession_column_is_parsed() {
+    let cli = parse_cli(&[
+        "--novel-name-file",
+        "meta.tsv",
+        "--novel-accession",
+        "db_name",
+        "--novel-name-column",
+        "ncbi_wgs_formatted",
+    ])
+    .unwrap();
+    assert_eq!(cli.novel_accession, "db_name");
+}
+
+#[test]
+fn the_novel_accession_column_requires_a_file() {
+    let err = parse_cli(&["--novel-accession", "db_name"]).unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
 }
 
 #[test]
