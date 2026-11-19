@@ -331,14 +331,23 @@ impl Tree {
         Ok(out)
     }
 
-    /// Remove the RED value from the label of every node.
-    pub(crate) fn remove_red_labels(&mut self) -> CuratomaticResult<()> {
+    /// Set the labels to those of the output tree: a leaf is labelled with its genome ID only (its
+    /// taxa are written to the taxonomy file, see [`Tree::leaf_taxonomies`]), and the RED value is
+    /// removed from the label of every internal node.
+    pub(crate) fn set_output_labels(&mut self) -> CuratomaticResult<()> {
         for node in self.newick.ids() {
-            let label = self
-                .newick
-                .label(node)
-                .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("node {node}")))?;
-            let label = strip_red(label)?.to_owned();
+            let label = if self.newick.is_leaf(node) {
+                NodeLabel::from_node(&self.newick, node)?
+                    .gid
+                    .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("leaf {node}")))?
+                    .to_string()
+            } else {
+                let label = self
+                    .newick
+                    .label(node)
+                    .ok_or_else(|| CuratomaticError::InvalidNodeLabel(format!("node {node}")))?;
+                strip_red(label)?.to_owned()
+            };
             self.newick.set_label(node, label);
         }
         Ok(())

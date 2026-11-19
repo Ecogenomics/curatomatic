@@ -78,6 +78,21 @@ fn transfer_taxon_moves_a_taxon_to_and_from_a_leaf() {
 }
 
 #[test]
+fn output_labels_are_the_genome_id_on_a_leaf_and_have_no_red() {
+    let mut tree = tree(TWO_GENOMES).unwrap();
+    let (root, leaf) = (node(&tree, 5), node(&tree, 3));
+    transfer_taxon(&mut tree.newick, root, leaf, &Taxon::new("f__F")).unwrap();
+    assert_eq!(label(&tree, 3), "G2|f__F|RED=1.000");
+
+    tree.set_output_labels().unwrap();
+    let labels: Vec<_> = (0..6).map(|i| label(&tree, i)).collect();
+    assert_eq!(
+        labels,
+        ["G1", "G3", "g__A; s__A one", "G2", "s__B b", "90.0"]
+    );
+}
+
+#[test]
 fn a_novel_domain_is_an_error_as_the_domain_has_no_parent_rank() {
     let mut tree = tree(TWO_GENOMES).unwrap();
     let missing = tree.get_leaf_nodes_missing_rank().unwrap();

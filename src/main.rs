@@ -352,8 +352,8 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
             .map(|(gid, taxa)| (gid, taxa.as_slice())),
     )?;
 
-    info!("Removing RED labels");
-    tree.remove_red_labels()?;
+    info!("Setting the output labels (leaves by genome ID, no RED values)");
+    tree.set_output_labels()?;
 
     info!("Writing tree to disk.");
     tree.to_file(&path_tree_out)?;

@@ -227,7 +227,12 @@ fn curate_writes_one_seven_rank_row_per_genome_from_the_final_tree() {
          G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n"
     );
     let tree = std::fs::read_to_string(out_dir.join("tree.curatomatic.tree")).unwrap();
-    assert!(tree.contains("'G2|s__{unresolved} sp2'"), "{tree}");
+    // A leaf is labelled with its genome ID only, its taxa are in the taxonomy file.
+    for gid in ["G1", "G2", "G3"] {
+        assert!(tree.contains(&format!("{gid}:")), "{tree}");
+    }
+    assert!(!tree.contains("s__"), "{tree}");
+    assert!(!tree.contains('|'), "{tree}");
 }
 
 #[test]

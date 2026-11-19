@@ -90,7 +90,8 @@ genome, they get the same name.
   (`<gid>|<taxonomy>|RED=<red>`). `--taxonomy` gives each leaf the ranks below the lowest rank on
   its path, before refinement (see [refinement.md](refinement.md#input-preparation)). Taxa can be
   moved down onto a leaf, and novel taxa placed on one. The curated taxonomy of every genome is
-  written to `<stem>.curatomatic.taxonomy.tsv`.
+  written to `<stem>.curatomatic.taxonomy.tsv`. The output tree labels each leaf with its genome
+  ID only, as in Python (`Tree::set_output_labels`).
 
 ## Failures that are now reported errors
 

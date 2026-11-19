@@ -173,6 +173,8 @@ These are checked during or after the refinement, and break the run if violated:
 - Assigning the taxonomy file to the leaves only adds taxa, it never removes one.
 - At the end of the run, the set of taxa on the tree equals the set after the leaf assignment plus
   the novel taxa that were created: refinement moves taxa, it never adds or loses them.
+- The output tree labels each leaf with its genome ID only, and no node with a RED value
+  (`Tree::set_output_labels`). The taxa held by the leaves are written to the taxonomy file.
 
 ## Input preparation
 
