@@ -45,6 +45,14 @@ impl Refinement {
     }
 }
 
+/// A taxon that [`Tree::process_refinement`] moved from one node to another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Move {
+    pub(crate) taxon: Taxon,
+    pub(crate) from: NodeId,
+    pub(crate) to: NodeId,
+}
+
 /// A RED decorated tree: leaf nodes are labelled `<gid>|RED=<red>`, and internal nodes
 /// `[<bootstrap>][:][<taxonomy>]|RED=<red>`.
 pub(crate) struct Tree {
@@ -104,10 +112,25 @@ impl Tree {
         Ok(out)
     }
 
-    fn label(&self, node: NodeId) -> CuratomaticResult<&NodeLabel> {
+    pub(crate) fn label(&self, node: NodeId) -> CuratomaticResult<&NodeLabel> {
         self.node_labels
             .get(node.index())
             .ok_or_else(|| CuratomaticError::Invariant(format!("node {node} has no label")))
+    }
+
+    /// The underlying Newick tree.
+    pub(crate) fn newick(&self) -> &NewickTree {
+        &self.tree
+    }
+
+    /// The node that holds each taxon. Call [`Tree::reload`] first if the tree was changed.
+    pub(crate) fn taxon_nodes(&self) -> BTreeMap<Taxon, NodeId> {
+        self.tree
+            .ids()
+            .zip(&self.node_labels)
+            .filter_map(|(node, label)| Some((node, label.taxonomy.as_ref()?)))
+            .flat_map(|(node, taxonomy)| taxonomy.iter_ranks().map(move |taxon| (taxon.clone(), node)))
+            .collect()
     }
 
     /// Read a tree from a Newick file.
@@ -116,7 +139,7 @@ impl Tree {
     }
 
     /// Build the tree from a parsed Newick tree, see [`Tree::from_file`].
-    fn from_newick(mut tree: NewickTree) -> CuratomaticResult<Self> {
+    pub(crate) fn from_newick(mut tree: NewickTree) -> CuratomaticResult<Self> {
         // Convert any placeholders (e.g. s__) that exist on the basal node to an unresolved name.
         // Only the placeholder is replaced: any other taxa on the node (e.g. its genus) are kept.
         // TODO: This is a hack, fix it.
@@ -394,7 +417,7 @@ impl Tree {
     /// The closest named taxon of `rank`, other than `taxon`, on a node above `node`.
     ///
     /// If there is one, then `taxon` is nested inside it. Placeholders (e.g. `g__`) are ignored.
-    fn nested_inside(&self, node: NodeId, rank: Rank, taxon: &Taxon) -> Option<&Taxon> {
+    pub(crate) fn nested_inside(&self, node: NodeId, rank: Rank, taxon: &Taxon) -> Option<&Taxon> {
         let mut current = self.tree.parent(node);
         while let Some(ancestor) = current {
             let found = self
@@ -474,16 +497,17 @@ impl Tree {
     /// 2. The RED delta to the median of the rank.
     /// 3. The bootstrap support, descending.
     ///
-    /// Call [`Tree::reload`] afterwards.
+    /// Returns the moves that were made. Call [`Tree::reload`] afterwards.
     pub(crate) fn process_refinement(
         &mut self,
         refinement: &Refinement,
         rank: Rank,
         min_bs: BootstrapValue,
         red_dict: &Red,
-    ) -> CuratomaticResult<()> {
+    ) -> CuratomaticResult<Vec<Move>> {
+        let mut moves = Vec::new();
         if refinement.entries.is_empty() {
-            return Ok(());
+            return Ok(moves);
         }
         let median_red = red_dict.get(rank)?;
 
@@ -532,8 +556,13 @@ impl Tree {
                 self.tree.label(best_node).unwrap_or("None")
             );
             transfer_taxon(&mut self.tree, original_node, best_node, taxon)?;
+            moves.push(Move {
+                taxon: taxon.clone(),
+                from: original_node,
+                to: best_node,
+            });
         }
-        Ok(())
+        Ok(moves)
     }
 }
 

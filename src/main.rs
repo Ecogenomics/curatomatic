@@ -7,6 +7,7 @@ mod newick;
 mod node_label;
 mod rank;
 mod red;
+mod report;
 mod taxon;
 mod taxonomy;
 mod tree;
@@ -26,6 +27,7 @@ use crate::log::LogLevel;
 use crate::metadata::Metadata;
 use crate::rank::Rank;
 use crate::red::Red;
+use crate::report::{ReportInput, build_report, write_report};
 use crate::tree::{Tree, fill_in_missing_ranks};
 
 /// Semi-automatic curation of decorated phylogenetic trees.
@@ -130,11 +132,13 @@ fn taxonomy_coverage_messages(metadata: &Metadata, tree_n_nodes: usize) -> Vec<(
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
+    let path_report_out = cli.out_dir.join(format!("{stem}.curatomatic.report.tsv"));
 
     info!("Reading tree");
     let mut tree = Tree::from_file(&cli.tree)?;
 
     let tree_taxa_before = tree.extract_all_taxa_from_tree()?;
+    let taxon_nodes_before = tree.taxon_nodes();
 
     // Get the number of tree nodes, and zombie nodes (i.e. prefixed with "D-").
     let (tree_n_nodes, tree_n_zombies) = tree.n_nodes_and_zombies()?;
@@ -144,10 +148,12 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         thousands(tree_n_zombies)
     );
 
-    // Read the metadata file.
+    // Read the metadata file, keeping every taxon of the previous release for the report.
+    let mut prior_taxa = BTreeSet::new();
     let metadata = if let Some(meta) = &cli.meta {
         info!("Reading metadata");
         let mut metadata = Metadata::from_file(meta)?;
+        prior_taxa = metadata.all_taxa();
         let n_meta_rows_before = metadata.rows.len();
         metadata.subset_to_ids(&tree.gids);
         let n_meta_mismatch = tree_n_nodes.saturating_sub(metadata.rows.len());
@@ -175,13 +181,14 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let red_dict = Red::from_file(&cli.red_dict)?;
     debug!("{}", red_dict.to_str());
 
+    let mut moves = Vec::new();
     for rank in Rank::iter() {
         if matches!(rank, Rank::Domain | Rank::Species) {
             continue;
         }
         info!("Refining existing rank: {}", rank.prefix());
         let refinement = tree.refine_existing_labels(rank, cli.min_bs, &red_dict, &metadata)?;
-        tree.process_refinement(&refinement, rank, cli.min_bs, &red_dict)?;
+        moves.extend(tree.process_refinement(&refinement, rank, cli.min_bs, &red_dict)?);
         tree.reload()?;
         tree.check_no_same_rank_taxa()?;
     }
@@ -217,11 +224,27 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         ));
     }
 
+    info!("Building report");
+    tree.reload()?;
+    let report = build_report(&ReportInput {
+        tree: &tree,
+        taxa_before: &taxon_nodes_before,
+        moves: &moves,
+        novel: &new_taxa_created,
+        metadata: &metadata,
+        prior_taxa: &prior_taxa,
+        min_bs: cli.min_bs,
+        red_dict: &red_dict,
+    })?;
+
     info!("Removing RED labels");
     tree.remove_red_labels()?;
 
     info!("Writing tree to disk.");
     tree.to_file(&path_tree_out)?;
+
+    info!("Writing report to disk ({} rows).", thousands(report.len()));
+    write_report(&path_report_out, &report)?;
 
     info!("Done.");
     Ok(())

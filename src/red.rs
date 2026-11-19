@@ -21,6 +21,10 @@ impl RedValue {
     }
 
     /// The absolute difference between two RED values.
+    pub(crate) const fn value(self) -> f64 {
+        self.0
+    }
+
     pub(crate) fn distance(self, other: RedValue) -> f64 {
         (self.0 - other.0).abs()
     }

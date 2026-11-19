@@ -5,6 +5,8 @@ use std::path::Path;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::{GenomeId, gid_to_canonical};
+use crate::rank::Rank;
+use crate::taxon::Taxon;
 use crate::taxonomy::Taxonomy;
 
 /// Column holding the genome accession.
@@ -129,6 +131,32 @@ impl Metadata {
     }
 
     /// The number of rows that have a taxonomy.
+    /// Every named taxon in any `gtdb_taxonomy` value (placeholders such as `g__` are left out).
+    pub(crate) fn all_taxa(&self) -> BTreeSet<Taxon> {
+        self.rows
+            .values()
+            .filter_map(|row| row.taxonomy.as_ref())
+            .flat_map(Taxonomy::iter_ranks)
+            .filter(|taxon| taxon.is_named())
+            .cloned()
+            .collect()
+    }
+
+    /// The named taxa of `rank` that the metadata assigns to `gid`.
+    pub(crate) fn taxa_of_rank(&self, gid: &GenomeId, rank: Rank) -> impl Iterator<Item = &Taxon> {
+        self.rows
+            .get(gid)
+            .and_then(|row| row.taxonomy.as_ref())
+            .map_or(&[][..], |taxonomy| taxonomy.get_rank(rank))
+            .iter()
+            .filter(|taxon| taxon.is_named())
+    }
+
+    /// True if the metadata gives `gid` a taxonomy, i.e. the genome was in the previous release.
+    pub(crate) fn has_taxonomy(&self, gid: &GenomeId) -> bool {
+        self.rows.get(gid).is_some_and(|row| row.taxonomy.is_some())
+    }
+
     pub(crate) fn n_with_taxonomy(&self) -> usize {
         self.rows.values().filter(|row| row.taxonomy.is_some()).count()
     }
