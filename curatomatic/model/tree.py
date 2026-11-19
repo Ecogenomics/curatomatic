@@ -362,8 +362,13 @@ class Tree:
                 child_red_thresh = (cur_rank_child_red + cur_rank_median_red) / 2
                 original_node_red_delta_to_median = abs(cur_rank_median_red - node_label.red)
 
-                # Check up the tree (this is valid for all cases)
-                cur_node = node.parent_node
+                # Check up the tree (this is valid for all cases). A taxon nested inside
+                # another taxon of the same rank is not moved up: it would climb onto or
+                # past the node of that taxon, taking its genomes.
+                if self.nested_inside(node, rank, taxon) is not None:
+                    cur_node = None
+                else:
+                    cur_node = node.parent_node
                 while cur_node is not None:
                     cur_node_label = self.node_labels[cur_node]
                     cur_node_bs = cur_node_label.bootstrap
@@ -536,6 +541,37 @@ class Tree:
 
 
 
+
+    def nested_inside(self, node, rank: str, taxon: str):
+        """
+        The closest named taxon of `rank`, other than `taxon`, on a node above `node`.
+        If there is one, then `taxon` is nested inside it. Placeholders (e.g. g__) are ignored.
+        """
+        cur_node = node.parent_node
+        while cur_node is not None:
+            cur_tax = self.node_labels[cur_node].taxonomy
+            if cur_tax:
+                for other in cur_tax.get_rank(rank):
+                    if len(other) > 3 and other != taxon:
+                        return other
+            cur_node = cur_node.parent_node
+        return None
+
+    def check_no_same_rank_taxa(self):
+        """
+        Check that no node carries two or more named taxa of the same rank.
+        The labels are read from the tree itself, so this can be called without a reload.
+        """
+        for node in self.tree.postorder_node_iter():
+            taxonomy = NodeLabel.from_node(node).taxonomy
+            if not taxonomy:
+                continue
+            for rank in RANKS:
+                named = [x for x in taxonomy.get_rank(rank) if len(x) > 3]
+                if len(named) > 1:
+                    logger.error(f'Internal error: node {node.label} has more than one taxon '
+                                 f'of rank {rank}: {", ".join(named)}')
+                    sys.exit(1)
 
     def process_refinement(self, d_refinment, rank, min_bs, red_dict, metadata):
 

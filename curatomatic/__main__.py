@@ -88,6 +88,7 @@ def run(
         cur_rank_refinement = tree.refine_existing_labels(rank, min_bs, red_dict, metadata)
         tree.process_refinement(cur_rank_refinement, rank, min_bs, red_dict, metadata)
         tree.reload()
+        tree.check_no_same_rank_taxa()
 
     logger.info('Identifying leaf nodes missing ranks')
     d_leaf_to_ranks_missing = tree.get_leaf_nodes_missing_rank()
@@ -103,6 +104,7 @@ def run(
         set(tree.taxon_labels_to_node.keys())
     )
     logger.info(f'Created {len(new_taxa_created):,} novel ranks.')
+    tree.check_no_same_rank_taxa()
 
     tree_taxa_after = tree.extract_all_taxa_from_tree()
     assert tree_taxa_after - new_taxa_created == tree_taxa_before

@@ -26,6 +26,11 @@ impl Taxon {
     pub(crate) fn rank(&self) -> CuratomaticResult<Rank> {
         Rank::of_taxon(self.as_str())
     }
+
+    /// True if this is a name, rather than a placeholder that is only the rank prefix (e.g. `g__`).
+    pub(crate) fn is_named(&self) -> bool {
+        self.as_str().chars().count() > 3
+    }
 }
 
 impl fmt::Display for Taxon {

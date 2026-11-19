@@ -183,6 +183,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         let refinement = tree.refine_existing_labels(rank, cli.min_bs, &red_dict, &metadata)?;
         tree.process_refinement(&refinement, rank, cli.min_bs, &red_dict)?;
         tree.reload()?;
+        tree.check_no_same_rank_taxa()?;
     }
 
     info!("Identifying leaf nodes missing ranks");
@@ -203,6 +204,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         known_taxa,
     )?;
     info!("Created {} novel ranks.", thousands(new_taxa_created.len()));
+    tree.check_no_same_rank_taxa()?;
 
     let tree_taxa_after = tree.extract_all_taxa_from_tree()?;
     let taxa_without_new: BTreeSet<_> = tree_taxa_after

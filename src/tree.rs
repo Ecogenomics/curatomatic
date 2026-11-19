@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 
 use ::log::{info, warn};
+use strum::IntoEnumIterator;
 
 use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
@@ -264,8 +265,14 @@ impl Tree {
             let original_red_delta = median_red.distance(node_label.red);
 
             for taxon in taxonomy.get_rank(rank) {
-                // Check up the tree (this is valid for all cases).
-                let mut current = self.tree.parent(node);
+                // Check up the tree (this is valid for all cases). A taxon nested inside another
+                // taxon of the same rank is not moved up: it would climb onto or past the node of
+                // that taxon, taking its genomes.
+                let mut current = if self.nested_inside(node, rank, taxon).is_some() {
+                    None
+                } else {
+                    self.tree.parent(node)
+                };
                 while let Some(cur_node) = current {
                     let cur_label = self.label(cur_node)?;
                     let cur_red = cur_label.red;
@@ -379,14 +386,61 @@ impl Tree {
             else {
                 return false;
             };
-            let named = || {
-                taxonomy
-                    .get_rank(rank)
-                    .iter()
-                    .filter(|other| other.as_str().chars().count() > 3)
-            };
+            let named = || taxonomy.get_rank(rank).iter().filter(|other| other.is_named());
             named().next().is_some() && !named().any(|other| other == taxon)
         })
+    }
+
+    /// The closest named taxon of `rank`, other than `taxon`, on a node above `node`.
+    ///
+    /// If there is one, then `taxon` is nested inside it. Placeholders (e.g. `g__`) are ignored.
+    fn nested_inside(&self, node: NodeId, rank: Rank, taxon: &Taxon) -> Option<&Taxon> {
+        let mut current = self.tree.parent(node);
+        while let Some(ancestor) = current {
+            let found = self
+                .node_labels
+                .get(ancestor.index())
+                .and_then(|label| label.taxonomy.as_ref())
+                .and_then(|taxonomy| {
+                    taxonomy
+                        .get_rank(rank)
+                        .iter()
+                        .find(|other| other.is_named() && *other != taxon)
+                });
+            if found.is_some() {
+                return found;
+            }
+            current = self.tree.parent(ancestor);
+        }
+        None
+    }
+
+    /// Check that no node carries two or more named taxa of the same rank.
+    ///
+    /// The labels are read from the tree itself, so this can be called without a reload.
+    pub(crate) fn check_no_same_rank_taxa(&self) -> CuratomaticResult<()> {
+        for node in self.tree.ids() {
+            let Some(taxonomy) = NodeLabel::from_node(&self.tree, node)?.taxonomy else {
+                continue;
+            };
+            for rank in Rank::iter() {
+                let named: Vec<&str> = taxonomy
+                    .get_rank(rank)
+                    .iter()
+                    .filter(|taxon| taxon.is_named())
+                    .map(Taxon::as_str)
+                    .collect();
+                if named.len() > 1 {
+                    return Err(CuratomaticError::Invariant(format!(
+                        "node {} has more than one taxon of rank {}: {}",
+                        self.tree.label(node).unwrap_or("None"),
+                        rank.prefix(),
+                        named.join(", ")
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The taxa of `rank` that the metadata assigns to the genomes below each child of `node`.
