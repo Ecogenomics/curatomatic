@@ -11,6 +11,10 @@ _This tool was developed for internal use, it is not supported for public use._
 - The metadata file is the GTDB metadata file and must have the `ncbi_wgs_formatted` column (configurable) to do novel taxon creation.
 - The red distribution comes from gDecorate from the median red rank distribution
 
+```shell
+cargo run --release -- --min-bs 95.0 --taxonomy example/gtdb_r237_decorated_taxonomy.tsv --novel-name-file test_data/r237/gtdb_r237_bac120_metadata.tsv --novel-name-column ncbi_wgs_formatted example/gtdb_r237_median_red_marked.nwk example/gtdb_r237_median_red_rank_distribution.tsv /test_data/
+```
+
 
 
 See [docs/refinement.md](docs/refinement.md) for the rules curatomatic follows when refining the taxa on the tree.
