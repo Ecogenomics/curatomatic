@@ -31,14 +31,6 @@ impl Taxonomy {
         for taxon in tax_string.split(';') {
             out.add_taxon(Taxon::new(taxon.trim()))?;
         }
-
-        if Rank::iter().any(|rank| out.get_rank(rank).len() > 1) {
-            warn!(
-                "Shared name: {:?}",
-                tax_string.split(';').collect::<Vec<_>>()
-            );
-        }
-
         Ok(out)
     }
 
