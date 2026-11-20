@@ -89,8 +89,8 @@ it back.
 
 ## Job 11: Species do not block a novel genus
 
-**Status: needs the user's approval. This reverses a rule of Job 9** ("valid name of a rank below `R`, species
-included", and its test "a missing genus above a named species is not created").
+**Status: done** (approved by the user on 2026-11-20). This reverses a rule of Job 9 ("valid name of a rank below
+`R`, species included", and its test "a missing genus above a named species is not created").
 
 ### Problem
 

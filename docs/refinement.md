@@ -228,8 +228,9 @@ A novel taxon is only created where **no valid name is below it**. A curator nev
 rank above existing names:
 
 - For a missing rank `R` on its highest candidate node `N`, the taxon is created only if no node at
-  or below `N` (leaves included) holds a valid name of a rank below `R`, species included. A lower
-  rank on `N` itself counts (e.g. `c__Chlorobiia` on the node of a would-be phylum).
+  or below `N` (leaves included) holds a valid name of a rank below `R`. Species do not count:
+  every genome has a named species, so they would stop every novel genus. A lower rank on `N`
+  itself counts (e.g. `c__Chlorobiia` on the node of a would-be phylum).
 - A valid name is any taxon that is not a placeholder (`c__`, `g__`, ...) and not an unresolved
   species (`s__{unresolved} NAME`), see `Taxon::is_valid_name`. Named species, species named after
   a placeholder genus (`s__CAYYKD01 sp964471825`) and WGS-style taxa (`g__CAYYKD01`) are all valid.

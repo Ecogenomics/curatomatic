@@ -102,8 +102,9 @@ genome, they get the same name.
   candidate node for every rank a genome is missing, even when named taxa of lower ranks are
   below it. In R237, low bootstrap support above `c__Chlorobiia` split it into six novel phyla.
 - **Rust** (`fill_in_missing_ranks`, `src/tree.rs`): the novel taxon is skipped if a valid name
-  (`Taxon::is_valid_name`: not a placeholder or `s__{unresolved}` species) of a lower rank is on
-  the candidate node or below it. Its genomes keep the placeholder, and their lower missing ranks
+  (`Taxon::is_valid_name`: not a placeholder or `s__{unresolved}` species) of a lower rank, other
+  than a species, is on the candidate node or below it. So the two versions agree on a novel genus
+  above a named species: both create it. Its genomes keep the placeholder, and their lower missing ranks
   are not filled either. See [refinement.md](refinement.md#novel-taxa).
 
 ### L8. A taxon is never moved up above a taxon of a higher rank

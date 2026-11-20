@@ -1012,17 +1012,35 @@ fn a_missing_genus_above_only_unresolved_species_is_created() {
 }
 
 #[test]
-fn a_missing_genus_above_a_named_species_is_not_created() {
+fn a_missing_genus_above_a_named_species_is_created() {
+    // Species never block a novel genus: every genome has a named species.
     let (tree, novel) = fill_novel(
         MISSING_GENUS,
         &[(0, "s__{unresolved} G1"), (1, "s__Chlorobium limicola")],
+    );
+    assert_eq!(novel, BTreeSet::from([Taxon::new("g__G1")]));
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__P;c__C;o__O;f__F;g__G1;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__O;f__F;g__G1;s__Chlorobium limicola"
+        ]
+    );
+}
+
+#[test]
+fn a_missing_family_above_a_named_genus_is_not_created() {
+    // The highest family candidate (RED 0.75) is above `g__G`.
+    let (tree, novel) = fill_novel(
+        "(((G1:0.1,G2:0.1)'100:g__G|red=0.95':0.1)'100|red=0.75':0.1)'d__D;p__P;c__C;o__O|red=0.0';",
+        &[(0, "s__G one"), (1, "s__G two")],
     );
     assert!(novel.is_empty());
     assert_eq!(
         written_taxonomies(&tree),
         [
-            "G1\td__D;p__P;c__C;o__O;f__F;g__;s__{unresolved} G1",
-            "G2\td__D;p__P;c__C;o__O;f__F;g__;s__Chlorobium limicola"
+            "G1\td__D;p__P;c__C;o__O;f__;g__G;s__G one",
+            "G2\td__D;p__P;c__C;o__O;f__;g__G;s__G two"
         ]
     );
 }

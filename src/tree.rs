@@ -234,7 +234,10 @@ impl Tree {
     }
 
     /// The lowest rank of any valid name (see [`Taxon::is_valid_name`]) on each node or below it,
-    /// indexed by node. `None` if there is no valid name at or below the node.
+    /// indexed by node, species excluded. `None` if there is no such name at or below the node.
+    ///
+    /// Species are excluded because every genome has a named species, so counting them would
+    /// stop every novel genus.
     fn lowest_valid_rank_below(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
         let mut out: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
         // Post-order puts every child before its parent.
@@ -247,7 +250,10 @@ impl Tree {
                 .max();
             if let Some(taxonomy) = &self.label(node)?.taxonomy {
                 for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_valid_name()) {
-                    lowest = lowest.max(Some(taxon.rank()?));
+                    let rank = taxon.rank()?;
+                    if rank != Rank::Species {
+                        lowest = lowest.max(Some(rank));
+                    }
                 }
             }
             if let Some(slot) = out.get_mut(node.index()) {
@@ -943,7 +949,7 @@ fn non_empty(taxonomy: Taxonomy) -> Option<Taxonomy> {
 /// that were created.
 ///
 /// A novel taxon is only created when no valid name (see [`Taxon::is_valid_name`]) of a lower
-/// rank is on the highest node or below it. Otherwise its leaves keep the placeholder, and none
+/// rank, other than a species, is on the highest node or below it. Otherwise its leaves keep the placeholder, and none
 /// of their lower missing ranks are filled either.
 ///
 /// The tree must be up to date: call [`Tree::reload`] first.

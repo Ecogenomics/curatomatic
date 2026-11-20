@@ -223,13 +223,13 @@ fn a_moved_taxon_missing_from_the_prior_taxonomy_is_new_in_decoration() {
     );
 }
 
-/// `g__B` moves down from an unsupported node onto the species node of G1, the only genome the
-/// prior taxonomy puts in it. Its closest sister is `sister`, which joins it at RED `red`.
+/// `g__B` moves down from an unsupported node (RED `red`) onto the species node of G1, the only
+/// genome the prior taxonomy puts in it. Its closest sister is `sister`, the other child of that
+/// node, which joins it at RED `red`. (A genome left behind in `g__B`'s old node would get a novel
+/// genus, which would be the closest sister instead.)
 fn moved_down_with_sister(red: &str, sister: &str) -> Vec<ReportRow> {
-    let newick = format!(
-        "((((G1|RED=1.000)'s__B one|RED=1.000',(G2|RED=1.000)'s__B two|RED=1.000')\
-         '50.0:g__B|RED=0.980',{sister})'100.0|RED={red}'){ROOT};"
-    );
+    let newick =
+        format!("(((G1|RED=1.000)'s__B one|RED=1.000',{sister})'50.0:g__B|RED={red}'){ROOT};");
     let meta = metadata(&format!(
         "{HEAD}G1\tnone\t{ABOVE_GENUS};g__B;s__B one\nG2\tnone\tnone\nG3\tnone\tnone\n\
          G4\tnone\tnone\n"
