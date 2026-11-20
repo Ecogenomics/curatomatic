@@ -45,6 +45,8 @@ pub(crate) enum CuratomaticError {
     MissingFromTaxonomyFile { n: usize, first: GenomeId },
     /// The taxonomy file and the tree disagree about a genome.
     TaxonomyFileConflict { gid: GenomeId, message: String },
+    /// Leaves that do not hold a named species: how many, and the first of them.
+    LeafWithoutSpecies { n: usize, first: GenomeId },
     /// The run changed the taxa on the tree by more than moving them and creating novel taxa.
     TaxaChanged(String),
     /// An internal expectation was violated.
@@ -101,6 +103,11 @@ impl fmt::Display for CuratomaticError {
             CuratomaticError::TaxonomyFileConflict { gid, message } => write!(
                 f,
                 "The taxonomy file disagrees with the tree for {gid}: {message}"
+            ),
+            CuratomaticError::LeafWithoutSpecies { n, first } => write!(
+                f,
+                "{n} leaf node(s) do not hold a species, but every leaf must have its species \
+                 assigned to it, e.g. {first}"
             ),
             CuratomaticError::TaxaChanged(message) => write!(
                 f,

@@ -103,6 +103,10 @@ Test data are available here:
   `scripts/convert_python_inputs.py` converts the Python inputs to this format. On real data, check it with
   `--debug` and `scripts/check_round_trip.py` (see the README): the r226 and r232 Python trees and the r237 inputs all
   round trip with 0 differences, and any change to how the inputs are loaded must keep it that way.
+- Every leaf holds at least one taxon, and one of them is always its named species (never a placeholder, never on an
+  internal node). This is checked by `Tree::check_leaves_have_species` (`src/tree.rs`) once the taxonomy file is
+  assigned and again before any output is written, failing the run with `CuratomaticError::LeafWithoutSpecies`. This
+  is why `--taxonomy` is required.
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
   file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.

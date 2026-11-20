@@ -32,7 +32,7 @@ The binary is written to `./target/release/curatomatic`.
 ## Running
 
 ```shell
-./target/release/curatomatic [OPTIONS] <TREE> <MEDIAN_RED> <OUT_DIR>
+./target/release/curatomatic [OPTIONS] --taxonomy <PATH> <TREE> <MEDIAN_RED> <OUT_DIR>
 ```
 
 The following arguments are required:
@@ -46,7 +46,7 @@ The following options are available:
 
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level (default = info).
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
-- `--taxonomy PATH` = The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, and is the prior taxonomy for downward refinement.
+- `--taxonomy PATH` = **Required.** The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, gives every leaf its species, and is the prior taxonomy for downward refinement.
 - `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
 - `--novel-accession NAME` = The column of `--novel-name-file` that holds the genome IDs, e.g. `db_name` (default = `accession`). Requires `--novel-name-file`.
 - `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.
@@ -92,6 +92,9 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
 - A placeholder (e.g. `g__`) is not a name, and is never assigned. A species such as `s__{unresolved} sp053939565` is
   a name, and is kept exactly as read.
 - A taxon to assign that is already elsewhere on the tree, or that more than one leaf would get, is an error.
+- Every leaf must hold its own named species once the file is assigned: a row whose species is a placeholder
+  (`s__`), or a species on an internal node of the tree, is an error. This is checked again at the end of the run,
+  before any output is written.
 - A genome on the tree that is not in the file is an error. A genome in the file that is not on the tree is a warning.
 - A line without two columns, an invalid taxonomy, or a genome given twice is an error.
 

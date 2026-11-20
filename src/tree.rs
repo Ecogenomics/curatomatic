@@ -430,6 +430,32 @@ impl Tree {
         })
     }
 
+    /// Check that every leaf holds a taxon, and that one of them is its named species (see the
+    /// rules in `AGENTS.md`).
+    ///
+    /// The species is always the leaf's own: it is never on an internal node, and never a
+    /// placeholder.
+    pub(crate) fn check_leaves_have_species(&self) -> CuratomaticResult<()> {
+        let mut missing = self
+            .leaves
+            .values()
+            .filter(|leaf| {
+                !leaf
+                    .taxonomy
+                    .get_rank(Rank::Species)
+                    .iter()
+                    .any(Taxon::is_named)
+            })
+            .map(|leaf| &leaf.gid);
+        let Some(first) = missing.next() else {
+            return Ok(());
+        };
+        Err(CuratomaticError::LeafWithoutSpecies {
+            n: missing.count().saturating_add(1),
+            first: first.clone(),
+        })
+    }
+
     /// The taxonomy of each leaf, in tree order.
     ///
     /// The taxonomy is read from the taxa on the leaf and every ancestor, one taxon for each rank

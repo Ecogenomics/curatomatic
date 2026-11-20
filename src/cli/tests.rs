@@ -4,9 +4,16 @@ use super::*;
 
 fn parse_cli(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(
-        ["curatomatic", "tree.nwk", "red.tsv", "out"]
-            .iter()
-            .chain(args),
+        [
+            "curatomatic",
+            "tree.nwk",
+            "red.tsv",
+            "out",
+            "--taxonomy",
+            "taxonomy.tsv",
+        ]
+        .iter()
+        .chain(args),
     )
 }
 
@@ -80,10 +87,13 @@ fn meta_is_no_longer_an_option() {
 }
 
 #[test]
-fn the_taxonomy_file_is_optional() {
-    let cli = parse_cli(&["--taxonomy", "taxonomy.tsv"]).unwrap();
-    assert_eq!(cli.taxonomy, Some(PathBuf::from("taxonomy.tsv")));
-    assert_eq!(parse_cli(&[]).unwrap().taxonomy, None);
+fn the_taxonomy_file_is_required() {
+    assert_eq!(
+        parse_cli(&[]).unwrap().taxonomy,
+        PathBuf::from("taxonomy.tsv")
+    );
+    // Without it, no leaf would hold its species.
+    assert!(Cli::try_parse_from(["curatomatic", "tree.nwk", "red.tsv", "out"]).is_err());
 }
 
 #[test]

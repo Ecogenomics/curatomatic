@@ -1054,3 +1054,52 @@ fn taxon_counts_include_the_taxa_of_internal_nodes_and_leaves() {
         ]
     );
 }
+
+// ---- Every leaf holds its species ----
+
+#[test]
+fn every_leaf_holds_its_species_once_the_taxonomy_file_is_assigned() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    assert_eq!(tree.check_leaves_have_species(), Ok(()));
+}
+
+#[test]
+fn a_leaf_without_any_taxon_is_an_error() {
+    let tree = tree(NEW_STYLE).unwrap();
+    assert_eq!(
+        tree.check_leaves_have_species(),
+        Err(CuratomaticError::LeafWithoutSpecies {
+            n: 4,
+            first: GenomeId::new("G1"),
+        })
+    );
+}
+
+#[test]
+fn a_leaf_with_taxa_but_no_species_is_an_error() {
+    // G4 holds an order, family and genus, but its species is a placeholder.
+    let taxonomy = NEW_STYLE_TAXONOMY.replace("s__G four", "s__");
+    let (tree, _) = assigned(NEW_STYLE, &taxonomy);
+    assert_eq!(leaf_taxa(&tree, 5), "o__O2; f__F2; g__G");
+    assert_eq!(
+        tree.check_leaves_have_species(),
+        Err(CuratomaticError::LeafWithoutSpecies {
+            n: 1,
+            first: GenomeId::new("G4"),
+        })
+    );
+}
+
+#[test]
+fn a_species_on_an_internal_node_is_not_the_leafs() {
+    // The species is on the node above G4, so G4 itself does not hold it.
+    let newick = NEW_STYLE.replace("'100:c__C|red=0.40'", "'100:c__C;s__G four|red=0.40'");
+    let (tree, _) = assigned(&newick, NEW_STYLE_TAXONOMY);
+    assert_eq!(
+        tree.check_leaves_have_species(),
+        Err(CuratomaticError::LeafWithoutSpecies {
+            n: 1,
+            first: GenomeId::new("G4"),
+        })
+    );
+}

@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use log::warn;
 use strum::IntoEnumIterator;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
@@ -24,8 +23,6 @@ pub(crate) struct Taxonomy {
 
 impl Taxonomy {
     /// Parse a semicolon separated taxonomy string (e.g. `d__Bacteria; p__Pseudomonadota`).
-    ///
-    /// A warning is logged if more than one taxon is found at any rank.
     pub(crate) fn from_string(tax_string: &str) -> CuratomaticResult<Self> {
         let mut out = Taxonomy::default();
         for taxon in tax_string.split(';') {

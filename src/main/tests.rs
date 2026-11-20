@@ -223,6 +223,24 @@ fn curate_fails_when_the_taxonomy_file_disagrees_with_the_tree() {
     );
 }
 
+#[test]
+fn curate_fails_without_writing_anything_when_a_leaf_has_no_species() {
+    let (out_dir, result) = run_curate(
+        "no-species",
+        "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;s__\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__\n",
+    );
+    assert_eq!(
+        result,
+        Err(CuratomaticError::LeafWithoutSpecies {
+            n: 2,
+            first: GenomeId::new("G2"),
+        })
+    );
+    assert_eq!(std::fs::read_dir(out_dir).unwrap().count(), 0);
+}
+
 const DEBUG_TREE: &str = "((G1:0.1,G2:0.1)'100:g__A|red=0.95':0.1,G3:0.1)\
                           'd__D;p__P;c__C;o__O;f__F|red=0.0000';\n";
 

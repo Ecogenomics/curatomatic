@@ -57,7 +57,7 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     debug!("median_red: {}", cli.red_dict.display());
     debug!("out_dir: {}", cli.out_dir.display());
     debug!("min_bs: {}", cli.min_bs);
-    debug!("taxonomy: {:?}", cli.taxonomy);
+    debug!("taxonomy: {}", cli.taxonomy.display());
     debug!("novel_name_file: {:?}", cli.novel_name_file);
     debug!("novel_accession: {}", cli.novel_accession);
     debug!("novel_name_column: {:?}", cli.novel_name_column);
@@ -142,13 +142,13 @@ fn assign_leaf_taxonomy(tree: &mut Tree, file: &TaxonomyFile) -> CuratomaticResu
 }
 
 /// Read the novel names and the prior taxonomy (from the taxonomy file), subset to the genomes on
-/// the tree, and every taxon of the prior taxonomy for the report. Each is empty if its file is
-/// not given.
+/// the tree, and every taxon of the prior taxonomy for the report. The novel names are empty if
+/// their file is not given.
 fn read_metadata(
     cli: &Cli,
     tree: &Tree,
     tree_n_nodes: usize,
-    taxonomy: Option<&TaxonomyFile>,
+    taxonomy: &TaxonomyFile,
 ) -> CuratomaticResult<(Metadata, BTreeSet<Taxon>)> {
     let mut metadata = Metadata::default();
     if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) {
@@ -170,7 +170,7 @@ fn read_metadata(
         }
     }
 
-    for (gid, gid_taxonomy) in taxonomy.into_iter().flat_map(TaxonomyFile::iter) {
+    for (gid, gid_taxonomy) in taxonomy.iter() {
         metadata.set_taxonomy(gid.clone(), gid_taxonomy.clone());
     }
     let prior_taxa = metadata.all_taxa();
@@ -272,14 +272,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     );
 
     // This runs first, before anything reads the taxa on the tree.
-    let taxonomy = match &cli.taxonomy {
-        Some(path) => {
-            let file = read_taxonomy_file(path, &tree)?;
-            assign_leaf_taxonomy(&mut tree, &file)?;
-            Some(file)
-        }
-        None => None,
-    };
+    let taxonomy = read_taxonomy_file(&cli.taxonomy, &tree)?;
+    assign_leaf_taxonomy(&mut tree, &taxonomy)?;
+    // The inputs are gospel: a leaf without its species is an error, not something to curate.
+    tree.check_leaves_have_species()?;
 
     if cli.debug {
         write_debug_inputs(&tree, &cli.out_dir, &stem)?;
@@ -288,7 +284,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     // Every change to the taxa from here on must be a move or a novel taxon.
     let tree_taxa_before = tree.taxon_counts()?;
 
-    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, taxonomy.as_ref())?;
+    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, &taxonomy)?;
     drop(taxonomy);
     // Read the median RED of each rank.
     info!("Reading median RED values");
@@ -332,6 +328,8 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     // before anything is written: a run that breaks the rule fails without any output.
     info!("Checking that taxa were only moved or created");
     check_taxa_unchanged(&tree_taxa_before, &tree.taxon_counts()?, &new_taxa_created)?;
+    info!("Checking that every leaf holds its species");
+    tree.check_leaves_have_species()?;
 
     info!("Building report");
     tree.reload()?;
