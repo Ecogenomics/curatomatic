@@ -101,3 +101,14 @@ fn debug_is_off_unless_given() {
     assert!(!parse_cli(&[]).unwrap().debug);
     assert!(parse_cli(&["--debug"]).unwrap().debug);
 }
+
+#[test]
+fn the_prior_taxonomy_is_optional() {
+    assert_eq!(parse_cli(&[]).unwrap().prior_taxonomy, None);
+    assert_eq!(
+        parse_cli(&["--prior-taxonomy", "prior.tsv"])
+            .unwrap()
+            .prior_taxonomy,
+        Some(PathBuf::from("prior.tsv"))
+    );
+}

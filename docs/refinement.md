@@ -21,7 +21,7 @@ bootstrap values or its RED values, and it never creates, renames or deletes a t
 | `min_bs` | The `--min-bs` argument (default `95.0`). A node is *supported* if its bootstrap is `≥ min_bs`. |
 | Original node | The node the taxon is on when the rank's pass starts. |
 | Named taxon | A taxon with a name after its prefix (`g__Escherichia`). A bare prefix (`g__`) is a placeholder, and the rules below that say "named" ignore placeholders. |
-| Prior taxonomy | The taxonomy of each genome in the `--taxonomy` file. Only used for moving labels down (and by the report). |
+| Prior taxonomy | The taxonomy of each genome in the `--prior-taxonomy` file (a previous release). Only used for moving labels down (and by the report). |
 
 ## Order of processing
 
@@ -108,8 +108,11 @@ descendants, so a conflict below it stops the walk at the next ancestor that is 
 Moving down narrows the taxon to the part of the tree that its genomes actually belong to,
 according to the prior taxonomy.
 
-> Moving down needs a prior taxonomy, which is read from `--taxonomy`. Without it the log warns
-> "No prior taxonomy was given, downward refinement is disabled." and nothing is moved down.
+> Moving down needs a prior taxonomy, which is read from `--prior-taxonomy` (a previous release).
+> Without it the log warns "No prior taxonomy was given, downward refinement is disabled." and
+> nothing is moved down. It is never read from `--taxonomy`: that is the decoration of the same
+> tree, so every genome below a taxon has it, more than one child always contains it (Rule D2),
+> and the descent would stop at once.
 
 ### Rule D1: well supported, deep taxa stay
 

@@ -46,7 +46,8 @@ The following options are available:
 
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level (default = info).
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
-- `--taxonomy PATH` = **Required.** The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, gives every leaf its species, and is the prior taxonomy for downward refinement.
+- `--taxonomy PATH` = **Required.** The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, and gives every leaf its species.
+- `--prior-taxonomy PATH` = The taxonomy of each genome in a previous release, in the format of the [taxonomy file](#taxonomy-file---taxonomy). It is the prior taxonomy for downward refinement and the report: without it no taxon is moved down. Genomes that are not on the tree are ignored, and a genome on the tree that is not in the file has no prior. It can't be `--taxonomy`: that is the decoration of the same tree, so every genome below a taxon has it, and a taxon could never move down.
 - `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
 - `--novel-accession NAME` = The column of `--novel-name-file` that holds the genome IDs, e.g. `db_name` (default = `accession`). Requires `--novel-name-file`.
 - `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.

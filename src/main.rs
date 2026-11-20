@@ -58,6 +58,7 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     debug!("out_dir: {}", cli.out_dir.display());
     debug!("min_bs: {}", cli.min_bs);
     debug!("taxonomy: {}", cli.taxonomy.display());
+    debug!("prior_taxonomy: {:?}", cli.prior_taxonomy);
     debug!("novel_name_file: {:?}", cli.novel_name_file);
     debug!("novel_accession: {}", cli.novel_accession);
     debug!("novel_name_column: {:?}", cli.novel_name_column);
@@ -141,14 +142,17 @@ fn assign_leaf_taxonomy(tree: &mut Tree, file: &TaxonomyFile) -> CuratomaticResu
     Ok(())
 }
 
-/// Read the novel names and the prior taxonomy (from the taxonomy file), subset to the genomes on
-/// the tree, and every taxon of the prior taxonomy for the report. The novel names are empty if
-/// their file is not given.
+/// Read the novel names and the prior taxonomy (`--prior-taxonomy`), subset to the genomes on the
+/// tree, and every taxon of the prior taxonomy for the report. The novel names are empty if their
+/// file is not given, and no genome has a prior taxonomy if `prior` is `None`.
+///
+/// The prior taxonomy is never read from `--taxonomy`: that is the decoration of the same tree,
+/// so every genome below a taxon would have it, and a taxon could never be moved down.
 fn read_metadata(
     cli: &Cli,
     tree: &Tree,
     tree_n_nodes: usize,
-    taxonomy: &TaxonomyFile,
+    prior: Option<&TaxonomyFile>,
 ) -> CuratomaticResult<(Metadata, BTreeSet<Taxon>)> {
     let mut metadata = Metadata::default();
     if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) {
@@ -170,7 +174,7 @@ fn read_metadata(
         }
     }
 
-    for (gid, gid_taxonomy) in taxonomy.iter() {
+    for (gid, gid_taxonomy) in prior.iter().flat_map(|prior| prior.iter()) {
         metadata.set_taxonomy(gid.clone(), gid_taxonomy.clone());
     }
     let prior_taxa = metadata.all_taxa();
@@ -284,8 +288,16 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     // Every change to the taxa from here on must be a move or a novel taxon.
     let tree_taxa_before = tree.taxon_counts()?;
 
-    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, &taxonomy)?;
     drop(taxonomy);
+    let prior = match &cli.prior_taxonomy {
+        Some(path) => {
+            info!("Reading prior taxonomy");
+            Some(TaxonomyFile::from_file(path)?)
+        }
+        None => None,
+    };
+    let (metadata, prior_taxa) = read_metadata(cli, &tree, tree_n_nodes, prior.as_ref())?;
+    drop(prior);
     // Read the median RED of each rank.
     info!("Reading median RED values");
     let red_dict = Red::from_file(&cli.red_dict)?;

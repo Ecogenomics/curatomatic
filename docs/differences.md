@@ -11,7 +11,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | # | Area | Python (`main`) | Rust (`dev`) | Changes output? |
 | --- | --- | --- | --- | --- |
 | L1 | Refining up | A nested taxon can move up | A nested taxon never moves up | **Yes** |
-| L2 | Refining down | Prior taxonomy from the `gtdb_taxonomy` column of `--meta` | Prior taxonomy from `--taxonomy` | **Yes**, if a prior taxonomy was given |
+| L2 | Refining down | Prior taxonomy from the `gtdb_taxonomy` column of `--meta` | Prior taxonomy from `--prior-taxonomy` | **Yes**, if a prior taxonomy was given |
 | L3 | Species placeholder | Replaces the **whole** label of the node with `s__{unresolved} <gid>` | Not rewritten: species come from `--taxonomy`, onto the leaves | **Yes**, for trees with an `s__` placeholder |
 | L4 | Novel names without WGS | `<rank>__NOVEL-<lowest gid>`, may duplicate an existing taxon | `<rank>__<lowest gid not already used>`, else `<rank>__UNRESOLVABLE` | **Yes** |
 | L5 | Novel domain | Uses the species median as the parent | Error | Stops the run instead of a wrong placement |
@@ -38,21 +38,23 @@ of the same rank could climb onto, or past, the node of the outer taxon and take
 Python version did have a nested-rank detector (`Tree.get_nested_ranks`), but only in the old,
 unreachable code path (see [Python code that was not ported](#python-code-that-was-not-ported)).
 
-### L2. Moving down reads the prior taxonomy from `--taxonomy`
+### L2. Moving down reads the prior taxonomy from `--prior-taxonomy`
 
 The downward rules themselves are identical (see [Unchanged logic](#unchanged-logic)). What
 changed is where the prior taxonomy comes from.
 
 - **Python** (`Metadata.from_file`, `model/metadata.py`): `--meta` reads the `gtdb_taxonomy`
   column, if present, as each genome's prior taxonomy. That enables downward refinement.
-- **Rust** (`main.rs`, `read_metadata`): the prior taxonomy is the `--taxonomy` file
-  (`src/taxonomy_file.rs`). `--novel-name-file` reads only `accession` and the
-  `--novel-name-column`. Without `--taxonomy` the log warns *"No prior taxonomy was given,
-  downward refinement is disabled."*
+- **Rust** (`main.rs`, `read_metadata`): the prior taxonomy is the `--prior-taxonomy` file (a
+  previous release, in the format of `--taxonomy`, read with `src/taxonomy_file.rs`).
+  `--novel-name-file` reads only `accession` and the `--novel-name-column`. Without
+  `--prior-taxonomy` the log warns *"No prior taxonomy was given, downward refinement is
+  disabled."* `--taxonomy` is never the prior: it is the decoration of the same tree, so no taxon
+  could ever move down.
 
-The test data's `metadata.tsv` has a `taxonomy` column, not `gtdb_taxonomy`. So downward
-refinement did not run in the Python reference outputs either, and those outputs aren't affected
-by this.
+The r226 test data's `metadata.tsv` has a `taxonomy` column, not `gtdb_taxonomy`, so the r226
+Python reference outputs did no downward refinement. The r232 metadata has `gtdb_taxonomy` (the
+curated r226 taxonomy), so the r232 Python outputs did move taxa down.
 
 ### L3. The species placeholder is not rewritten
 

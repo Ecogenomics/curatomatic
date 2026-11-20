@@ -162,7 +162,7 @@ Rust at `0672bda` gets 89.4%, and Python 45.2%.
 
 ## Job 13: A separate prior taxonomy for moving taxa down (`--prior-taxonomy`)
 
-**Status: needs the user's approval.** Moving down moves labels that the decorated tree placed. Both versions are
+**Status: done** (approved by the user on 2026-11-20). Moving down moves labels that the decorated tree placed. Both versions are
 designed to do this, but the tree's labels are authoritative (`AGENTS.md`), so the user must confirm that they want
 it.
 

@@ -145,6 +145,77 @@ fn run_curate_with(
     (out_dir, result)
 }
 
+/// `g__A` is on an unsupported node (bootstrap 50) above a supported clade of G1 and G2, and G3.
+/// The decoration (the taxonomy file) puts every genome in `g__A`.
+const MOVE_DOWN_TREE: &str = "(((G1:0.1,G2:0.1)'100|red=0.97':0.1,G3:0.1)'50:g__A|red=0.95':0.1)\
+     'd__D;p__P;c__C;o__O;f__F|red=0.0000';\n";
+const MOVE_DOWN_TAXONOMY: &str = "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+     G2\td__D;p__P;c__C;o__O;f__F;g__A;s__A two\n\
+     G3\td__D;p__P;c__C;o__O;f__F;g__A;s__A three\n";
+
+/// Run `curate` on [`MOVE_DOWN_TREE`], with `prior` as `--prior-taxonomy` if given, and return the
+/// genus of each genome in the output.
+fn genera_after_move_down(name: &str, prior: Option<&str>) -> Vec<String> {
+    let prior_path = std::env::temp_dir().join(format!(
+        "curatomatic-{name}-{}-prior.tsv",
+        std::process::id()
+    ));
+    let prior_arg = prior_path.to_str().unwrap().to_owned();
+    let mut extra = Vec::new();
+    if let Some(prior) = prior {
+        std::fs::write(&prior_path, prior).unwrap();
+        extra = vec!["--prior-taxonomy", prior_arg.as_str()];
+    }
+    let (out_dir, result) = run_curate_with(name, MOVE_DOWN_TREE, MOVE_DOWN_TAXONOMY, &extra);
+    result.unwrap();
+    std::fs::read_to_string(out_dir.join("tree.curatomatic.taxonomy.tsv"))
+        .unwrap()
+        .lines()
+        .map(|row| {
+            let (gid, taxonomy) = row.split_once('\t').unwrap();
+            let genus = taxonomy.split(';').find(|t| t.starts_with("g__")).unwrap();
+            format!("{gid} {genus}")
+        })
+        .collect()
+}
+
+#[test]
+fn a_taxon_is_not_moved_down_without_a_prior_taxonomy() {
+    // The taxonomy file is the decoration of the same tree, so it can never move a taxon down.
+    assert_eq!(
+        genera_after_move_down("no-prior", None),
+        ["G1 g__A", "G2 g__A", "G3 g__A"]
+    );
+}
+
+#[test]
+fn a_taxon_is_moved_down_to_the_genomes_of_the_prior_taxonomy() {
+    let genera = genera_after_move_down(
+        "prior",
+        Some(
+            "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+             G2\td__D;p__P;c__C;o__O;f__F;g__A;s__A two\n\
+             G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n",
+        ),
+    );
+    // G3 is left without a genus, and gets a novel one.
+    assert_eq!(genera, ["G1 g__A", "G2 g__A", "G3 g__G3"]);
+}
+
+#[test]
+fn a_genome_missing_from_the_prior_taxonomy_has_no_prior() {
+    // G3 is not in the prior file: it is not an error, and G3 says nothing about g__A.
+    let genera = genera_after_move_down(
+        "prior-missing",
+        Some(
+            "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+             G2\td__D;p__P;c__C;o__O;f__F;g__A;s__A two\n\
+             G9\td__D;p__P;c__C;o__O;f__F;g__A;s__A nine\n",
+        ),
+    );
+    assert_eq!(genera, ["G1 g__A", "G2 g__A", "G3 g__G3"]);
+}
+
 #[test]
 fn curate_writes_one_seven_rank_row_per_genome_from_the_final_tree() {
     let (out_dir, result) = run_curate(

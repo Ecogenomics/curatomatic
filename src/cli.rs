@@ -30,10 +30,16 @@ pub(crate) struct Cli {
     pub(crate) min_bs: BootstrapValue,
 
     /// Tab separated file with no header giving the taxonomy of each genome (e.g. the
-    /// `decorate_classifications.tsv` of gDecorate). It names the ranks the tree can't hold, and
-    /// is the prior taxonomy for downward refinement. Required: it gives every leaf its species.
+    /// `decorate_classifications.tsv` of gDecorate). It names the ranks the tree can't hold.
+    /// Required: it gives every leaf its species.
     #[arg(long, value_name = "PATH")]
     pub(crate) taxonomy: PathBuf,
+
+    /// Tab separated file with no header giving the taxonomy of each genome in a previous release,
+    /// in the format of `--taxonomy`. It is the prior taxonomy for downward refinement and the
+    /// report: without it no taxon is moved down. Genomes that are not on the tree are ignored.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) prior_taxonomy: Option<PathBuf>,
 
     /// Tab separated file with a header (e.g. the GTDB metadata file) giving the name used for
     /// novel taxa of each genome, in the `--novel-accession` and `--novel-name-column` columns.
