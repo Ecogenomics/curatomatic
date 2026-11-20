@@ -88,10 +88,19 @@ Test data are available here:
   `foo/tests.rs` (see `src/taxonomy.rs`).
 - When possible, use newtypes.
 - The taxon labels on the input (decorated) tree are placed there for a specific statistical reason and are
-  authoritative. The taxonomy file (`--taxonomy`) only supplies the ranks the tree cannot hold: those below the lowest
-  rank on a genome's path. A taxon from the file is never placed at or above a rank already on that path, even when it
-  differs from the tree's label (e.g. a single-genome genus inside a tree-labelled genus). Never propose overriding
-  the tree's labels with the file.
+  authoritative. Never propose overriding the tree's labels with the file.
+- The inputs (the tree and the taxonomy file) are gospel until curation starts. Loading them must never drop, change or
+  second-guess a taxon: anything that does not line up is an error (`CuratomaticError::TaxonomyFileConflict`), never
+  a silent skip.
+- The taxonomy file (`--taxonomy`) replaces the dummy nodes of the old trees. Each row is the full taxonomy of a genome:
+  the taxa on its path in the tree, plus the taxa that were on its dummy node. A leaf gets every named taxon of its row
+  that is not on its path, matched **by taxon, never by rank** (`Tree::assign_leaf_taxonomy`). The row is in rank
+  order, not path order, so a taxon's position or rank in the row says nothing about whether it is the leaf's: a
+  single-genome genus inside a tree-labelled genus (r237 G053840885, `g__Neosphaerochaeta` inside `g__JAAYFO01`), or a
+  single-genome order inside a tree-labelled family (r226 bac120 G017303975), are the leaf's own. Removing the dummy
+  nodes and assigning the file must give back exactly the taxa they held; this is tested by
+  `removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa` (`src/tree/tests.rs`).
+  `scripts/convert_python_inputs.py` converts the Python inputs to this format.
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
   file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.

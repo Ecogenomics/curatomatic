@@ -177,6 +177,41 @@ fn curate_fails_when_a_tree_genome_is_not_in_the_taxonomy_file() {
     );
 }
 
+#[test]
+fn curate_keeps_a_single_genome_genus_nested_in_a_tree_genus() {
+    // G2's genus is only in the file (it was on its dummy node), inside the tree's `g__A`.
+    let (out_dir, result) = run_curate(
+        "nested",
+        "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;g__N;s__N two\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n",
+    );
+    result.unwrap();
+    let taxonomy = std::fs::read_to_string(out_dir.join("tree.curatomatic.taxonomy.tsv")).unwrap();
+    assert!(
+        taxonomy.contains("G2\td__D;p__P;c__C;o__O;f__F;g__N;s__N two\n"),
+        "{taxonomy}"
+    );
+}
+
+#[test]
+fn curate_fails_when_the_taxonomy_file_disagrees_with_the_tree() {
+    let (_, result) = run_curate(
+        "disagrees",
+        "G1\td__D;p__P;c__C;o__O;f__F;g__Other;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;s__A two\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n",
+    );
+    assert_eq!(
+        result,
+        Err(CuratomaticError::TaxonomyFileConflict {
+            gid: GenomeId::new("G1"),
+            message: "the tree places it in g__A, which is not in its row of the taxonomy file"
+                .to_owned()
+        })
+    );
+}
+
 // The rule: curatomatic only ever moves taxa or creates novel taxa. It never removes a taxon, and
 // never edits the text of one (see `AGENTS.md`).
 

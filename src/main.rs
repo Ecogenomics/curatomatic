@@ -117,7 +117,7 @@ fn read_taxonomy_file(path: &Path, tree: &Tree) -> CuratomaticResult<TaxonomyFil
     Ok(file)
 }
 
-/// Give the leaves the ranks that the tree can't hold, from the taxonomy file.
+/// Give the leaves the taxa that the tree can't hold, from the taxonomy file.
 fn assign_leaf_taxonomy(tree: &mut Tree, file: &TaxonomyFile) -> CuratomaticResult<()> {
     info!("Assigning ranks from the taxonomy file to the leaves");
     let taxa_before = tree.extract_all_taxa_from_tree()?;
@@ -137,16 +137,6 @@ fn assign_leaf_taxonomy(tree: &mut Tree, file: &TaxonomyFile) -> CuratomaticResu
         "Assigned taxa to {} leaves ({n_taxa}).",
         assignment.n_leaves.separate_with_commas()
     );
-    if !assignment.skipped.is_empty() {
-        warn!(
-            "Skipped {} taxa of the taxonomy file that are already on the tree, or that more than \
-             one leaf would get.",
-            assignment.skipped.len().separate_with_commas()
-        );
-        for taxon in &assignment.skipped {
-            debug!("Skipped: {taxon}");
-        }
-    }
     Ok(())
 }
 

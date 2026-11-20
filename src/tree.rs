@@ -47,9 +47,6 @@ pub(crate) struct LeafAssignment {
     pub(crate) n_leaves: usize,
     /// The number of taxa that were assigned to a leaf, for each rank.
     pub(crate) n_taxa: BTreeMap<Rank, usize>,
-    /// Taxa that were not assigned: they are already on the tree, or more than one leaf would get
-    /// them. Each taxon is on one node only.
-    pub(crate) skipped: BTreeSet<Taxon>,
 }
 
 /// A taxon that [`Tree::process_refinement`] moved from one node to another.
@@ -236,29 +233,6 @@ impl Tree {
         self.leaves.get(&node).map(|leaf| &leaf.gid)
     }
 
-    /// The lowest rank of any taxon (placeholders included) on the path from each node (included)
-    /// to the root, indexed by node.
-    fn lowest_rank_on_path(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
-        let mut out: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
-        // Post-order puts every parent after its children, so in reverse the parent comes first.
-        let nodes: Vec<NodeId> = self.newick.ids().collect();
-        for &node in nodes.iter().rev() {
-            let mut lowest = self
-                .newick
-                .parent(node)
-                .and_then(|parent| out.get(parent.index()).copied().flatten());
-            if let Some(taxonomy) = &self.label(node)?.taxonomy {
-                for taxon in taxonomy.iter_ranks() {
-                    lowest = lowest.max(Some(taxon.rank()?));
-                }
-            }
-            if let Some(slot) = out.get_mut(node.index()) {
-                *slot = lowest;
-            }
-        }
-        Ok(out)
-    }
-
     /// The lowest rank of any valid name (see [`Taxon::is_valid_name`]) on each node or below it,
     /// indexed by node. `None` if there is no valid name at or below the node.
     fn lowest_valid_rank_below(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
@@ -283,70 +257,109 @@ impl Tree {
         Ok(out)
     }
 
-    /// Give each leaf the ranks that the tree can't hold, from the taxonomy file.
+    /// Give each leaf the taxa that the tree can't hold, from the taxonomy file.
     ///
-    /// Each leaf gets every named taxon of the file whose rank is below the
-    /// lowest rank on its path to the root, e.g. only its species if the lowest is a genus. A gap
-    /// above the lowest rank is never filled, and placeholders (e.g. `g__`) are never assigned.
-    /// The taxa already on the tree are never changed. A taxon that is already on the tree, or
-    /// that more than one leaf would get, is not assigned (see [`LeafAssignment::skipped`]).
+    /// The file restores the labels of the dummy nodes of an old style tree: each row is the full
+    /// taxonomy of a genome, which is the taxa on its path in the tree plus the taxa that were on
+    /// its dummy node. This is matched by taxon, never by rank:
     ///
-    /// A leaf whose genome is not in the file is an error. Reloads the tree.
+    /// 1. From each leaf, go up the tree to the nearest node with a named taxon (the anchor). Its
+    ///    taxa must be in the genome's row, which checks that the tree and the file agree.
+    /// 2. Every named taxon of the row that is not on the leaf's path is given to the leaf, e.g. a
+    ///    single genome genus (and its species) nested inside a genus on the tree.
+    ///
+    /// The row is in rank order, not path order, so its position in the row says nothing: a
+    /// single genome order nested inside a family on the tree is written before that family.
+    /// Removing the dummy nodes and assigning the file gives back exactly the taxa they held.
+    ///
+    /// The taxa already on the tree are never changed, and placeholders (e.g. `g__`) are never
+    /// assigned. A leaf with no named taxon on its path is given its whole row.
+    ///
+    /// The tree and the file are inputs and are never second guessed: a leaf whose genome is not
+    /// in the file, an anchor taxon that is not in the row, and a taxon to assign that is already
+    /// on the tree or that more than one leaf would get, are all errors. Reloads the tree.
     pub(crate) fn assign_leaf_taxonomy(
         &mut self,
         file: &TaxonomyFile,
     ) -> CuratomaticResult<LeafAssignment> {
-        let lowest = self.lowest_rank_on_path()?;
-
-        // The taxa that each leaf would get, and how many leaves would get each taxon.
-        let mut wanted: Vec<(NodeId, Vec<&Taxon>)> = Vec::new();
-        let mut n_wanting: HashMap<&Taxon, usize> = HashMap::new();
+        let conflict = |gid: &GenomeId, message: String| CuratomaticError::TaxonomyFileConflict {
+            gid: gid.clone(),
+            message,
+        };
+        let mut out = LeafAssignment::default();
+        // The taxa that each leaf gets, and the genome that gets each taxon.
+        let mut wanted: Vec<(NodeId, Vec<Taxon>)> = Vec::new();
+        let mut wanted_by: HashMap<&Taxon, &GenomeId> = HashMap::new();
         for leaf in self.newick.leaves() {
             let Some(gid) = self.leaf_gid(leaf) else {
                 continue;
             };
-            let taxonomy =
-                file.get(gid)
-                    .ok_or_else(|| CuratomaticError::MissingFromTaxonomyFile {
-                        n: 1,
-                        first: gid.clone(),
-                    })?;
-            let below = lowest.get(leaf.index()).copied().flatten();
-            let mut taxa = Vec::new();
-            for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_named()) {
-                if below.is_none_or(|below| taxon.rank().is_ok_and(|rank| rank > below)) {
-                    taxa.push(taxon);
-                    let n = n_wanting.entry(taxon).or_default();
-                    *n = n.saturating_add(1);
+            let row = file
+                .get(gid)
+                .ok_or_else(|| CuratomaticError::MissingFromTaxonomyFile {
+                    n: 1,
+                    first: gid.clone(),
+                })?;
+            let in_row: BTreeSet<&Taxon> = row.iter_ranks().collect();
+
+            // The named taxa on the path (leaf excluded), checking those of the anchor.
+            let mut on_path: BTreeSet<&Taxon> = BTreeSet::new();
+            let mut current = self.newick.parent(leaf);
+            while let Some(node) = current {
+                if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                    let is_anchor = on_path.is_empty();
+                    for taxon in taxonomy.iter_ranks().filter(|t| t.is_named()) {
+                        if is_anchor && !in_row.contains(taxon) {
+                            return Err(conflict(
+                                gid,
+                                format!(
+                                    "the tree places it in {taxon}, which is not in its row of \
+                                     the taxonomy file"
+                                ),
+                            ));
+                        }
+                        on_path.insert(taxon);
+                    }
                 }
+                current = self.newick.parent(node);
+            }
+
+            let mut taxa = Vec::new();
+            for taxon in row
+                .iter_ranks()
+                .filter(|t| t.is_named() && !on_path.contains(*t))
+            {
+                if self.taxon_labels.contains(taxon) {
+                    return Err(conflict(
+                        gid,
+                        format!("{taxon} is for this genome only, but it is already on the tree"),
+                    ));
+                }
+                if let Some(other) = wanted_by.insert(taxon, gid) {
+                    return Err(conflict(
+                        gid,
+                        format!("{taxon} would be given to both {other} and {gid}"),
+                    ));
+                }
+                taxa.push(taxon.clone());
             }
             if !taxa.is_empty() {
                 wanted.push((leaf, taxa));
             }
         }
 
-        let mut out = LeafAssignment::default();
         for (leaf, taxa) in wanted {
             let leaf_taxonomy = &mut self
                 .leaves
                 .get_mut(&leaf)
                 .ok_or_else(|| CuratomaticError::Invariant(format!("node {leaf} is not a leaf")))?
                 .taxonomy;
-            let mut assigned = false;
             for taxon in taxa {
-                if self.taxon_labels.contains(taxon) || n_wanting.get(taxon).is_some_and(|&n| n > 1)
-                {
-                    out.skipped.insert(taxon.clone());
-                    continue;
-                }
                 let n = out.n_taxa.entry(taxon.rank()?).or_default();
                 *n = n.saturating_add(1);
-                leaf_taxonomy.add_taxon(taxon.clone())?;
-                assigned = true;
+                leaf_taxonomy.add_taxon(taxon)?;
             }
-            if assigned {
-                out.n_leaves = out.n_leaves.saturating_add(1);
-            }
+            out.n_leaves = out.n_leaves.saturating_add(1);
         }
 
         self.reload()?;

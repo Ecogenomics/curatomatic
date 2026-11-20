@@ -193,18 +193,21 @@ Before refinement, when the tree is read:
   (`TaxonomyOnLeaf`): the taxa of a leaf come only from `--taxonomy`. An internal node is labelled
   `[<bootstrap>][:][<taxonomy>]|RED=<red>`. The RED key may be written `RED=` or `red=`, after a
   `|`, or after the `:` of a bootstrap with no taxonomy (`100:red=0.889`).
-- If `--taxonomy` is given, every leaf is given the ranks the tree can't hold,
-  before anything else runs (`Tree::assign_leaf_taxonomy`):
-  - The leaf gets every named taxon of its row whose rank is **below** the lowest rank of any taxon
-    on its path to the root. If the lowest is a genus, it gets only its species. If it is a
-    species (an old style tree, with a species node above each leaf), it gets nothing.
-  - A gap above the lowest rank is never filled (e.g. a missing phylum above a class): it is left
-    for the novel taxa.
-  - The taxa already on the tree are never changed, even when the file disagrees.
+- If `--taxonomy` is given, every leaf is given the taxa the tree can't hold, before anything else
+  runs (`Tree::assign_leaf_taxonomy`). The file holds what the dummy nodes of the old trees held:
+  each row is the genome's full taxonomy, the taxa on its path plus its own.
+  - The nearest node above the leaf with a named taxon is found, and its taxa must all be in the
+    row. If not, the tree and the file disagree, and the run fails (`TaxonomyFileConflict`).
+  - The leaf gets every named taxon of its row that is **not on its path**, matched by taxon and
+    never by rank. A single-genome genus nested in a genus on the tree, or a single-genome order
+    nested in a family on the tree, is the leaf's. The row is in rank order, so the position of a
+    taxon in it says nothing. If every taxon is on the path (an old style tree, with the dummy
+    nodes still on it), the leaf gets nothing.
+  - The taxa already on the tree are never changed.
   - Placeholders (`g__`) are never assigned. `s__{unresolved} <name>` species are names, and are
     assigned as read.
-  - A taxon that is already on the tree, or that more than one leaf would get, is not assigned (it
-    would be on more than one node). The run logs a warning with the number skipped.
+  - A taxon to assign that is already elsewhere on the tree, or that more than one leaf would get,
+    is an error (`TaxonomyFileConflict`). Nothing is skipped silently.
   - A leaf whose genome is not in the file is an error. A genome in the file that is not on the
     tree is a warning.
 

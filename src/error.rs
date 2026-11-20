@@ -43,6 +43,8 @@ pub(crate) enum CuratomaticError {
     },
     /// Genomes on the tree that are not in the taxonomy file: how many, and the first of them.
     MissingFromTaxonomyFile { n: usize, first: GenomeId },
+    /// The taxonomy file and the tree disagree about a genome.
+    TaxonomyFileConflict { gid: GenomeId, message: String },
     /// The run changed the taxa on the tree by more than moving them and creating novel taxa.
     TaxaChanged(String),
     /// An internal expectation was violated.
@@ -95,6 +97,10 @@ impl fmt::Display for CuratomaticError {
             CuratomaticError::MissingFromTaxonomyFile { n, first } => write!(
                 f,
                 "{n} genome(s) on the tree are not in the taxonomy file, e.g. {first}"
+            ),
+            CuratomaticError::TaxonomyFileConflict { gid, message } => write!(
+                f,
+                "The taxonomy file disagrees with the tree for {gid}: {message}"
             ),
             CuratomaticError::TaxaChanged(message) => write!(
                 f,

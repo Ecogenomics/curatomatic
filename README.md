@@ -80,13 +80,17 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
 ```
 
 - Genome IDs are matched to the tree the same way as the novel name file (`GB_GCA_003697165.1` is `G003697165`).
-- Each leaf is given the taxa of its row whose rank is below the lowest rank on its path in the tree, e.g. only its
-  species when its genus is on the tree. The taxa already on the tree are never changed, and a gap higher up (e.g. a
-  missing phylum above a class) is not filled from the file. Curatomatic only creates a novel taxon where no valid name is below
-  it, so a missing phylum above a named class keeps its placeholder (see [docs/refinement.md](docs/refinement.md#novel-taxa)).
+- The file holds what the dummy nodes of the old trees held. Each row is the full taxonomy of the genome: the taxa on
+  its path in the tree, plus its own. Each leaf is given every named taxon of its row that is **not on its path** in
+  the tree. This is matched by taxon, not by rank: in
+  `...;f__Sphaerochaetaceae;g__JAAYFO01;g__Neosphaerochaeta;s__Neosphaerochaeta fermentans`, where the tree has
+  `g__JAAYFO01` above the genome, the leaf gets `g__Neosphaerochaeta` and its species. The taxa already on the tree are
+  never changed.
+- The nearest taxon above each leaf on the tree must be in its row, otherwise the tree and the file disagree and the
+  run fails.
 - A placeholder (e.g. `g__`) is not a name, and is never assigned. A species such as `s__{unresolved} sp053939565` is
   a name, and is kept exactly as read.
-- A taxon that is already on the tree, or that more than one leaf would get, is not assigned (a warning is logged).
+- A taxon to assign that is already elsewhere on the tree, or that more than one leaf would get, is an error.
 - A genome on the tree that is not in the file is an error. A genome in the file that is not on the tree is a warning.
 - A line without two columns, an invalid taxonomy, or a genome given twice is an error.
 
