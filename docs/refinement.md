@@ -123,7 +123,18 @@ window (`RED > lower bound`): going lower would only move further from the media
 
 For a node, each child is assigned the set of taxa of this rank that the prior taxonomy gives to
 the genomes at or below it (a child may be a leaf itself). Genomes without a prior taxonomy
-contribute nothing.
+contribute nothing, with one exception for the genus:
+
+- **Rule D2a: new genomes keep the genus their species names.** When refining the genus, a genome
+  without a prior taxonomy (new in this release) whose species (from `--taxonomy`) is a binomial
+  name, e.g. `s__Noviluteimonas sp057139745`, is taken to be in the genus that the first part of
+  the name gives (`g__Noviluteimonas`, see `Taxon::genus_of_species`). So a genus is not moved
+  down away from a new genome that its species puts in the genus: the child holding it also
+  contains the genus, and the descent stops as below. Unresolved species
+  (`s__{unresolved} NAME`) give no genus. A genome that is in the prior taxonomy is never given
+  the genus of its species, even if the prior has a different genus (or a placeholder) for it.
+  Tested by `a_genus_is_not_moved_down_away_from_a_new_genome_that_its_species_names`
+  (`src/tree/tests.rs`).
 
 - If **more than one** child contains the taxon, moving down would make it polyphyletic, so the
   descent stops here.

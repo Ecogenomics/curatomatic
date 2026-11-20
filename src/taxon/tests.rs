@@ -297,3 +297,34 @@ fn taxon_counts_count_each_named_taxon_and_skip_placeholders() {
         [("g__A", 1), ("g__UNRESOLVABLE", 2), ("s__A one", 1)]
     );
 }
+
+#[test]
+fn genus_of_species_is_the_first_part_of_a_binomial_name() {
+    for (species, genus) in [
+        ("s__Escherichia coli", "g__Escherichia"),
+        ("s__Noviluteimonas sp057139745", "g__Noviluteimonas"),
+        ("s__Luteimonas_D sp1", "g__Luteimonas_D"),
+        ("s__CAYYKD01 sp964471825", "g__CAYYKD01"),
+    ] {
+        assert_eq!(
+            Taxon::new(species).genus_of_species(),
+            Some(Taxon::new(genus)),
+            "{species}"
+        );
+    }
+}
+
+#[test]
+fn genus_of_species_is_none_for_anything_but_a_binomial_species() {
+    for taxon in [
+        "s__{unresolved} Escherichia coli",
+        "s__Escherichia",
+        "s__Escherichia ",
+        "s__ coli",
+        "s__",
+        "g__Escherichia coli",
+        "g__Escherichia",
+    ] {
+        assert_eq!(Taxon::new(taxon).genus_of_species(), None, "{taxon}");
+    }
+}

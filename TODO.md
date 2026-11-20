@@ -245,3 +245,21 @@ existing taxa that are named after its genomes (e.g. `g__G020350785`). Nothing e
 2. Tests in `src/taxon/tests.rs` and `src/report/tests.rs`.
 3. Docs: `docs/refinement.md` "Novel taxa", the report columns in `README.md`.
 4. With Job 11, check the r226_bac120 cases (`G020350785`, `G030406045`) and the r232_bac120 case (`G020350445`).
+
+## Job 15: A genus is not moved down away from new genomes that its species names
+
+**Status: done** (`docs/differences.md` L9, `docs/refinement.md` rule D2a).
+
+### Problem
+
+Moving a genus down follows the genomes that the prior taxonomy puts in it. A genome new in this release has no prior,
+so it counted as being in no genus. In r237 bac120, `g__Noviluteimonas` (bootstrap 91) was moved down to its 8 genome
+child (bootstrap 100), away from the new genome G057139745 (`s__Noviluteimonas sp057139745`), which then got a novel
+genus while keeping its `s__Noviluteimonas` species.
+
+### Rule
+
+When refining the genus, a genome without a prior taxonomy whose species is binomial (`s__X epithet`, not
+`s__{unresolved}`) counts as being in `g__X`. A genus that would form a monophyletic group with the new genomes its
+species names is not split from them. Genomes in the prior are unchanged (their prior genus is used), and other ranks
+are unchanged.

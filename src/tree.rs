@@ -613,6 +613,7 @@ impl Tree {
     ) -> CuratomaticResult<Refinement> {
         let mut out = Refinement::default();
         let gid_to_taxonomy = metadata.get_taxonomy_from_gids(&self.gids);
+        let species_genera = self.species_genera_of_new_genomes(rank, &gid_to_taxonomy);
 
         let child_rank = rank.child().ok_or_else(|| {
             CuratomaticError::Invariant("the species cannot be refined, it has no child".to_owned())
@@ -697,7 +698,8 @@ impl Tree {
                 }
 
                 // Find which children contain genomes that the metadata assigns to the taxon.
-                let child_taxa = self.child_rank_taxa(node, rank, &gid_to_taxonomy)?;
+                let child_taxa =
+                    self.child_rank_taxa(node, rank, &gid_to_taxonomy, &species_genera)?;
 
                 // Moving the label down would cause polyphyly, which is not handled.
                 if polyphyly(&child_taxa, taxon) {
@@ -732,7 +734,8 @@ impl Tree {
                         Some(_) => {}
                     }
 
-                    let child_taxa = self.child_rank_taxa(cur_node, rank, &gid_to_taxonomy)?;
+                    let child_taxa =
+                        self.child_rank_taxa(cur_node, rank, &gid_to_taxonomy, &species_genera)?;
                     if polyphyly(&child_taxa, taxon) {
                         continue;
                     }
@@ -800,13 +803,47 @@ impl Tree {
         None
     }
 
+    /// For the genus only: the genus that the species name of each new genome gives it, keyed by
+    /// genome ID. A new genome is one without a prior taxonomy (it was not in the previous
+    /// release), and its species is held by its leaf (from `--taxonomy`), e.g. `g__Noviluteimonas`
+    /// for `s__Noviluteimonas sp057139745` (see [`Taxon::genus_of_species`]).
+    ///
+    /// Moving a genus down follows the genomes that the prior taxonomy puts in it. A new genome is
+    /// not in the prior, but a binomial species name says which genus it belongs to, so the genus
+    /// is not moved down away from it: a genus is never split from the genomes its species name.
+    fn species_genera_of_new_genomes(
+        &self,
+        rank: Rank,
+        gid_to_taxonomy: &BTreeMap<&GenomeId, &Taxonomy>,
+    ) -> BTreeMap<GenomeId, Taxon> {
+        if rank != Rank::Genus {
+            return BTreeMap::new();
+        }
+        self.leaves
+            .values()
+            .filter(|leaf| !gid_to_taxonomy.contains_key(&leaf.gid))
+            .filter_map(|leaf| {
+                let genus = leaf
+                    .taxonomy
+                    .get_rank(Rank::Species)
+                    .iter()
+                    .find_map(Taxon::genus_of_species)?;
+                Some((leaf.gid.clone(), genus))
+            })
+            .collect()
+    }
+
     /// The taxa of `rank` that the metadata assigns to the genomes at or below each child of
     /// `node` (a child may be a leaf itself).
+    ///
+    /// A new genome (one without a prior taxonomy) is put in the genus that its species name
+    /// gives, see [`Tree::species_genera_of_new_genomes`].
     fn child_rank_taxa<'a>(
         &self,
         node: NodeId,
         rank: Rank,
         gid_to_taxonomy: &BTreeMap<&GenomeId, &'a Taxonomy>,
+        species_genera: &'a BTreeMap<GenomeId, Taxon>,
     ) -> CuratomaticResult<BTreeMap<NodeId, BTreeSet<&'a Taxon>>> {
         let mut out: BTreeMap<NodeId, BTreeSet<&'a Taxon>> = BTreeMap::new();
         for &child in self.newick.children(node) {
@@ -819,6 +856,8 @@ impl Tree {
                     out.entry(child)
                         .or_default()
                         .extend(taxonomy.get_rank(rank));
+                } else if let Some(genus) = gid.and_then(|gid| species_genera.get(gid)) {
+                    out.entry(child).or_default().insert(genus);
                 }
             }
         }

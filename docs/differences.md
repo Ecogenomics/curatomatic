@@ -18,6 +18,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | L6 | Leaf taxa | Leaves can't hold a taxon, the tree needs a species node above each leaf | `--taxonomy` assigns the ranks the tree can't hold to the leaves | **Yes**, a new input |
 | L7 | Novel taxa above names | A novel taxon is created for every missing rank, even above named taxa | Only created where no valid name of a lower rank is below it | **Yes** |
 | L8 | Refining up | A taxon can be moved up above a taxon of a higher rank | The upward walk stops at a node with a higher rank below it | **Yes** |
+| L9 | Refining down | Genomes without a prior taxonomy are in no genus | A new genome is in the genus its binomial species names, so a genus is not moved down away from it | **Yes**, if a prior taxonomy was given |
 
 All other refinement and novel-rank rules are the same; see
 [Unchanged logic](#unchanged-logic).
@@ -119,6 +120,21 @@ genome, they get the same name.
   strictly below it (the original node and leaves included). In r226 bac120 this stops
   `f__Sporomusaceae` being moved above `o__Sporomusales`. See
   [refinement.md](refinement.md#rule-u2-walk-the-ancestors), step 5.
+
+### L9. A genus is not moved down away from new genomes that its species names
+
+- **Python** (`Tree.refine_existing_labels`, `model/tree.py`): moving down follows only the genomes
+  that the prior taxonomy puts in the taxon. A genome without a prior taxonomy (new in this
+  release) counts as being in no taxon, so a genus can be moved down onto the part of its node
+  that holds its old genomes, leaving behind a new genome whose species names the genus.
+- **Rust** (`Tree::species_genera_of_new_genomes` / `Tree::child_rank_taxa`, `src/tree.rs`): when
+  refining the genus, a new genome with a binomial species (`s__X epithet`, not
+  `s__{unresolved}`) counts as being in `g__X`. If it is under a different child from the genus'
+  old genomes, the descent stops, so the genus is not split. In r237 bac120,
+  `g__Noviluteimonas` stays on its node (bootstrap 91) with the new genome G057139745
+  (`s__Noviluteimonas sp057139745`), rather than moving to its 8 genome child (bootstrap 100) and
+  leaving G057139745 to a novel genus. See
+  [refinement.md](refinement.md#rule-d2-follow-the-genomes-of-the-taxon), rule D2a.
 
 ## Failures that are now reported errors
 

@@ -60,6 +60,17 @@ impl Taxon {
     pub(crate) fn is_valid_name(&self) -> bool {
         self.is_named() && !self.is_unresolved_species()
     }
+
+    /// The genus that a binomial species name puts its genome in: `g__Escherichia` for
+    /// `s__Escherichia coli` (or `s__Escherichia sp000123`). `None` for anything that is not a
+    /// binomial species, including unresolved species (`s__{unresolved} NAME`).
+    pub(crate) fn genus_of_species(&self) -> Option<Taxon> {
+        if self.is_unresolved_species() {
+            return None;
+        }
+        let (genus, epithet) = self.as_str().strip_prefix("s__")?.split_once(' ')?;
+        (!genus.is_empty() && !epithet.trim().is_empty()).then(|| Taxon(format!("g__{genus}")))
+    }
 }
 
 impl fmt::Display for Taxon {

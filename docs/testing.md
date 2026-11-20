@@ -28,7 +28,7 @@ published, and where the Rust version is better or worse than the Python one.
 - Ranks: `d__ p__ c__ o__ f__ g__ s__`. A placeholder is the prefix alone (`g__`), not a name.
   `s__{unresolved} NAME` species are never changed by curatomatic.
 - The rules the Rust version follows are in `docs/refinement.md`. The intended differences from
-  Python are in `docs/differences.md` (L1 to L7). Upcoming work is in `TODO.md`.
+  Python are in `docs/differences.md` (L1 to L9). Upcoming work is in `TODO.md`.
 
 ## Datasets
 
