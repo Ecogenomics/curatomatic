@@ -59,6 +59,15 @@ cargo nextest run
 
 After finishing a task, commit the changes using semantic commit messages. Never push.
 
+### Notes for agents
+
+- Development happens on several machines and accounts. Anything an agent needs to remember about this project goes in
+  this file (or the docs it links to) and is committed. Never keep project notes in an agent's own memory outside the
+  repository.
+- Before recommending a change in behaviour, check it against the intent in this file and `docs/refinement.md`, not
+  only against scores. The curated test truth was made from the Python output, so it favours Python's behaviour. A
+  score gain is not evidence that current behaviour is a bug: present such ideas as questions.
+
 ## Test data
 
 Test data are available here:
@@ -78,6 +87,11 @@ Test data are available here:
 - Tests live in a separate file, never inline: declare `#[cfg(test)] mod tests;` in `foo.rs` and put the tests in
   `foo/tests.rs` (see `src/taxonomy.rs`).
 - When possible, use newtypes.
+- The taxon labels on the input (decorated) tree are placed there for a specific statistical reason and are
+  authoritative. The taxonomy file (`--taxonomy`) only supplies the ranks the tree cannot hold: those below the lowest
+  rank on a genome's path. A taxon from the file is never placed at or above a rank already on that path, even when it
+  differs from the tree's label (e.g. a single-genome genus inside a tree-labelled genus). Never propose overriding
+  the tree's labels with the file.
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
   file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.
