@@ -106,6 +106,16 @@ fn run_curate(name: &str, taxonomy: &str) -> (PathBuf, CuratomaticResult<()>) {
 
 /// Run `curate` on `newick` in a new directory, and return the output directory.
 fn run_curate_on(name: &str, newick: &str, taxonomy: &str) -> (PathBuf, CuratomaticResult<()>) {
+    run_curate_with(name, newick, taxonomy, &[])
+}
+
+/// Run `curate` on `newick` with `extra` arguments, see [`run_curate_on`].
+fn run_curate_with(
+    name: &str,
+    newick: &str,
+    taxonomy: &str,
+    extra: &[&str],
+) -> (PathBuf, CuratomaticResult<()>) {
     let dir = std::env::temp_dir().join(format!("curatomatic-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let tree = dir.join("tree.nwk");
@@ -121,15 +131,16 @@ fn run_curate_on(name: &str, newick: &str, taxonomy: &str) -> (PathBuf, Curatoma
     let out_dir = dir.join("out");
     std::fs::create_dir_all(&out_dir).unwrap();
 
-    let cli = Cli::try_parse_from([
+    let mut args: Vec<&std::ffi::OsStr> = vec![
         "curatomatic".as_ref(),
         tree.as_os_str(),
         red.as_os_str(),
         out_dir.as_os_str(),
         "--taxonomy".as_ref(),
         path_taxonomy.as_os_str(),
-    ])
-    .unwrap();
+    ];
+    args.extend(extra.iter().map(std::ffi::OsStr::new));
+    let cli = Cli::try_parse_from(args).unwrap();
     let result = curate(&cli);
     (out_dir, result)
 }
@@ -210,6 +221,41 @@ fn curate_fails_when_the_taxonomy_file_disagrees_with_the_tree() {
                 .to_owned()
         })
     );
+}
+
+const DEBUG_TREE: &str = "((G1:0.1,G2:0.1)'100:g__A|red=0.95':0.1,G3:0.1)\
+                          'd__D;p__P;c__C;o__O;f__F|red=0.0000';\n";
+
+/// A taxonomy file for [`DEBUG_TREE`], where G2 is in a genus nested in `g__A`, and G3 in a
+/// family nested in `f__F`.
+const DEBUG_TAXONOMY: &str = "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+                              G2\td__D;p__P;c__C;o__O;f__F;g__A;g__N;s__N two\n\
+                              G3\td__D;p__P;c__C;o__O;f__F;f__Q;g__Q;s__Q three\n";
+
+#[test]
+fn curate_with_debug_writes_the_inputs_as_loaded_with_dummy_nodes() {
+    let (out_dir, result) = run_curate_with("debug", DEBUG_TREE, DEBUG_TAXONOMY, &["--debug"]);
+    result.unwrap();
+    let zombie = std::fs::read_to_string(out_dir.join("tree.debug.zombie.tree")).unwrap();
+    assert_eq!(
+        zombie,
+        "(((G1|RED=1.0:0.0,D-G1|RED=1.0:0.0)'s__A one|RED=1.0':0.1,\
+         (G2|RED=1.0:0.0,D-G2|RED=1.0:0.0)'g__N; s__N two|RED=1.0':0.1)'100:g__A|red=0.95':0.1,\
+         (G3|RED=1.0:0.0,D-G3|RED=1.0:0.0)'f__Q; g__Q; s__Q three|RED=1.0':0.1)\
+         'd__D;p__P;c__C;o__O;f__F|red=0.0000';\n"
+    );
+    // The taxonomy as loaded is the input file, before any curation.
+    let taxonomy = std::fs::read_to_string(out_dir.join("tree.debug.taxonomy.tsv")).unwrap();
+    assert_eq!(taxonomy, DEBUG_TAXONOMY);
+}
+
+#[test]
+fn curate_without_debug_writes_no_debug_files() {
+    let (out_dir, result) = run_curate_on("no-debug", DEBUG_TREE, DEBUG_TAXONOMY);
+    result.unwrap();
+    for name in ["tree.debug.zombie.tree", "tree.debug.taxonomy.tsv"] {
+        assert!(!out_dir.join(name).exists(), "{name}");
+    }
 }
 
 // The rule: curatomatic only ever moves taxa or creates novel taxa. It never removes a taxon, and

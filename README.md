@@ -50,6 +50,7 @@ The following options are available:
 - `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
 - `--novel-accession NAME` = The column of `--novel-name-file` that holds the genome IDs, e.g. `db_name` (default = `accession`). Requires `--novel-name-file`.
 - `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.
+- `--debug` = Also write the inputs as curatomatic loaded them, before any curation (see [Output](#output)).
 - `-h, --help` = Print the help.
 - `-V, --version` = Print the version.
 
@@ -146,6 +147,26 @@ The following files are written to `OUT_DIR`:
 - `<tree stem>.curatomatic.report.tsv` = One row per taxon that curatomatic moved or created, with flags for the changes to review.
 - `<tree stem>.curatomatic.taxonomy.tsv` = The curated taxonomy of each genome, in the format of the [taxonomy file](#taxonomy-file---taxonomy), one row per genome in tree order. Each rank is the taxon nearest the leaf on its path in the curated tree.
 - `curatomatic.log` = The log of the run.
+
+With `--debug`, the inputs as they were loaded (before any curation) are also written:
+
+- `<tree stem>.debug.zombie.tree` = The tree with a dummy node above each leaf, as in the old trees: leaf `G` is written
+  as `('G|RED=1.0':0.0,'D-G|RED=1.0':0.0)'<the leaf's taxa>|RED=1.0':<its branch length>`.
+- `<tree stem>.debug.taxonomy.tsv` = The full taxonomy of each genome, every nested taxon included, in the format of
+  the [taxonomy file](#taxonomy-file---taxonomy).
+
+These check that nothing is lost when the inputs are loaded. For an old style tree with dummy nodes:
+
+```shell
+python scripts/convert_python_inputs.py test_data/python/input /tmp/converted   # remove the dummy nodes
+./target/release/curatomatic --debug --taxonomy /tmp/converted/r226_ar53.taxonomy.tsv \
+    /tmp/converted/r226_ar53.decorated.scaled.red.tree /tmp/converted/r226_ar53.median_red.tsv /tmp/output
+python scripts/check_round_trip.py test_data/python/input/r226_ar53.decorated.scaled.red.tree \
+    /tmp/output/r226_ar53.decorated.scaled.red.debug.zombie.tree \
+    /tmp/converted/r226_ar53.taxonomy.tsv /tmp/output/r226_ar53.decorated.scaled.red.debug.taxonomy.tsv
+```
+
+The zombie tree must match the original node for node, and the taxonomy must match the input file.
 
 ## Testing
 

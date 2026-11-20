@@ -574,7 +574,8 @@ const ZOMBIE_COLLAPSED: &str = "\
 ((G4:0.1,G5:0.1)'99.0:f__In|red=0.85':0.1,G6:0.1)'100.0:g__Out|red=0.8':0.1)\
 '100.0:o__O|red=0.5':0.1)'d__D;p__P;c__C|red=0.0';";
 
-/// The taxa on the path of each genome of `tree` (its dummy node included), in rank order.
+/// The taxa on the path of each genome of `tree` (its dummy node included), in rank order, as a
+/// taxonomy file.
 fn rows_from_zombie(tree: &NewickTree) -> String {
     let mut out = String::new();
     for leaf in tree.leaves() {
@@ -593,7 +594,13 @@ fn rows_from_zombie(tree: &NewickTree) -> String {
             }
             current = tree.parent(node);
         }
-        // Rank order, keeping path order within a rank (a stable sort).
+        // Rank order, keeping path order within a rank (a stable sort), with the placeholder of
+        // each rank that has no taxon, as in the taxonomy file.
+        for rank in Rank::iter() {
+            if !taxa.iter().any(|taxon| taxon.rank().unwrap() == rank) {
+                taxa.push(Taxon::new(format!("{}__", rank.prefix())));
+            }
+        }
         taxa.sort_by_key(|taxon| taxon.rank().unwrap());
         let taxa: Vec<&str> = taxa.iter().map(Taxon::as_str).collect();
         out.push_str(gid.as_str());
@@ -621,6 +628,7 @@ fn removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa() {
 
     let rows = rows_from_zombie(&zombie);
     assert!(rows.contains("G3\td__D;p__P;c__C;o__O;o__Q;f__F;f__Q;g__Q;s__Q three\n"));
+    assert!(rows.contains("G6\td__D;p__P;c__C;o__O;f__;g__Out;s__Out six\n"));
     let (tree, assignment) = assigned(ZOMBIE_COLLAPSED, &rows);
     assert_eq!(leaf_taxa_by_gid(&tree), dummy_taxa);
     assert_eq!(assignment.n_leaves, 6);
@@ -632,6 +640,95 @@ fn removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa() {
         .into_iter()
         .collect();
     assert_eq!(tree.taxon_labels, old);
+}
+
+// ---- The loaded inputs, with the dummy nodes put back (`--debug`) ----
+
+/// [`ZOMBIE_COLLAPSED`] loaded with the taxonomy file read off [`ZOMBIE`].
+fn zombie_loaded() -> (NewickTree, Tree) {
+    let zombie = NewickTree::parse(ZOMBIE).unwrap();
+    let rows = rows_from_zombie(&zombie);
+    let (tree, _) = assigned(ZOMBIE_COLLAPSED, &rows);
+    (zombie, tree)
+}
+
+#[test]
+fn the_zombie_tree_of_the_loaded_inputs_is_the_old_tree() {
+    let (zombie, tree) = zombie_loaded();
+    let rebuilt = NewickTree::parse(&tree.to_zombie_newick()).unwrap();
+    // Node for node: the same shape, branch lengths, and label values. The label text differs
+    // (`; ` and `;`, `RED=` and `red=`), its values never do.
+    assert_eq!(rebuilt.ids().count(), zombie.ids().count());
+    for (a, b) in zombie.ids().zip(rebuilt.ids()) {
+        assert_eq!(
+            zombie.children(a).len(),
+            rebuilt.children(b).len(),
+            "node {a}"
+        );
+        assert_eq!(zombie.length(a), rebuilt.length(b), "node {a}");
+        assert_eq!(
+            NodeLabel::from_node(&zombie, a).unwrap(),
+            NodeLabel::from_node(&rebuilt, b).unwrap(),
+            "node {a}: {:?} vs {:?}",
+            zombie.label(a),
+            rebuilt.label(b)
+        );
+    }
+}
+
+#[test]
+fn the_zombie_tree_puts_the_leafs_branch_length_above_its_dummy_node() {
+    let (_, tree) = zombie_loaded();
+    let text = tree.to_zombie_newick();
+    assert!(
+        text.starts_with(
+            "(((((G1|RED=1.0:0.0,D-G1|RED=1.0:0.0)'g__N; s__N one|RED=1.0':0.1,\
+             (G2|RED=1.0:0.0,D-G2|RED=1.0:0.0)'s__A two|RED=1.0':0.1)'100.0:g__A|red=0.95':0.1,"
+        ),
+        "{text}"
+    );
+    // Only formatting: the tree itself is unchanged, and its leaves are still labelled G1, ...
+    assert_eq!(label(&tree, 0), "G1");
+}
+
+#[test]
+fn the_zombie_tree_gives_a_leaf_without_taxa_an_empty_dummy_node() {
+    let tree = tree("((G1:0.1,G2:0.2)'100:g__A|red=0.9':0.3)'d__D|red=0.0';").unwrap();
+    assert_eq!(
+        tree.to_zombie_newick(),
+        "(((G1|RED=1.0:0.0,D-G1|RED=1.0:0.0)|RED=1.0:0.1,(G2|RED=1.0:0.0,D-G2|RED=1.0:0.0)\
+         |RED=1.0:0.2)'100:g__A|red=0.9':0.3)'d__D|red=0.0';\n"
+    );
+}
+
+#[test]
+fn full_taxonomies_are_the_taxonomy_file_that_was_loaded() {
+    // Every nested taxon is kept, in rank order and path order within a rank, with placeholders.
+    let (zombie, tree) = zombie_loaded();
+    let mut text = String::new();
+    for (gid, taxa) in tree.full_taxonomies().unwrap() {
+        let taxa: Vec<&str> = taxa.iter().map(Taxon::as_str).collect();
+        text.push_str(gid.as_str());
+        text.push('\t');
+        text.push_str(&taxa.join(";"));
+        text.push('\n');
+    }
+    assert_eq!(text, rows_from_zombie(&zombie));
+    assert!(
+        text.contains("G4\td__D;p__P;c__C;o__O;f__In;g__Out;g__M;s__M four\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn full_taxonomies_fill_a_missing_rank_with_its_placeholder() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    let rows = tree.full_taxonomies().unwrap();
+    let g3: Vec<&str> = rows[2].1.iter().map(Taxon::as_str).collect();
+    assert_eq!(
+        g3,
+        ["d__D", "p__", "c__", "o__", "f__F", "g__", "s__B three"]
+    );
 }
 
 #[test]

@@ -33,14 +33,18 @@ RANKS = ('d', 'p', 'c', 'o', 'f', 'g', 's')
 MEDIAN_RANKS = ('phylum', 'class', 'order', 'family', 'genus')
 
 # A dummy pair and its labelled parent, the branch length after it is left in place.
+# Labels may be quoted (Python, dendropy) or bare (`curatomatic --debug`).
 DUMMY_RE = re.compile(
-    r"\('(?P<gid>[^'|]+)\|RED=[^']*':[^,()]+,'D-(?P=gid)\|RED=[^']*':[^,()]+\)'(?P<label>[^']*)'"
+    r"\('?(?P<gid>[^'|(),:]+)\|RED=[^',():]*'?:[^,()]+,'?D-(?P=gid)\|RED=[^',():]*'?:[^,()]+\)"
+    r"(?:'(?P<label>(?:[^']|'')*)'|(?P<bare>[^',():;]*))"
 )
 
 
 def label_taxa(label):
-    """The taxa of a label `[<bootstrap>][:][<taxa>]|RED=<red>`, highest rank first."""
-    prefix = label.split('|', 1)[0]
+    """The taxa of a label `[<bootstrap>][:][<taxa>]|RED=<red>`, highest rank first.
+
+    The RED key can also be `red=`, or follow the `:` of a bootstrap (`100:red=0.889`)."""
+    prefix = re.split(r'[|:](?:RED|red)=', label, maxsplit=1)[0]
     if ':' in prefix:
         prefix = prefix.split(':', 1)[1]
     else:
@@ -82,7 +86,9 @@ def convert_tree(path_in, path_out):
         gid = m.group('gid')
         if gid in leaf_taxa:
             sys.exit(f'{path_in}: {gid} is given more than once')
-        leaf_taxa[gid] = label_taxa(m.group('label'))
+        label = m.group('label')
+        label = label.replace("''", "'") if label is not None else m.group('bare').replace('_', ' ')
+        leaf_taxa[gid] = label_taxa(label)
         return gid
 
     text = DUMMY_RE.sub(collapse, text)

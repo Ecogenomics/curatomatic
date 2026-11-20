@@ -85,3 +85,9 @@ fn the_taxonomy_file_is_optional() {
     assert_eq!(cli.taxonomy, Some(PathBuf::from("taxonomy.tsv")));
     assert_eq!(parse_cli(&[]).unwrap().taxonomy, None);
 }
+
+#[test]
+fn debug_is_off_unless_given() {
+    assert!(!parse_cli(&[]).unwrap().debug);
+    assert!(parse_cli(&["--debug"]).unwrap().debug);
+}

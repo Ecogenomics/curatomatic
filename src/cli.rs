@@ -47,6 +47,12 @@ pub(crate) struct Cli {
     /// Column of `--novel-name-file` holding the names (e.g. `ncbi_wgs_formatted`).
     #[arg(long, value_name = "NAME", requires = "novel_name_file")]
     pub(crate) novel_name_column: Option<String>,
+
+    /// Also write the inputs as curatomatic loaded them, before any curation: the tree with a
+    /// dummy node above each leaf holding the leaf's taxa (`<stem>.debug.zombie.tree`), and the
+    /// full taxonomy of each genome (`<stem>.debug.taxonomy.tsv`).
+    #[arg(long)]
+    pub(crate) debug: bool,
 }
 
 #[cfg(test)]

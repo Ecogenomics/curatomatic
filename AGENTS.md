@@ -100,7 +100,9 @@ Test data are available here:
   single-genome order inside a tree-labelled family (r226 bac120 G017303975), are the leaf's own. Removing the dummy
   nodes and assigning the file must give back exactly the taxa they held; this is tested by
   `removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa` (`src/tree/tests.rs`).
-  `scripts/convert_python_inputs.py` converts the Python inputs to this format.
+  `scripts/convert_python_inputs.py` converts the Python inputs to this format. On real data, check it with
+  `--debug` and `scripts/check_round_trip.py` (see the README): the r226 and r232 Python trees and the r237 inputs all
+  round trip with 0 differences, and any change to how the inputs are loaded must keep it that way.
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
   file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.

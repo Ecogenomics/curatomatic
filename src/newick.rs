@@ -139,6 +139,16 @@ impl NewickTree {
 
     /// Format as a Newick string, terminated by `;` and a newline.
     pub(crate) fn to_newick(&self) -> String {
+        self.to_newick_with(|out, id| {
+            if let Some(node) = self.nodes.get(id.0) {
+                write_label_and_length(out, node);
+            }
+        })
+    }
+
+    /// Format as a Newick string like [`NewickTree::to_newick`], with each leaf written by
+    /// `write_leaf` (its label and branch length, or a subtree in its place).
+    pub(crate) fn to_newick_with(&self, mut write_leaf: impl FnMut(&mut String, NodeId)) -> String {
         enum Step {
             Enter(NodeId),
             Separator,
@@ -154,7 +164,7 @@ impl NewickTree {
                         continue;
                     };
                     if node.children.is_empty() {
-                        write_label_and_length(&mut out, node);
+                        write_leaf(&mut out, id);
                     } else {
                         out.push('(');
                         stack.push(Step::Close(id));
@@ -183,6 +193,11 @@ impl NewickTree {
     pub(crate) fn to_file(&self, path: &Path) -> CuratomaticResult<()> {
         fs::write(path, self.to_newick())
             .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))
+    }
+
+    /// The branch length of a node, exactly as it was read.
+    pub(crate) fn length(&self, id: NodeId) -> Option<&str> {
+        self.nodes.get(id.0).and_then(|node| node.length.as_deref())
     }
 
     /// Every node, in post-order.
@@ -250,7 +265,7 @@ impl NewickTree {
 ///
 /// A label with no `_` and no protected character is written bare, with spaces replaced by `_`.
 /// Any other label is quoted, with `'` doubled.
-fn escape_label(label: &str) -> Cow<'_, str> {
+pub(crate) fn escape_label(label: &str) -> Cow<'_, str> {
     if !label.contains('_') && !label.contains(|c| PROTECTED_CHARS.contains(c)) {
         if label.contains(' ') {
             Cow::Owned(label.replace(' ', "_"))

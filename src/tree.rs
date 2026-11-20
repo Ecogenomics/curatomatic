@@ -8,7 +8,7 @@ use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::GenomeId;
 use crate::metadata::Metadata;
-use crate::newick::{NewickTree, NodeId};
+use crate::newick::{NewickTree, NodeId, escape_label};
 use crate::node_label::{NodeLabel, strip_red};
 use crate::rank::Rank;
 use crate::red::Red;
@@ -364,6 +364,70 @@ impl Tree {
 
         self.reload()?;
         Ok(out)
+    }
+
+    /// The full taxonomy of each leaf, in tree order: every named taxon on the leaf and its
+    /// ancestors, in rank order, and in path order (nearest the root first) within a rank, with
+    /// the placeholder of each rank that has none (e.g. `g__`). Unlike
+    /// [`Tree::leaf_taxonomies`], nested taxa are all kept, so this is the format of the taxonomy
+    /// file (`--taxonomy`). Call [`Tree::reload`] first if the tree was changed.
+    pub(crate) fn full_taxonomies(&self) -> CuratomaticResult<Vec<(GenomeId, Vec<Taxon>)>> {
+        let mut out = Vec::new();
+        for leaf in self.newick.leaves() {
+            let Some(gid) = self.leaf_gid(leaf) else {
+                continue;
+            };
+            // Read from the leaf up, so each node's taxa go in front of those below it.
+            let mut path: Vec<&Taxon> = Vec::new();
+            let mut current = Some(leaf);
+            while let Some(node) = current {
+                if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                    let mut taxa: Vec<&Taxon> =
+                        taxonomy.iter_ranks().filter(|t| t.is_named()).collect();
+                    taxa.append(&mut path);
+                    path = taxa;
+                }
+                current = self.newick.parent(node);
+            }
+            let mut taxa = Vec::new();
+            for rank in Rank::iter() {
+                let before = taxa.len();
+                for &taxon in &path {
+                    if taxon.rank()? == rank {
+                        taxa.push(taxon.clone());
+                    }
+                }
+                if taxa.len() == before {
+                    taxa.push(Taxon::new(format!("{}__", rank.prefix())));
+                }
+            }
+            out.push((gid.clone(), taxa));
+        }
+        Ok(out)
+    }
+
+    /// The tree in the old style, with a dummy node above each leaf: leaf `G` is written as
+    /// `('G|RED=1.0':0.0,'D-G|RED=1.0':0.0)'<the leaf's taxa>|RED=1.0':<its branch length>`, with
+    /// the taxa joined by `; `. Every other node is written as it is now. Leaf labels are not
+    /// changed: this only formats the tree. Call [`Tree::reload`] first if the tree was changed.
+    pub(crate) fn to_zombie_newick(&self) -> String {
+        self.newick.to_newick_with(|out, leaf| {
+            let Some(info) = self.leaves.get(&leaf) else {
+                return;
+            };
+            let gid = info.gid.as_str();
+            let taxa: Vec<&str> = info.taxonomy.iter_ranks().map(Taxon::as_str).collect();
+            out.push('(');
+            out.push_str(&escape_label(&format!("{gid}|RED=1.0")));
+            out.push_str(":0.0,");
+            out.push_str(&escape_label(&format!("D-{gid}|RED=1.0")));
+            out.push_str(":0.0)");
+            out.push_str(&escape_label(&format!("{}|RED=1.0", taxa.join("; "))));
+            if let Some(length) = self.newick.length(leaf) {
+                out.push(':');
+                out.push_str(length);
+            }
+        })
     }
 
     /// The taxonomy of each leaf, in tree order.

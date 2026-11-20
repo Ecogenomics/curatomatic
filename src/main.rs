@@ -61,6 +61,7 @@ fn run(cli: &Cli) -> io::Result<ExitCode> {
     debug!("novel_name_file: {:?}", cli.novel_name_file);
     debug!("novel_accession: {}", cli.novel_accession);
     debug!("novel_name_column: {:?}", cli.novel_name_column);
+    debug!("debug: {}", cli.debug);
 
     if let Err(e) = curate(cli) {
         error!("{e}");
@@ -239,6 +240,22 @@ fn check_taxa_unchanged(
     Err(CuratomaticError::TaxaChanged(problems.join("; ")))
 }
 
+/// Write the inputs as they were loaded (`--debug`): the tree with a dummy node above each leaf,
+/// and the full taxonomy of each genome. Removing the dummy nodes of an old style tree and
+/// loading it with its taxonomy file must give these back unchanged.
+fn write_debug_inputs(tree: &Tree, out_dir: &Path, stem: &str) -> CuratomaticResult<()> {
+    let path_tree = out_dir.join(format!("{stem}.debug.zombie.tree"));
+    let path_taxonomy = out_dir.join(format!("{stem}.debug.taxonomy.tsv"));
+    info!("Writing the loaded inputs with dummy nodes (--debug).");
+    std::fs::write(&path_tree, tree.to_zombie_newick())
+        .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path_tree.display())))?;
+    let taxonomies = tree.full_taxonomies()?;
+    taxonomy_file::write(
+        &path_taxonomy,
+        taxonomies.iter().map(|(gid, taxa)| (gid, taxa.as_slice())),
+    )
+}
+
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
@@ -263,6 +280,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         }
         None => None,
     };
+
+    if cli.debug {
+        write_debug_inputs(&tree, &cli.out_dir, &stem)?;
+    }
 
     // Every change to the taxa from here on must be a move or a novel taxon.
     let tree_taxa_before = tree.taxon_counts()?;
