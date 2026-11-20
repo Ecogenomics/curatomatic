@@ -122,8 +122,8 @@ These are the same logical outcome (the run stops), but Python failed with an `a
 | A taxon is on more than one node | `logger.error` + `sys.exit(1)` | `NonUniqueTaxon` (same outcome) |
 | The end-of-run taxa check fails | `assert` | `Invariant(…)` |
 
-The "untested" upward branch (moving further from the median to escape an unsupported node)
-`print`s `UNTESTED CODE` to stdout in Python, and logs it as a warning in Rust. Both still record
+The upward branch that moves a taxon further from the median to escape an unsupported node
+`print`s `UNTESTED CODE` to stdout in Python. Rust is silent, as the branch is tested. Both record
 the candidate.
 
 ## Input changes

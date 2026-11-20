@@ -233,6 +233,31 @@ fn a_nested_taxon_is_not_moved_onto_the_node_of_its_ancestor() {
     assert_eq!(label_with(&tree, "g__A"), "100.0:g__A|RED=0.880");
 }
 
+/// `g__B` (bootstrap `{bs}`) sits on the genus median (RED 0.90). Its parent (RED 0.85, bootstrap
+/// 100) is within the genus RED window, but further from the median.
+fn further_from_median_tree(bs: &str) -> String {
+    format!(
+        "((((G1|RED=1.000:0.1)'s__B one|RED=1.000':0.1,(G2|RED=1.000:0.1)'s__B two|RED=1.000':0.1)\
+         '{bs}:g__B|RED=0.900':0.1,(G3|RED=1.000:0.1)'s__C three|RED=1.000':0.1)'100.0|RED=0.850':0.1,\
+         (G4|RED=1.000:0.1)'s__D four|RED=1.000':0.1)'100.0:f__F|RED=0.700';"
+    )
+}
+
+#[test]
+fn an_unsupported_taxon_is_moved_up_to_a_supported_node_further_from_the_median() {
+    // Support is traded for RED: the parent is further from the median, but is supported.
+    let tree = refine_genus(&further_from_median_tree("50.0"));
+    assert_eq!(label_with(&tree, "g__B"), "100.0:g__B|RED=0.850");
+    assert_eq!(label_with(&tree, "RED=0.900"), "50.0|RED=0.900");
+}
+
+#[test]
+fn a_supported_taxon_is_not_moved_up_further_from_the_median() {
+    let tree = refine_genus(&further_from_median_tree("100.0"));
+    assert_eq!(label_with(&tree, "g__B"), "100.0:g__B|RED=0.900");
+    assert_eq!(label_with(&tree, "RED=0.850"), "100.0|RED=0.850");
+}
+
 #[test]
 fn nested_inside_finds_the_closest_named_ancestor_of_the_same_rank() {
     let tree = tree(&nested_tree("100.0:g__A; g__")).unwrap();

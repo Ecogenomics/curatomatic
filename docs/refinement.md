@@ -90,7 +90,8 @@ For each ancestor:
    - its RED delta is strictly smaller than the original node's (it brings the taxon closer to the
      median), or
    - the original node is unsupported (`bs < min_bs`). Here the move may take the taxon further
-     from the median, as the trade is for support. This branch logs `UNTESTED CODE`.
+     from the median, as the trade is for support (tested by
+     `an_unsupported_taxon_is_moved_up_to_a_supported_node_further_from_the_median`).
 
    If neither holds, the ancestor is not recorded, and the walk continues.
 

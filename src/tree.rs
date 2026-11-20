@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 
-use ::log::{info, warn};
+use ::log::info;
 use strum::IntoEnumIterator;
 
 use crate::bootstrap::BootstrapValue;
@@ -605,8 +605,8 @@ impl Tree {
                                 out.push(taxon, cur_node, node);
                             } else if original_bs < min_bs {
                                 // This moves it further from the median, only do so to
-                                // improve on a node that is not supported.
-                                warn!("UNTESTED CODE");
+                                // improve on a node that is not supported: support is traded
+                                // for RED, while staying within the RED range of the rank.
                                 out.push(taxon, cur_node, node);
                             }
                         }

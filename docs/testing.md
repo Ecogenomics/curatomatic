@@ -134,7 +134,7 @@ Each run takes a few seconds. Outputs in `<out_dir>/<d>/`:
   n_genomes_before/after, bootstrap_before/after, red_before/after, prior_taxon, nested_in,
   sister_taxa`). `action` is `moved_up`, `moved_down` or `novel`.
 - `curatomatic.log`. Expect many `Shared name` warnings (from repeated ranks in the literal
-  taxonomy) and `UNTESTED CODE` warnings. Both are normal.
+  taxonomy). These are normal.
 
 ## Running the Python version
 
