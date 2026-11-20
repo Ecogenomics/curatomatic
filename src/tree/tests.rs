@@ -1047,8 +1047,8 @@ fn a_missing_family_above_a_named_genus_is_not_created() {
 
 #[test]
 fn a_wgs_style_name_below_blocks_creation() {
-    // The highest family candidate (RED 0.75) is above `g__CAYYKD01`, and G3's genus is skipped
-    // with its family.
+    // The highest family candidate (RED 0.75) is above `g__CAYYKD01`, so no family is created.
+    // G3's genus is decided on its own: its only candidate is the leaf itself.
     let (_, novel) = fill_novel(
         "(((G1:0.1,G2:0.1)'100:g__CAYYKD01|red=0.95':0.1,G3:0.1)'100|red=0.75':0.1)\
          'd__D;p__P;c__C;o__O|red=0.0';",
@@ -1058,7 +1058,7 @@ fn a_wgs_style_name_below_blocks_creation() {
             (3, "s__{unresolved} G3"),
         ],
     );
-    assert!(novel.is_empty());
+    assert_eq!(novel, BTreeSet::from([Taxon::new("g__G3")]));
 }
 
 #[test]
@@ -1079,20 +1079,47 @@ fn a_lower_rank_on_the_candidate_node_itself_blocks_creation() {
 }
 
 #[test]
-fn the_lower_ranks_of_a_skipped_genome_are_not_filled() {
+fn the_lower_ranks_of_a_skipped_genome_are_still_filled() {
     // The phylum is skipped at X (RED 0.2), above `c__C`. Nothing named is below Z (RED 0.75), the
-    // highest family candidate, but the family and genus are not filled.
+    // highest family candidate, so the family is filled. Z is too far from the genus median to be
+    // a genus candidate, so each genome gets its own genus.
     let (tree, novel) = fill_novel(
         "((((G1:0.1,G2:0.1)'100|red=0.75':0.1)'100:c__C;o__O|red=0.45':0.1)'100|red=0.2':0.1)\
          'd__D|red=0.0';",
         &[(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")],
     );
+    assert_eq!(
+        novel,
+        BTreeSet::from([
+            Taxon::new("f__G1"),
+            Taxon::new("g__G1"),
+            Taxon::new("g__G2")
+        ])
+    );
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__;c__C;o__O;f__G1;g__G1;s__{unresolved} G1",
+            "G2\td__D;p__;c__C;o__O;f__G1;g__G2;s__{unresolved} G2"
+        ]
+    );
+}
+
+#[test]
+fn a_lower_rank_of_a_skipped_genome_is_skipped_on_its_own_candidate() {
+    // The phylum is skipped above `c__C`, and the family is skipped too, because its own highest
+    // candidate Z (RED 0.75) is above `g__G`. Only the phylum and family are left empty.
+    let (tree, novel) = fill_novel(
+        "((((G1:0.1,G2:0.1)'100:g__G|red=0.95':0.1)'100|red=0.75':0.1)'100:c__C;o__O|red=0.45':0.1)\
+         'd__D|red=0.0';",
+        &[(0, "s__G one"), (1, "s__G two")],
+    );
     assert!(novel.is_empty());
     assert_eq!(
         written_taxonomies(&tree),
         [
-            "G1\td__D;p__;c__C;o__O;f__;g__;s__{unresolved} G1",
-            "G2\td__D;p__;c__C;o__O;f__;g__;s__{unresolved} G2"
+            "G1\td__D;p__;c__C;o__O;f__;g__G;s__G one",
+            "G2\td__D;p__;c__C;o__O;f__;g__G;s__G two"
         ]
     );
 }

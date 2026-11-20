@@ -235,6 +235,6 @@ rank above existing names:
   species (`s__{unresolved} NAME`), see `Taxon::is_valid_name`. Named species, species named after
   a placeholder genus (`s__CAYYKD01 sp964471825`) and WGS-style taxa (`g__CAYYKD01`) are all valid.
 - The names are read from the tree after refinement, before any novel taxon is created.
-- The genomes of a skipped taxon keep the placeholder (e.g. `p__`) in the taxonomy and tree, and
-  none of their lower missing ranks are filled either. No report row is added; the run logs the
-  number skipped for each rank.
+- The genomes of a skipped taxon keep the placeholder (e.g. `p__`) for that rank only. Each lower
+  missing rank is decided on its own highest candidate node, by the same check. No report row is
+  added; the run logs the number skipped for each rank.

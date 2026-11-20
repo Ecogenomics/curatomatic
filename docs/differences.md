@@ -104,8 +104,9 @@ genome, they get the same name.
 - **Rust** (`fill_in_missing_ranks`, `src/tree.rs`): the novel taxon is skipped if a valid name
   (`Taxon::is_valid_name`: not a placeholder or `s__{unresolved}` species) of a lower rank, other
   than a species, is on the candidate node or below it. So the two versions agree on a novel genus
-  above a named species: both create it. Its genomes keep the placeholder, and their lower missing ranks
-  are not filled either. See [refinement.md](refinement.md#novel-taxa).
+  above a named species: both create it. Its genomes keep the placeholder for that rank, and each of their
+  lower missing ranks is decided on its own candidate node. See
+  [refinement.md](refinement.md#novel-taxa).
 
 ### L8. A taxon is never moved up above a taxon of a higher rank
 

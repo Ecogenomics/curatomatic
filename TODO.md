@@ -128,8 +128,8 @@ The new genera use the `g__G...` and WGS names the curators also use. With this 
 
 ## Job 12: Keep filling lower ranks after a skipped rank
 
-**Status: needs the user's approval. This reverses a rule of Job 9** ("lower ranks are not filled either", and its
-test "when a phylum is skipped, a missing family of the same genomes is not filled").
+**Status: done** (approved by the user on 2026-11-20). This reverses a rule of Job 9 ("lower ranks are not filled
+either", and its test "when a phylum is skipped, a missing family of the same genomes is not filled").
 
 ### Problem
 
