@@ -328,3 +328,28 @@ fn genus_of_species_is_none_for_anything_but_a_binomial_species() {
         assert_eq!(Taxon::new(taxon).genus_of_species(), None, "{taxon}");
     }
 }
+
+#[test]
+fn a_latin_name_is_a_capital_then_lower_case_letters_with_an_optional_suffix() {
+    for taxon in [
+        "g__Escherichia",
+        "g__Luteimonas_D",
+        "g__Rubrivivax_AB",
+        "f__Xanthomonadaceae",
+    ] {
+        assert!(Taxon::new(taxon).is_latin_name(), "{taxon}");
+    }
+    for taxon in [
+        "g__JANWYU01",
+        "g__CAG-698",
+        "g__2-01-FULL-41-22",
+        "g__UBA1234",
+        "g__Luteimonas_",
+        "g__Luteimonas_d",
+        "g__E",
+        "g__",
+        "Escherichia",
+    ] {
+        assert!(!Taxon::new(taxon).is_latin_name(), "{taxon}");
+    }
+}

@@ -1209,19 +1209,32 @@ fn a_species_on_an_internal_node_is_not_the_leafs() {
     );
 }
 
-/// `g__A` is on an unsupported node (bootstrap 91, RED 0.958) above a supported node (bootstrap
-/// 100, RED 0.970) with G1 and G2, and the leaf G3. G4 is outside the genus. Post-order: G1 (0),
-/// G2 (1), their node (2), G3 (3), the node of `g__A` (4), G4 (5), root (6).
+/// `g__Alpha` is on an unsupported node (bootstrap 91, RED 0.940, inside the genus window of
+/// [`red_dict`]) above a supported node (bootstrap 100, RED 0.970) with G1 and G2, and the leaf
+/// G3. G4 is outside the genus. Post-order: G1 (0), G2 (1), their node (2), G3 (3), the node of
+/// `g__Alpha` (4), G4 (5), root (6).
 ///
 /// G1, G2 and G4 are in the prior taxonomy; G3 is in it only if `g3_prior` is given. The species
 /// of G3 is `g3_species`.
 fn genus_above_a_new_genome(g3_species: &str, g3_prior: Option<&str>) -> (Tree, Vec<Move>) {
+    genus_above_a_new_genome_at("g__Alpha", "0.940", g3_species, g3_prior)
+}
+
+/// [`genus_above_a_new_genome`] with the genus named `genus` on a node with RED `red`.
+fn genus_above_a_new_genome_at(
+    genus: &str,
+    red: &str,
+    g3_species: &str,
+    g3_prior: Option<&str>,
+) -> (Tree, Vec<Move>) {
     let mut tree = tree_with_leaf_taxa(
-        "(((G1:0.1,G2:0.1)'100:red=0.97':0.1,G3:0.1)'91:g__A|red=0.958':0.1,G4:0.1)\
-         '100:f__F|red=0.70';",
+        &format!(
+            "(((G1:0.1,G2:0.1)'100:red=0.97':0.1,G3:0.1)'91:{genus}|red={red}':0.1,G4:0.1)\
+             '100:f__F|red=0.70';"
+        ),
         &[
-            (0, "s__A one"),
-            (1, "s__A two"),
+            (0, "s__Alpha one"),
+            (1, "s__Alpha two"),
             (3, g3_species),
             (5, "g__C;s__C four"),
         ],
@@ -1229,14 +1242,17 @@ fn genus_above_a_new_genome(g3_species: &str, g3_prior: Option<&str>) -> (Tree, 
     .unwrap();
     let mut metadata = Metadata::default();
     let prior = [
-        ("G1", Some("f__F;g__A;s__A one")),
-        ("G2", Some("f__F;g__A;s__A two")),
-        ("G3", g3_prior),
-        ("G4", Some("f__F;g__C;s__C four")),
+        ("G1", Some(format!("f__F;{genus};s__Alpha one"))),
+        ("G2", Some(format!("f__F;{genus};s__Alpha two"))),
+        ("G3", g3_prior.map(str::to_owned)),
+        ("G4", Some("f__F;g__C;s__C four".to_owned())),
     ];
     for (gid, taxonomy) in prior {
         if let Some(taxonomy) = taxonomy {
-            metadata.set_taxonomy(GenomeId::new(gid), Taxonomy::from_string(taxonomy).unwrap());
+            metadata.set_taxonomy(
+                GenomeId::new(gid),
+                Taxonomy::from_string(&taxonomy).unwrap(),
+            );
         }
     }
     let min_bs = BootstrapValue::new(95.0);
@@ -1252,27 +1268,47 @@ fn genus_above_a_new_genome(g3_species: &str, g3_prior: Option<&str>) -> (Tree, 
 
 #[test]
 fn a_genus_is_not_moved_down_away_from_a_new_genome_that_its_species_names() {
-    // G3 is new (not in the prior), and its species puts it in `g__A`: the genus is not split.
-    let (tree, moves) = genus_above_a_new_genome("s__A sp3", None);
+    // G3 is new (not in the prior), and its species puts it in `g__Alpha`: the genus is not split.
+    let (tree, moves) = genus_above_a_new_genome("s__Alpha sp3", None);
     assert_eq!(moves, []);
-    assert_eq!(label(&tree, 4), "91:g__A|red=0.958");
+    assert_eq!(label(&tree, 4), "91:g__Alpha|red=0.940");
     assert_eq!(label(&tree, 2), "100:red=0.97");
 }
 
 #[test]
 fn a_genus_is_moved_down_away_from_a_new_genome_whose_species_names_another_genus() {
-    for species in ["s__B sp3", "s__{unresolved} A sp3"] {
+    for species in ["s__B sp3", "s__{unresolved} Alpha sp3"] {
         let (tree, moves) = genus_above_a_new_genome(species, None);
         assert_eq!(moves.len(), 1, "{species}");
-        assert_eq!(label(&tree, 2), "100.0:g__A|RED=0.970", "{species}");
-        assert_eq!(label(&tree, 4), "91.0|RED=0.958", "{species}");
+        assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970", "{species}");
+        assert_eq!(label(&tree, 4), "91.0|RED=0.940", "{species}");
     }
 }
 
 #[test]
 fn the_species_of_a_genome_in_the_prior_taxonomy_does_not_override_its_prior_genus() {
     // G3 was in the prior release, in `g__B`: its species is not used.
-    let (tree, moves) = genus_above_a_new_genome("s__A sp3", Some("f__F;g__B;s__A sp3"));
+    let (tree, moves) = genus_above_a_new_genome("s__Alpha sp3", Some("f__F;g__B;s__Alpha sp3"));
     assert_eq!(moves.len(), 1);
-    assert_eq!(label(&tree, 2), "100.0:g__A|RED=0.970");
+    assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970");
+}
+
+#[test]
+fn a_genus_with_a_placeholder_name_is_moved_down_away_from_a_new_genome_its_species_names() {
+    // Only a Latin genus name keeps its new genomes: `s__JANWYU01 sp3` echoes the decoration.
+    let (tree, moves) =
+        genus_above_a_new_genome_at("g__JANWYU01", "0.940", "s__JANWYU01 sp3", None);
+    assert_eq!(moves.len(), 1);
+    assert_eq!(label(&tree, 2), "100.0:g__JANWYU01|RED=0.970");
+}
+
+#[test]
+fn a_genus_outside_the_red_window_is_moved_down_away_from_a_new_genome_its_species_names() {
+    // The genus window of `red_dict` is 0.80 to 0.95: the species of a new genome only keeps a
+    // genus whose node is inside it.
+    for red in ["0.958", "0.790"] {
+        let (tree, moves) = genus_above_a_new_genome_at("g__Alpha", red, "s__Alpha sp3", None);
+        assert_eq!(moves.len(), 1, "{red}");
+        assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970", "{red}");
+    }
 }

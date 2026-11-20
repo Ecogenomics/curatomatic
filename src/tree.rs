@@ -614,6 +614,7 @@ impl Tree {
         let mut out = Refinement::default();
         let gid_to_taxonomy = metadata.get_taxonomy_from_gids(&self.gids);
         let species_genera = self.species_genera_of_new_genomes(rank, &gid_to_taxonomy);
+        let no_species_genera = BTreeMap::new();
 
         let child_rank = rank.child().ok_or_else(|| {
             CuratomaticError::Invariant("the species cannot be refined, it has no child".to_owned())
@@ -630,6 +631,14 @@ impl Tree {
                 continue;
             };
             let original_red_delta = median_red.distance(node_label.red);
+            // The species of new genomes only keep a genus that is inside the RED window.
+            let in_window =
+                parent_red_thresh <= node_label.red && node_label.red <= child_red_thresh;
+            let new_genomes = if in_window {
+                &species_genera
+            } else {
+                &no_species_genera
+            };
 
             for taxon in taxonomy.get_rank(rank) {
                 // Check up the tree (this is valid for all cases). A taxon nested inside another
@@ -698,8 +707,7 @@ impl Tree {
                 }
 
                 // Find which children contain genomes that the metadata assigns to the taxon.
-                let child_taxa =
-                    self.child_rank_taxa(node, rank, &gid_to_taxonomy, &species_genera)?;
+                let child_taxa = self.child_rank_taxa(node, rank, &gid_to_taxonomy, new_genomes)?;
 
                 // Moving the label down would cause polyphyly, which is not handled.
                 if polyphyly(&child_taxa, taxon) {
@@ -735,7 +743,7 @@ impl Tree {
                     }
 
                     let child_taxa =
-                        self.child_rank_taxa(cur_node, rank, &gid_to_taxonomy, &species_genera)?;
+                        self.child_rank_taxa(cur_node, rank, &gid_to_taxonomy, new_genomes)?;
                     if polyphyly(&child_taxa, taxon) {
                         continue;
                     }
@@ -810,7 +818,12 @@ impl Tree {
     ///
     /// Moving a genus down follows the genomes that the prior taxonomy puts in it. A new genome is
     /// not in the prior, but a binomial species name says which genus it belongs to, so the genus
-    /// is not moved down away from it: a genus is never split from the genomes its species name.
+    /// is not moved down away from it: a genus is not split from the genomes its species name.
+    ///
+    /// Only Latin genus names are given (see [`Taxon::is_latin_name`]), and the caller only uses
+    /// them for a genus whose original node is inside the genus RED window: the decoration names
+    /// new species after the genus it decorated, so for placeholder names, or a genus at the
+    /// wrong depth, the species is no evidence.
     fn species_genera_of_new_genomes(
         &self,
         rank: Rank,
@@ -827,7 +840,8 @@ impl Tree {
                     .taxonomy
                     .get_rank(Rank::Species)
                     .iter()
-                    .find_map(Taxon::genus_of_species)?;
+                    .find_map(Taxon::genus_of_species)
+                    .filter(Taxon::is_latin_name)?;
                 Some((leaf.gid.clone(), genus))
             })
             .collect()

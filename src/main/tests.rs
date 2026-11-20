@@ -204,8 +204,8 @@ fn a_taxon_is_moved_down_to_the_genomes_of_the_prior_taxonomy() {
 
 #[test]
 fn a_genome_missing_from_the_prior_taxonomy_has_no_prior() {
-    // G3 is not in the prior file: it is not an error. G3 is new, and its species
-    // (`s__A three`) puts it in g__A, so g__A is not moved down away from it (rule D2a).
+    // G3 is not in the prior file: it is not an error, and G3 says nothing about g__A (its
+    // species `s__A three` does not count, as `g__A` is not a Latin name, see rule D2a).
     let genera = genera_after_move_down(
         "prior-missing",
         Some(
@@ -214,7 +214,7 @@ fn a_genome_missing_from_the_prior_taxonomy_has_no_prior() {
              G9\td__D;p__P;c__C;o__O;f__F;g__A;s__A nine\n",
         ),
     );
-    assert_eq!(genera, ["G1 g__A", "G2 g__A", "G3 g__A"]);
+    assert_eq!(genera, ["G1 g__A", "G2 g__A", "G3 g__G3"]);
 }
 
 #[test]

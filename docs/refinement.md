@@ -125,16 +125,27 @@ For a node, each child is assigned the set of taxa of this rank that the prior t
 the genomes at or below it (a child may be a leaf itself). Genomes without a prior taxonomy
 contribute nothing, with one exception for the genus:
 
-- **Rule D2a: new genomes keep the genus their species names.** When refining the genus, a genome
-  without a prior taxonomy (new in this release) whose species (from `--taxonomy`) is a binomial
-  name, e.g. `s__Noviluteimonas sp057139745`, is taken to be in the genus that the first part of
-  the name gives (`g__Noviluteimonas`, see `Taxon::genus_of_species`). So a genus is not moved
-  down away from a new genome that its species puts in the genus: the child holding it also
-  contains the genus, and the descent stops as below. Unresolved species
-  (`s__{unresolved} NAME`) give no genus. A genome that is in the prior taxonomy is never given
-  the genus of its species, even if the prior has a different genus (or a placeholder) for it.
-  Tested by `a_genus_is_not_moved_down_away_from_a_new_genome_that_its_species_names`
-  (`src/tree/tests.rs`).
+- **Rule D2a: new genomes keep the Latin genus their species names.** When refining the genus,
+  a genome without a prior taxonomy (new in this release) whose species (from `--taxonomy`) is a
+  binomial name, e.g. `s__Noviluteimonas sp057139745`, is taken to be in the genus that the first
+  part of the name gives (`g__Noviluteimonas`, see `Taxon::genus_of_species`). So a genus is not
+  moved down away from a new genome that its species puts in the genus: the child holding it also
+  contains the genus, and the descent stops as below. This only applies when both:
+  - the genus is a Latin name (`Taxon::is_latin_name`: `g__Noviluteimonas`, `g__Luteimonas_D`),
+    not a placeholder style name such as `g__JANWYU01` or `g__CAG-698`; and
+  - the original node of the genus is inside the genus [RED window](#red-window-of-a-rank). A
+    genus decorated at a node too deep or too shallow for a genus is moved down as before.
+
+  Unresolved species (`s__{unresolved} NAME`) give no genus. A genome that is in the prior
+  taxonomy is never given the genus of its species, even if the prior has a different genus (or a
+  placeholder) for it. Tested by `a_genus_is_not_moved_down_away_from_a_new_genome_that_its_species_names`
+  and the tests after it (`src/tree/tests.rs`).
+
+  The decoration names each new species after the genus it decorated, so the species of a new
+  genome usually echoes the decoration rather than being independent evidence. Applied to every
+  genus, the rule raised the curator workload of r226 and r232 by 36% (8,391 to 11,394
+  operations); limited to Latin names inside the window, by 2% (to 8,547), in exchange for keeping
+  genera such as `g__Noviluteimonas` in r237 whole.
 
 - If **more than one** child contains the taxon, moving down would make it polyphyletic, so the
   descent stops here.

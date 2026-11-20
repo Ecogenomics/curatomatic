@@ -260,6 +260,18 @@ genus while keeping its `s__Noviluteimonas` species.
 ### Rule
 
 When refining the genus, a genome without a prior taxonomy whose species is binomial (`s__X epithet`, not
-`s__{unresolved}`) counts as being in `g__X`. A genus that would form a monophyletic group with the new genomes its
-species names is not split from them. Genomes in the prior are unchanged (their prior genus is used), and other ranks
-are unchanged.
+`s__{unresolved}`) counts as being in `g__X`, if `g__X` is a Latin name and the original node of the genus is inside
+the genus RED window. A genus that would form a monophyletic group with the new genomes its species names is not split
+from them. Genomes in the prior are unchanged (their prior genus is used), and other ranks are unchanged.
+
+### Measured effect (curator workload, ops excluding renames, r226 + r232)
+
+| Variant | r226_ar53 | r226_bac120 | r232_ar53 | r232_bac120 | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before | 173 | 2,656 | 474 | 5,088 | 8,391 |
+| Every genus | 221 | 3,603 | 595 | 6,975 | 11,394 |
+| Latin names inside the RED window (chosen) | 179 | 2,758 | 482 | 5,128 | 8,547 |
+
+Applied to every genus, the rule stopped 1,992 moves down, and for most of them the truth was closer to the move. New
+genomes' species echo the decoration, so they are weak evidence. The user chose the narrowed rule, accepting +156
+operations, to keep genera such as `g__Noviluteimonas` (r237) whole.

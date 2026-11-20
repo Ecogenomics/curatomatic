@@ -61,6 +61,22 @@ impl Taxon {
         self.is_named() && !self.is_unresolved_species()
     }
 
+    /// True if this is a Latin name: a capital letter followed by lower case letters, with an
+    /// optional suffix of an underscore and capital letters (`g__Escherichia`, `g__Luteimonas_D`).
+    /// Placeholder style names (`g__JANWYU01`, `g__2-01-FULL-41-22`, `g__CAG-698`) are not.
+    pub(crate) fn is_latin_name(&self) -> bool {
+        let Some((_, name)) = self.as_str().split_once("__") else {
+            return false;
+        };
+        let (stem, suffix) = name.split_once('_').unwrap_or((name, ""));
+        let mut chars = stem.chars();
+        chars.next().is_some_and(|c| c.is_ascii_uppercase())
+            && !chars.as_str().is_empty()
+            && chars.all(|c| c.is_ascii_lowercase())
+            && (!name.contains('_')
+                || (!suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_uppercase())))
+    }
+
     /// The genus that a binomial species name puts its genome in: `g__Escherichia` for
     /// `s__Escherichia coli` (or `s__Escherichia sp000123`). `None` for anything that is not a
     /// binomial species, including unresolved species (`s__{unresolved} NAME`).
