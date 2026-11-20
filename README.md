@@ -176,3 +176,10 @@ The zombie tree must match the original node for node, and the taxonomy must mat
 ```shell
 cargo nextest run
 ```
+
+To benchmark against the Python version and the curated releases (needs `test_data/`, see
+[docs/testing.md](docs/testing.md)):
+
+```shell
+scripts/benchmark.sh /tmp/benchmark
+```

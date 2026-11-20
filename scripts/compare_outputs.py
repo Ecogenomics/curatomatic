@@ -36,7 +36,7 @@ from pathlib import Path
 import dendropy
 
 RANKS = 'dpcofgs'
-RED_RE = re.compile(r'\|RED=[^|]*$')
+RED_RE = re.compile(r'\|RED=[^|]*$', re.IGNORECASE)  # The converted Rust inputs use `red=`.
 MOVE_RE = re.compile(r'Moving (\S+) from (.*) to (.*)$')
 NOVEL_GID_RE = re.compile(r'^[a-z]__(NOVEL-)?G\d{9}$')
 
@@ -74,7 +74,7 @@ def parse_label(label):
 
 
 def parse_red(label):
-    m = re.search(r'\|RED=([^|]*)$', label or '')
+    m = re.search(r'\|RED=([^|]*)$', label or '', re.IGNORECASE)
     return float(m.group(1)) if m else None
 
 

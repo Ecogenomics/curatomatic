@@ -16,6 +16,8 @@ Curatomatic is written in Rust. It replaces an earlier Python implementation, wh
 - `README.md` = how to build and run curatomatic, and the format of its input files.
 - `docs/refinement.md` = the rules curatomatic follows when refining the taxa already on the tree.
 - `docs/differences.md` = the differences in behaviour between the Python and Rust implementations.
+- `docs/testing.md` = the test datasets, and how to benchmark against the Python version and the curated releases
+  (`scripts/benchmark.sh`).
 - `TODO.md` = specifications for upcoming work.
 
 ## Relative evolutionary divergence (RED)

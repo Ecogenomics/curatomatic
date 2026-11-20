@@ -6,11 +6,14 @@ tests in separate files).
 
 ## The tasks
 
-1. **Rust vs truth.** Run the current Rust version on each `test_data/<release>_<domain>/rs_input`
-   dataset and compare its output taxonomy with the curated taxonomy of that release (the source
-   of truth, see [Datasets](#datasets)).
-2. **Python vs truth.** Run (or reuse the stored output of) the Python version on the same
-   datasets, compare it with the same source of truth, and compare how well each version does.
+1. **Rust vs truth.** Run the current Rust version on each dataset and compare its output taxonomy
+   with the curated taxonomy of that release (the source of truth, see [Datasets](#datasets)).
+2. **Python vs truth.** Compare the stored output of the Python version with the same source of
+   truth, and compare how well each version does.
+3. **Rust vs Python.** Compare the two outputs node by node, and list the taxa they place
+   differently.
+
+`scripts/benchmark.sh` does all three (see [Running the benchmark](#running-the-benchmark)).
 
 The point is to measure how close each version's *pre-curation* gets to what the curators finally
 published, and where the Rust version is better or worse than the Python one.
@@ -29,23 +32,31 @@ published, and where the Rust version is better or worse than the Python one.
 
 ## Datasets
 
-Four datasets have inputs for both versions and a source of truth. All paths are relative to the
-repository root (`/home/aaron/gtdb/curatomatic`).
+Four datasets (`<d>` below) have inputs for both versions, a stored Python output and a source of
+truth. All paths are relative to the repository root. `test_data/` is not in git (it is the
+user's, and is never written to): its layout is
 
-| Dataset | Source of truth | Truth rows | Tree genomes |
-| --- | --- | ---: | ---: |
-| `r226_ar53` | `test_data/r226_ar53/ar53_taxonomy_r226_curated.tsv` | 17,245 | 6,968 |
-| `r226_bac120` | `test_data/r226_bac120/bac120_taxonomy_r226_curated.tsv` | 715,230 | 136,646 |
-| `r232_ar53` | `test_data/r232_ar53/ar53_taxonomy_r232.tsv` | 22,343 | 10,122 |
-| `r232_bac120` | `test_data/r232_bac120/bac120_taxonomy_r232.tsv` | 878,998 | 189,801 |
+```
+test_data/
+├── curated/<d>.tsv                                     the source of truth
+├── python/input/<d>.decorated.scaled.red.tree          Python input: the tree, with dummy nodes
+├── python/input/<d>.decorated.dict                     Python input: median RED of each rank (JSON)
+├── python/input/<d>.metadata.tsv                       Python input: metadata (--meta)
+├── python/output/<d>.decorated.scaled.red.curatomatic.tree   stored Python output
+├── python/output/<d>.log                               its log
+└── rust/input/gtdb_r237_*                              the r237 Rust inputs (no Python, no truth)
+```
 
-Note the r232 truth files are **not** named `_curated`.
+| Dataset `<d>` | Truth rows | Tree genomes |
+| --- | ---: | ---: |
+| `r226_ar53` | 17,245 | 6,968 |
+| `r226_bac120` | 715,230 | 136,646 |
+| `r232_ar53` | 22,343 | 10,122 |
+| `r232_bac120` | 878,998 | 189,801 |
 
-A fifth set, `test_data/r237/`, has no Python input (no old-format tree or `.dict`), so it can
-only be used for task 1. Its truth is `test_data/r237/final_taxonomy.tsv`, and its Rust inputs are
-`test_data/r237/median_red_marked.nwk`, `median_red_rank_distribution.tsv`,
-`gtdb_r237_bac120_metadata.tsv` (or `example/gtdb_r237_bac120_metadata_slim.tsv`), and the
-taxonomy `example/gtdb_r237_decorated_taxonomy.tsv`. It is optional.
+There are no Rust inputs for these four in `test_data/`: they are made from the Python inputs by
+`scripts/convert_python_inputs.py` on every run (it takes a few seconds), see
+[Rust inputs](#rust-inputs).
 
 ### Source of truth files
 
@@ -53,88 +64,130 @@ taxonomy `example/gtdb_r237_decorated_taxonomy.tsv`. It is optional.
 - r226 IDs are canonical (`G945873965`). r232 IDs are accessions (`RS_GCF_964307495.1`,
   `GB_GCA_048462655.1`). **Make IDs canonical before matching**: `RS_GCF_000008885.1` and
   `GB_GCA_000008885.1` are both `G000008885` (regex `^(?:RS_|GB_)?GC[AF]_(\d{9})\.\d+$`, then
-  `G` + the 9 digits). The r226 `_curated.tsv` files may lack a final newline.
+  `G` + the 9 digits). The r226 files may lack a final newline.
 - The truth has **every** genome of the release (representatives and non-representatives). Only
   the genomes on the tree matter: every tree genome is in its truth file (checked, all four).
 - For every tree genome the truth has all 7 ranks, **no placeholders and no
   `s__{unresolved}` species** (checked, all four).
 
-### Rust inputs: `test_data/<dataset>/rs_input/`
+### Python inputs
 
-Converted from the old (Python) format in an earlier session. Each has four files, for dataset
-`<d>` (e.g. `r226_ar53`) and the original tree stem `<stem>`:
+- The r226 metadata columns are `accession, taxonomy, ncbi_wgs_formatted`. Python reads a prior
+  taxonomy only from a column named `gtdb_taxonomy`, so **the r226 Python runs had no prior
+  taxonomy and did no downward refinement**.
+- The r232 metadata columns are `accession, ncbi_wgs_formatted, gtdb_taxonomy` (last release's
+  taxonomy), so **the r232 Python runs did refine downward**.
+
+### Rust inputs
+
+`python scripts/convert_python_inputs.py <dir> <out_dir>` converts every `<d>` in `<dir>` (to
+convert one dataset, give it a directory with links to that dataset's three files only). It
+writes:
 
 | File | Contents |
 | --- | --- |
-| `<stem>.nwk` | The tree. Every dummy pair `('G1|RED=1.0':0,'D-G1|RED=1.0':0)'<taxa>|RED=1.0':L` was collapsed to the leaf `G1:L`. Every other label, bootstrap, RED and branch length is byte for byte the original. Internal labels keep the old style, e.g. `'100.0:f__X; g__Y|RED=0.957017'`, which the Rust parser reads. |
-| `gtdb_<d>.decorated_taxonomy.tsv` | Each genome's taxonomy read **literally** off the original tree, joined with `; `: every taxon on the path including the dummy node, so gaps and repeated ranks are kept as on the tree. |
-| `gtdb_<d>.median_red_rank_distribution.tsv` | `rank` and `median` columns, Phylum to Genus, from the old `.dict`. |
-| `gtdb_<d>_metadata_slim.tsv` | `accession` and `ncbi_wgs_formatted` columns of the old metadata file. |
+| `<d>.decorated.scaled.red.tree` | The tree. Every dummy pair `('G1|RED=1.0':0,'D-G1|RED=1.0':0)'<taxa>|RED=1.0':L` is collapsed to the leaf `G1:L`. Internal labels are unchanged apart from `; ` becoming `;` and `|RED=` becoming `|red=`. |
+| `<d>.taxonomy.tsv` | `--taxonomy`: each genome's taxa off its path in the original tree, dummy node included, grouped by rank (placeholders for missing ranks, repeated ranks kept). |
+| `<d>.median_red.tsv` | `rank` and `median` columns, Phylum to Genus, from the `.dict`. |
+| `<d>.metadata.tsv` | `--novel-name-file`: the `accession` and `ncbi_wgs_formatted` columns. |
 
-The stems are `gtdb_r226_ar53.decorated.scaled.red`, `gtdb_r226_bac120.decorated.scaled.red`,
-`gtdb_r232_ar53.decorated.red_decorated` and `gtdb_r232_bac120.decorated.red_decorated`.
+These inputs round trip with 0 differences (see the README and `scripts/check_round_trip.py`).
 
-### Python inputs: `test_data/<dataset>/`
+### Stored Python outputs
 
-The Python version cannot read `rs_input` (it needs the dummy nodes and the JSON RED dict), so it
-uses the original files the `rs_input` files were made from. "The same input data" means these:
+- Run with `--min-bs 95.0` by Python v0.0.2. Each is a tree and a log only.
+- The r226 runs were made from this repository. The `r226_bac120` output was reproduced byte for
+  byte from the `main` branch with the driver below. The other three have not been checked.
+- The r232 runs were made on a server, from `/srv/projects/gtdb/release232/...` paths (see the
+  first line of each log). They are assumed to be the same files as the local ones, which has not
+  been checked.
 
-| Dataset | Tree | RED dict | Metadata (`--meta`) |
-| --- | --- | --- | --- |
-| `r226_ar53` | `gtdb_r226_ar53.decorated.scaled.red.tree` | `gtdb_r226_ar53.decorated.dict` | `metadata.tsv` |
-| `r226_bac120` | `gtdb_r226_bac120.decorated.scaled.red.tree` | `gtdb_r226_bac120.decorated.dict` | `metadata.tsv` |
-| `r232_ar53` | `gtdb_r232_ar53.decorated.red_decorated.tree` | `gtdb_r232_ar53.decorated.dict` | `curatomatic_metadata.tsv` |
-| `r232_bac120` | `gtdb_r232_bac120.decorated.red_decorated.tree` | `gtdb_r232_bac120.decorated.dict` | `curatomatic_metadata.tsv` |
+## Running the benchmark
 
-- The r226 `metadata.tsv` columns are `accession, taxonomy, ncbi_wgs_formatted`. Python reads a
-  prior taxonomy only from a column named `gtdb_taxonomy`, so **the r226 Python runs had no prior
-  taxonomy and did no downward refinement**.
-- The r232 `curatomatic_metadata.tsv` columns are `accession, ncbi_wgs_formatted, gtdb_taxonomy`
-  (last release's taxonomy), so **the r232 Python runs did refine downward**.
+```shell
+PY=/home/aaron/.conda/envs/general/bin/python scripts/benchmark.sh <out_dir> [<d> ...]
+```
 
-### Stored outputs
+With no datasets, all four are run. `<out_dir>` must not exist. It takes about two minutes for
+all four (most of it in `compare_outputs.py`). `PY` must have dendropy (only
+`compare_outputs.py` needs it, see [Running the Python version](#running-the-python-version) for
+the environment); the sandbox can't read `~/.conda`, so run it with the sandbox disabled. The
+script builds the release binary first, and records the commit it ran (`-dirty` if the working
+tree has changes) in `<out_dir>/commit.txt`.
 
-- **Python:** `test_data/<dataset>/curatomatic_bs95.0/`, run with `--min-bs 95.0` by Python
-  v0.0.2. Files: `curatomatic.log`, `<stem>.curatomatic.tree` and
-  `<stem>.curatomatic.tree.taxonomy.tsv`.
-  - The r226 runs were made from this repository. The `r226_bac120` output was reproduced byte
-    for byte from the `main` branch with the driver below. The other three have not been checked
-    yet.
-  - The r232 runs were made on a server, from `/srv/projects/gtdb/release232/...` paths (see the
-    first line of each log). They are assumed to be the same files as the local ones, which has
-    not been checked.
-- **Rust:** `test_output/<dataset>/`, made by an **older** Rust build (before commit `a3aee1e`).
-  The refinement logic hasn't changed since, but task 1 asks for the current version, so **rerun
-  Rust** (see [Running Rust](#running-the-rust-version)).
+For each dataset, `<out_dir>/<d>/` holds:
+
+| Path | Contents |
+| --- | --- |
+| `python_input/` | Links to the dataset's Python inputs. |
+| `input/` | The converted Rust inputs (above), plus the links `<d>.nwk` and `<d>.decorated_taxonomy.tsv` that `compare_outputs.py --rs-input` looks for. |
+| `python/` | Links to the stored Python tree and log, as `compare_outputs.py` and `compare_truth.py --py-out` look for them. |
+| `rust/` | The Rust output (see [below](#rust-output)). |
+| `python_comparison/` | `scripts/compare_outputs.py` (`summary.md`, `existing_taxa.tsv`, `novel_taxa.tsv`, `genome_diff.tsv`, `log_moves.tsv`), and `scripts/report_placed_differently.py`: `report.placed_differently.tsv` (the rows of the Rust report that Python places differently) and `report.placed_differently.all.tsv` (every taxon placed differently, including those Rust left alone). |
+| `truth_comparison/` | `scripts/compare_truth.py`: `scores.tsv`, `genomes.tsv`, `taxa.tsv`, `changes.tsv`, `py_vs_rs.tsv` (see its docstring). The `baseline` version is the input taxonomy, i.e. no curatomatic at all. |
+
+`<out_dir>/scores.tsv` has the scores of every dataset in one file.
+
+The first sanity check in `python_comparison/summary.md` must say that the topology of all three
+trees and the taxa of the converted input match the input.
+
+### Results at `b44e6b6`
+
+Per cent of tree genomes whose taxon is the truth's (`pct_correct` in `scores.tsv`):
+
+| Dataset | Version | p | c | o | f | g |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| r226_ar53 | input | 83.0 | 84.2 | 99.1 | 96.0 | 90.1 |
+| | Rust | 83.0 | 84.2 | 99.2 | 96.5 | 93.8 |
+| | Python | 83.0 | 84.2 | 99.2 | 96.5 | 93.8 |
+| r226_bac120 | input | 78.3 | 92.5 | 97.4 | 97.1 | 91.4 |
+| | Rust | 78.3 | 92.5 | 97.5 | 97.4 | 94.6 |
+| | Python | 78.3 | 90.0 | 97.6 | 97.1 | 94.3 |
+| r232_ar53 | input | 99.5 | 99.3 | 94.6 | 95.8 | 85.0 |
+| | Rust | 99.5 | 99.4 | 94.9 | 96.8 | 91.3 |
+| | Python | 100.0 | 99.6 | 94.9 | 97.2 | 92.8 |
+| r232_bac120 | input | 94.6 | 96.5 | 95.0 | 93.2 | 89.6 |
+| | Rust | 94.6 | 96.5 | 95.2 | 93.7 | 93.0 |
+| | Python | 94.6 | 96.6 | 94.3 | 93.7 | 94.1 |
+
+- Rust never scores below the input. Most of its gain is at genus and family, from filling ranks
+  the input left empty. Its remaining misses are mostly taxa that were already wrong in the input.
+- Python's ambiguous genome-ranks (a node holding two taxa of the rank) count as neither correct
+  nor wrong, e.g. 1,993 orders in r232_bac120.
+- Rust vs Python (`report.placed_differently*.tsv`): Rust never moved a taxon that Python left in
+  place, and never made a novel taxon that Python didn't. Only 3 rows of the Rust reports are
+  placed differently, all in r232_bac120 (`f__JBAZCA01`, `g__JAFGQJ01`, `g__JALSRK01`): Python
+  moved them down (L2), Rust moved them up, and the truth agrees with Python on all 9 genome-ranks
+  they change. The other differences are taxa only Python moved (1 / 13 / 146 / 1,470) and novel
+  taxa only Python made (15 / 578 / 245 / 3,120), for r226_ar53 / r226_bac120 / r232_ar53 /
+  r232_bac120.
 
 ## Running the Rust version
 
-Build, then run each dataset. The output directory must not exist (unless `--log debug`).
+To run one dataset by hand, from inputs converted as above (`<in>`):
 
 ```shell
 cargo build --release
-d=r226_ar53; stem=gtdb_r226_ar53.decorated.scaled.red    # repeat for each dataset
+d=r226_ar53
 ./target/release/curatomatic --min-bs 95.0 \
-    --taxonomy test_data/$d/rs_input/gtdb_$d.decorated_taxonomy.tsv \
-    --novel-name-file test_data/$d/rs_input/gtdb_${d}_metadata_slim.tsv \
-    --novel-name-column ncbi_wgs_formatted \
-    test_data/$d/rs_input/$stem.nwk \
-    test_data/$d/rs_input/gtdb_$d.median_red_rank_distribution.tsv \
-    <out_dir>/$d
+    --taxonomy <in>/$d.taxonomy.tsv \
+    --novel-name-file <in>/$d.metadata.tsv --novel-name-column ncbi_wgs_formatted \
+    <in>/$d.decorated.scaled.red.tree <in>/$d.median_red.tsv <out_dir>
 ```
 
-Each run takes a few seconds. Outputs in `<out_dir>/<d>/`:
+Each run takes a few seconds. The output directory must not exist (unless `--log debug`).
+
+### Rust output
 
 - `<stem>.curatomatic.taxonomy.tsv`: one row per genome, `G…` ID, all 7 ranks joined with `;`,
   placeholders for empty ranks (`f__;g__`). Each rank is the taxon nearest the leaf. **Use this
   file** for the comparison with the truth.
 - `<stem>.curatomatic.tree`: leaves are bare IDs. Taxa held by leaves (e.g. species) are only in
   the taxonomy file, not on the tree.
-- `<stem>.curatomatic.report.tsv`: one row per moved or created taxon (`taxon, rank, action, flag,
-  n_genomes_before/after, bootstrap_before/after, red_before/after, prior_taxon, nested_in,
-  sister_taxa`). `action` is `moved_up`, `moved_down` or `novel`.
-- `curatomatic.log`. Expect many `Shared name` warnings (from repeated ranks in the literal
-  taxonomy). These are normal.
+- `<stem>.curatomatic.report.tsv`: one row per taxon that was moved or created, and nothing else
+  (`taxon, rank, action, flag, n_genomes_before/after, bootstrap_before/after, red_before/after,
+  prior_taxon, nested_in, sister_taxa`). `action` is `moved_up`, `moved_down` or `novel`.
+- `curatomatic.log`.
 
 ## Running the Python version
 
@@ -221,7 +274,7 @@ tree.to_file(out_dir / f'{tree_p.stem}.curatomatic.tree')
     one in the truth? For example, for each output taxon the best matching truth taxon by overlap,
     or pairwise precision and recall of "same taxon", or the adjusted Rand index. This shows
     whether a taxon is placed right even when its name changed.
-- **Baseline.** Also score the input (`rs_input/gtdb_<d>.decorated_taxonomy.tsv`, taking the
+- **Baseline.** Also score the input (the converted `<d>.taxonomy.tsv`, taking the
   taxon nearest the leaf for each rank) against the truth. This is "no curatomatic at all", and
   shows how much each version helps or hurts.
 - **Bias (unconfirmed).** The r232 truth was probably curated starting from the stored Python
@@ -264,14 +317,18 @@ o 1 / 429 / 16 / 1,924, f 4 / 329 / 72 / 899, g 35 / 753 / 254 / 3,776, s 0 ever
 
 ## Tools already in the repository
 
+- `scripts/benchmark.sh`: runs everything below for each dataset (see
+  [Running the benchmark](#running-the-benchmark)).
+- `scripts/convert_python_inputs.py`: the Python inputs to the Rust inputs.
 - `scripts/compare_outputs.py`: Python vs Rust, node by node (see its docstring for arguments;
   run with the conda Python above, sandbox disabled). It writes `summary.md`,
   `existing_taxa.tsv`, `novel_taxa.tsv`, `genome_diff.tsv` and `log_moves.tsv`. Its `Tree` class
   (genome-set keyed nodes, `genome_taxonomy()`, `add_leaf_taxa()`), `canonical()` and
-  `read_taxonomy()` can be reused for the comparison with the truth. A new script for the truth
-  comparison belongs in `scripts/` too.
-- `scripts/extract_taxonomy.py` (untracked, the user's): reads the raw path taxonomy off a tree.
-  It doesn't strip `|RED=…`, so don't use it on RED-decorated trees.
+  `read_taxonomy()` can be reused.
+- `scripts/report_placed_differently.py`: the Rust report, limited to the taxa that
+  `compare_outputs.py` found placed differently.
+- `scripts/compare_truth.py`: the input, Rust and Python vs the truth.
+- `scripts/check_round_trip.py`: checks that the converted inputs load without losing a taxon.
 
 ## Practical notes
 
