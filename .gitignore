@@ -195,3 +195,6 @@ data/
 /.claude/scheduled_tasks.json
 /.claude/skills
 /.claude/workflows
+
+# Work in progress notes and runs (not committed)
+/wip
