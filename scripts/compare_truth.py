@@ -10,6 +10,8 @@ For each genome and rank (d to g), the taxon nearest the leaf is compared with t
     correct   same name as the truth
     wrong     a different name
     empty     no name (a placeholder): the truth never has one, so this is always a miss
+    ambiguous the taxon nearest the leaf is on a node that holds more than one taxon of the rank,
+              so a curator has to choose between them (counted as neither correct nor wrong)
 
 Novel taxa without a WGS name are ``<rank>__NOVEL-<gid>`` in Python and ``<rank>__<gid>`` in Rust.
 Python's are renamed to Rust's form before scoring.
@@ -39,7 +41,7 @@ rank is the one nearest the leaf. ``--py-out`` is optional. No dependencies beyo
 
 Writes to ``--out``:
     scores.tsv     per version and rank: counts, pair precision and recall, exact clades
-    genomes.tsv    per genome and rank where any version differs from the truth
+    genomes.tsv    per genome and rank where any version is not correct (ambiguous taxa end in *)
     taxa.tsv       per version, rank and output taxon: its best matching truth taxon
     changes.tsv    per version and rank, genomes fixed or broken relative to the baseline,
                    grouped by (baseline, output, truth) taxon
@@ -98,9 +100,10 @@ def node_taxa(label):
 
 
 def newick_genome_taxonomy(path):
-    """{gid: {rank: taxon}} of a Newick tree, as ``compare_outputs.Tree.genome_taxonomy``.
+    """({gid: {rank: taxon}}, {gid: {ranks}}) of a Newick tree.
 
-    For each rank, the taxon nearest the leaf; on a node with several taxa of a rank, the first.
+    For each rank, the taxon nearest the leaf (as ``compare_outputs.Tree.genome_taxonomy``); on a
+    node with several taxa of a rank, the first, and the rank is also returned as ambiguous.
     Dummy leaves (``D-``) are skipped: the parent of a dummy pair holds its genome's leaf taxa.
     """
     text = Path(path).read_text().strip()
@@ -155,26 +158,40 @@ def newick_genome_taxonomy(path):
             label, i = read_label(i)
             leaves.append((label, open_ids[-1]))
 
-    lineage = {}
+    lineage = {}  # clade -> {rank: (taxon, ambiguous)}
     for cid in range(len(clades)):  # parents are always opened before their children
         parent = parents[cid]
         lin = dict(lineage[parent]) if parent is not None else {}
+        counts = collections.Counter(x[0] for x in node_taxa(clades[cid]))
         seen = set()
         for taxon in node_taxa(clades[cid]):
             if taxon[0] not in seen:
-                lin[taxon[0]] = taxon
+                lin[taxon[0]] = (taxon, counts[taxon[0]] > 1)
                 seen.add(taxon[0])
         lineage[cid] = lin
+    ambiguous = {}
     for gid, parent in leaves:
         gid = re.sub(r'\|red=[^|]*$', '', gid, flags=re.IGNORECASE)
         if not gid.startswith('D-'):
-            out[canonical(gid)] = lineage[parent]
-    return out
+            gid = canonical(gid)
+            out[gid] = {r: x for r, (x, _) in lineage[parent].items()}
+            ambiguous[gid] = {r for r, (_, amb) in lineage[parent].items() if amb}
+    return out, ambiguous
 
 
 def read_python(py_out):
-    taxa = newick_genome_taxonomy(next(Path(py_out).glob('*.curatomatic.tree')))
-    return {gid: {r: NOVEL_RE.sub(r'\1__\2', x) for r, x in t.items()} for gid, t in taxa.items()}
+    taxa, ambiguous = newick_genome_taxonomy(next(Path(py_out).glob('*.curatomatic.tree')))
+    taxa = {gid: {r: NOVEL_RE.sub(r'\1__\2', x) for r, x in t.items()} for gid, t in taxa.items()}
+    return taxa, ambiguous
+
+
+def read_rust(rs_out):
+    """The taxonomy file, and the ranks whose taxon is on a tree node with others of its rank."""
+    taxa = read_taxonomy(next(Path(rs_out).glob('*.curatomatic.taxonomy.tsv')))
+    tree_taxa, tree_ambiguous = newick_genome_taxonomy(next(Path(rs_out).glob('*.curatomatic.tree')))
+    ambiguous = {gid: {r for r in tree_ambiguous.get(gid, ()) if tree_taxa[gid][r] == taxa[gid].get(r)}
+                 for gid in taxa}
+    return taxa, ambiguous
 
 
 # --------------------------------------------------------------------------------------------------
@@ -184,7 +201,7 @@ def pairs(n):
     return n * (n - 1) // 2
 
 
-def score_rank(gids, out, truth, rank):
+def score_rank(gids, out, truth, rank, ambiguous):
     counts = collections.Counter()
     cells = collections.Counter()
     out_groups = collections.defaultdict(set)
@@ -196,7 +213,10 @@ def score_rank(gids, out, truth, rank):
         if o is None:
             counts['empty'] += 1
             continue
-        counts['correct' if o == t else 'wrong'] += 1
+        if rank in ambiguous[gid]:
+            counts['ambiguous'] += 1
+        else:
+            counts['correct' if o == t else 'wrong'] += 1
         out_groups[o].add(gid)
         cells[(o, t)] += 1
 
@@ -210,6 +230,7 @@ def score_rank(gids, out, truth, rank):
         'correct': counts['correct'],
         'wrong': counts['wrong'],
         'empty': counts['empty'],
+        'ambiguous': counts['ambiguous'],
         'pct_correct': pct(counts['correct'], len(gids)),
         'pair_precision': pct(tp, out_pairs),
         'pair_recall': pct(tp, truth_pairs),
@@ -271,10 +292,14 @@ def main():
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
-    rs_path = next(args.rs_out.glob('*.curatomatic.taxonomy.tsv'))
-    versions = {'baseline': read_taxonomy(args.baseline), 'rust': read_taxonomy(rs_path)}
+    versions = {'baseline': read_taxonomy(args.baseline)}
+    versions['rust'], rs_ambiguous = read_rust(args.rs_out)
+    ambiguous = {'baseline': {gid: set() for gid in versions['baseline']}, 'rust': rs_ambiguous}
     if args.py_out:
-        versions['python'] = read_python(args.py_out)
+        versions['python'], ambiguous['python'] = read_python(args.py_out)
+
+    def ok(version, gid, rank):
+        return versions[version][gid].get(rank) == truth[gid][rank] and rank not in ambiguous[version][gid]
 
     gids = sorted(versions['rust'])
     for name, tax in versions.items():
@@ -295,7 +320,7 @@ def main():
     scores, taxa = [], []
     for version, tax in versions.items():
         for rank in RANKS + 's':
-            s, out_groups, truth_groups = score_rank(gids, tax, truth, rank)
+            s, out_groups, truth_groups = score_rank(gids, tax, truth, rank, ambiguous[version])
             scores.append({'dataset': args.name, 'version': version, 'rank': rank, **s})
             if rank in 'pcofg' and version != 'baseline':
                 taxa.extend(best_matches(version, rank, out_groups, truth_groups, input_taxa))
@@ -306,8 +331,9 @@ def main():
     genome_rows = []
     for gid in gids:
         for rank in RANKS:
-            vals = {v: versions[v][gid].get(rank, '') for v in names}
-            if any(x != truth[gid][rank] for x in vals.values()):
+            vals = {v: versions[v][gid].get(rank, '') + ('*' if rank in ambiguous[v][gid] else '')
+                    for v in names}
+            if not all(ok(v, gid, rank) for v in names):
                 genome_rows.append({'gid': gid, 'rank': rank, 'truth': truth[gid][rank], **vals})
     write_tsv(args.out / 'genomes.tsv', genome_rows, ['gid', 'rank', 'truth', *names])
 
@@ -318,8 +344,8 @@ def main():
             for gid in gids:
                 b, o, t = (versions['baseline'][gid].get(rank, ''), versions[version][gid].get(rank, ''),
                            truth[gid][rank])
-                if (b == t) != (o == t):
-                    rows.append(((('fixed' if o == t else 'broken'), b, o, t), gid))
+                if ok('baseline', gid, rank) != ok(version, gid, rank):
+                    rows.append(((('fixed' if ok(version, gid, rank) else 'broken'), b, o, t), gid))
             for (kind, b, o, t), n, ex in grouped(rows):
                 change_rows.append({'version': version, 'rank': rank, 'change': kind, 'baseline': b,
                                     'output': o, 'truth': t, 'n_genomes': n, 'examples': ex})
@@ -333,8 +359,8 @@ def main():
             for gid in gids:
                 py, rs, t = versions['python'][gid].get(rank, ''), versions['rust'][gid].get(rank, ''), \
                     truth[gid][rank]
-                if (py == t) != (rs == t):
-                    diffs.append((('python' if py == t else 'rust', py, rs, t), gid))
+                if ok('python', gid, rank) != ok('rust', gid, rank):
+                    diffs.append((('python' if ok('python', gid, rank) else 'rust', py, rs, t), gid))
             for (winner, py, rs, t), n, ex in grouped(diffs):
                 rows.append({'rank': rank, 'correct': winner, 'python': py, 'rust': rs, 'truth': t,
                              'n_genomes': n, 'examples': ex})
