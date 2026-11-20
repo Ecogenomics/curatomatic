@@ -242,7 +242,7 @@ between the stored Python and Rust outputs was explained by one of these:
 | **L1** Nested taxa never move up in Rust | 1 / 13 / 0 / 22 taxa (r226_ar53 / r226_bac120 / r232_ar53 / r232_bac120). E.g. Python moved `c__Bacilli_A` up and took 3,528 genomes from `c__Bacilli`. |
 | **L2** Downward refinement | Rust made **no** downward moves anywhere: its prior taxonomy is `--taxonomy`, which here is read off the same tree, so rule D2 never fires. Python moved 146 (r232_ar53) and 1,451 (r232_bac120) taxa down, using `gtdb_taxonomy`. None in r226. |
 | **L4** Novel names without WGS | 3 / 181 / 3 / 205: `NOVEL-G…` vs `G…`, same genome ID. |
-| **L6** Leaf taxa from `--taxonomy` | 12 / 167 / 13 / 287 singleton taxa are not on the Rust tree: a leaf only gets taxa ranked below the lowest rank on its path, so nested singletons (e.g. `g__Phormidium` inside `g__PCC-6304`) are dropped. Side effects: the genome gets the outer taxon (G017313335, *s__Phormidium pseudopriestleyi*, is reported in `g__PCC-6304`), and the dropped taxon no longer blocks upward moves (`g__PCC-6304` and `f__Sporomusaceae` move up in Rust only). **The user considers this unacceptable: Python is more correct here. Not fixed yet.** |
+| **L6** Leaf taxa from `--taxonomy` | 12 / 167 / 13 / 287 singleton taxa are not on the Rust tree: a leaf only gets taxa ranked below the lowest rank on its path, so nested singletons (e.g. `g__Phormidium` inside `g__PCC-6304`) are dropped. Side effects: the genome gets the outer taxon (G017313335, *s__Phormidium pseudopriestleyi*, is reported in `g__PCC-6304`), and the dropped taxon no longer blocks upward moves (`g__PCC-6304` and `f__Sporomusaceae` move up in Rust only). **Fixed in `cd09ece`** (leaf taxa are matched by taxon, not rank). Rescored after the fix: all 12 / 169 / 13 / 288 genome-ranks it changed now agree with Python. |
 | **L7** No novel taxa above named taxa | 15 / 578 / 187 / 2,811 novel taxa made only by Python. Mostly a genus above a named species: e.g. `s__JAHITG01 sp965373035` with no `g__JAHITG01` on its path, where Python made `g__CBDVEP01`. Also, once Rust skips a rank for a genome it fills none of its lower missing ranks: G041740975 (r226_bac120) gets `p__;…;f__;g__` in Rust, but `p__CACXFL01` and `f__JBGSKV01; g__JBGSKV01` (its WGS prefix) in Python. |
 
 Expect these to show up in the comparison with the truth. They are the first places to look when
@@ -256,7 +256,7 @@ o 1 / 429 / 16 / 1,924, f 4 / 329 / 72 / 899, g 35 / 753 / 254 / 3,776, s 0 ever
 
 - `TODO.md` Job 10: an upward move can put a taxon above a higher rank. Rust puts
   `f__Sporomusaceae` above `o__Sporomusales` in `r226_bac120`. Both versions have this gap.
-- L6 (nested singletons dropped): to be fixed. Python's behaviour is the reference.
+- L6 (nested singletons dropped): fixed in `cd09ece`. `--debug` and `scripts/check_round_trip.py` show the inputs load with 0 differences.
 - L2: whether Rust should take a separate prior taxonomy so downward refinement can run is still
   being discussed.
 - The end-of-run check (`check_taxa_unchanged`, `src/main.rs`) covers the taxa on the tree after
