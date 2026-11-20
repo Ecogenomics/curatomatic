@@ -184,12 +184,17 @@ const NESTED_ON_ANCESTOR_NODE: &str = "((((G1|RED=1.000:0.1)'s__B one|RED=1.000'
 
 /// Refine the genera of a tree, as is done for each rank when curatomatic runs.
 fn refine_genus(newick: &str) -> Tree {
+    refine(newick, Rank::Genus)
+}
+
+/// Refine one rank of a tree, as is done for each rank when curatomatic runs.
+fn refine(newick: &str, rank: Rank) -> Tree {
     let mut tree = tree(newick).unwrap();
     let min_bs = BootstrapValue::new(95.0);
     let refinement = tree
-        .refine_existing_labels(Rank::Genus, min_bs, &red_dict(), &Metadata::default())
+        .refine_existing_labels(rank, min_bs, &red_dict(), &Metadata::default())
         .unwrap();
-    tree.process_refinement(&refinement, Rank::Genus, min_bs, &red_dict())
+    tree.process_refinement(&refinement, rank, min_bs, &red_dict())
         .unwrap();
     tree.reload().unwrap();
     tree
@@ -256,6 +261,61 @@ fn a_supported_taxon_is_not_moved_up_further_from_the_median() {
     let tree = refine_genus(&further_from_median_tree("100.0"));
     assert_eq!(label_with(&tree, "g__B"), "100.0:g__B|RED=0.900");
     assert_eq!(label_with(&tree, "RED=0.850"), "100.0|RED=0.850");
+}
+
+// ---- A taxon is never moved up above a taxon of a higher rank ----
+
+/// The r226 bac120 `f__Sporomusaceae` case: `f__F` (bootstrap 54, RED 0.789) is on the node of
+/// its order, `{taxa}`. Its parent (bootstrap 71, RED 0.749) is better supported and closer to the
+/// family median, so it would otherwise qualify.
+fn family_with_its_order(taxa: &str) -> String {
+    format!(
+        "((((G1|RED=1.000:0.1)'s__A one|RED=1.000':0.1,(G2|RED=1.000:0.1)'s__A two|RED=1.000':0.1)\
+         '54.0:{taxa}|RED=0.789':0.1,(G3|RED=1.000:0.1)'s__C three|RED=1.000':0.1)'71.0|RED=0.749':0.1,\
+         (G4|RED=1.000:0.1)'s__D four|RED=1.000':0.1)'100.0:c__C|RED=0.400';"
+    )
+}
+
+#[test]
+fn a_family_without_its_order_on_its_node_is_moved_up() {
+    // Without the order the fixture qualifies, so the test below shows the order is what stops it.
+    let tree = refine(&family_with_its_order("f__F"), Rank::Family);
+    assert_eq!(label_with(&tree, "f__F"), "71.0:f__F|RED=0.749");
+}
+
+#[test]
+fn a_family_on_the_node_of_its_order_is_not_moved_up_above_it() {
+    let tree = refine(&family_with_its_order("o__O; f__F"), Rank::Family);
+    assert_eq!(label_with(&tree, "f__F"), "54.0:o__O; f__F|RED=0.789");
+    assert_eq!(label_with(&tree, "RED=0.749"), "71.0|RED=0.749");
+}
+
+#[test]
+fn a_genus_is_not_moved_up_to_a_node_whose_other_child_holds_a_family() {
+    // `further_from_median_tree("50.0")` moves g__B up to RED 0.85, unless G3 is in a family.
+    let newick = further_from_median_tree("50.0").replace("'s__C three", "'f__X; s__C three");
+    let tree = refine_genus(&newick);
+    assert_eq!(label_with(&tree, "g__B"), "50.0:g__B|RED=0.900");
+    assert_eq!(label_with(&tree, "RED=0.850"), "100.0|RED=0.850");
+}
+
+#[test]
+fn a_higher_rank_on_the_candidate_node_itself_does_not_stop_the_move() {
+    let newick =
+        further_from_median_tree("50.0").replace("'100.0|RED=0.850'", "'100.0:f__X|RED=0.850'");
+    let tree = refine_genus(&newick);
+    assert_eq!(label_with(&tree, "g__B"), "100.0:f__X; g__B|RED=0.850");
+}
+
+#[test]
+fn the_walk_stops_at_the_first_node_with_a_higher_rank_below() {
+    // G3 is in f__X, below Y (the parent of g__B, RED 0.88), the first candidate. X above it holds
+    // a family itself, which alone would not stop a move onto X, but f__X is below X too, so
+    // g__B is moved to neither.
+    let newick = nested_tree("100.0:f__Y").replace("'s__A three", "'f__X; s__A three");
+    let tree = refine_genus(&newick);
+    assert_eq!(label_with(&tree, "g__B"), "50.0:g__B|RED=0.930");
+    assert_eq!(label_with(&tree, "RED=0.880"), "100.0|RED=0.880");
 }
 
 #[test]

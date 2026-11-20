@@ -17,6 +17,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | L5 | Novel domain | Uses the species median as the parent | Error | Stops the run instead of a wrong placement |
 | L6 | Leaf taxa | Leaves can't hold a taxon, the tree needs a species node above each leaf | `--taxonomy` assigns the ranks the tree can't hold to the leaves | **Yes**, a new input |
 | L7 | Novel taxa above names | A novel taxon is created for every missing rank, even above named taxa | Only created where no valid name of a lower rank is below it | **Yes** |
+| L8 | Refining up | A taxon can be moved up above a taxon of a higher rank | The upward walk stops at a node with a higher rank below it | **Yes** |
 
 All other refinement and novel-rank rules are the same; see
 [Unchanged logic](#unchanged-logic).
@@ -104,6 +105,16 @@ genome, they get the same name.
   (`Taxon::is_valid_name`: not a placeholder or `s__{unresolved}` species) of a lower rank is on
   the candidate node or below it. Its genomes keep the placeholder, and their lower missing ranks
   are not filled either. See [refinement.md](refinement.md#novel-taxa).
+
+### L8. A taxon is never moved up above a taxon of a higher rank
+
+- **Python** (`Tree.refine_existing_labels`, `model/tree.py`): the upward walk only checks for
+  conflicts of the same rank, so a family can be moved above its own order.
+- **Rust** (`Tree::refine_existing_labels` / `Tree::highest_named_rank_below`, `src/tree.rs`): the
+  walk stops at the first candidate ancestor that has a named taxon of a higher rank on a node
+  strictly below it (the original node and leaves included). In r226 bac120 this stops
+  `f__Sporomusaceae` being moved above `o__Sporomusales`. See
+  [refinement.md](refinement.md#rule-u2-walk-the-ancestors), step 5.
 
 ## Failures that are now reported errors
 

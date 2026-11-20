@@ -86,7 +86,11 @@ For each ancestor:
    An ancestor without a bootstrap is a malformed tree and is an error.
 4. **Stop** if moving here would cause a conflict: any node below the ancestor holds a named taxon
    of this rank, and none of the named taxa of this rank on that node is the taxon being moved.
-5. Otherwise, the ancestor is **recorded as a candidate** if either:
+5. **Stop** if a named taxon of a **higher** rank is on any node strictly below the ancestor,
+   leaves and the original node included: the taxon would be placed above it (e.g. a family above
+   its own order). A higher rank on the ancestor itself does not count. Every higher ancestor has
+   the same taxon below it, so the walk ends here.
+6. Otherwise, the ancestor is **recorded as a candidate** if either:
    - its RED delta is strictly smaller than the original node's (it brings the taxon closer to the
      median), or
    - the original node is unsupported (`bs < min_bs`). Here the move may take the taxon further
@@ -95,7 +99,7 @@ For each ancestor:
 
    If neither holds, the ancestor is not recorded, and the walk continues.
 
-Note that the conflict check in step 4 is only reached for ancestors that pass steps 1–3. An
+Note that the checks in steps 4 and 5 are only reached for ancestors that pass steps 1–3. An
 ancestor skipped in step 2 or 3 is not checked, but every higher ancestor contains the same
 descendants, so a conflict below it stops the walk at the next ancestor that is checked.
 

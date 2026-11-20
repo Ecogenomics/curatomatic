@@ -2,6 +2,8 @@
 
 ## Job 10: Never move a taxon up above a taxon of a higher rank
 
+**Status: done** (`docs/differences.md` L8).
+
 ### Problem
 
 The upward search in `Tree::refine_existing_labels` (`src/tree.rs`) only checks for conflicts of the **same** rank

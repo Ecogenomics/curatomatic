@@ -257,6 +257,37 @@ impl Tree {
         Ok(out)
     }
 
+    /// The highest rank of any named taxon (see [`Taxon::is_named`]) on a node strictly below each
+    /// node (leaves included, the node itself excluded), indexed by node. `None` if there is none.
+    fn highest_named_rank_below(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
+        // The highest named rank on each node or below it.
+        let mut at_or_below: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
+        let mut out: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
+        // Post-order puts every child before its parent.
+        for node in self.newick.ids() {
+            let below = self
+                .newick
+                .children(node)
+                .iter()
+                .filter_map(|child| at_or_below.get(child.index()).copied().flatten())
+                .min();
+            let mut highest = below;
+            if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_named()) {
+                    let rank = taxon.rank()?;
+                    highest = Some(highest.map_or(rank, |h| h.min(rank)));
+                }
+            }
+            if let (Some(slot), Some(out_slot)) =
+                (at_or_below.get_mut(node.index()), out.get_mut(node.index()))
+            {
+                *slot = highest;
+                *out_slot = below;
+            }
+        }
+        Ok(out)
+    }
+
     /// Give each leaf the taxa that the tree can't hold, from the taxonomy file.
     ///
     /// The file restores the labels of the dummy nodes of an old style tree: each row is the full
@@ -583,6 +614,7 @@ impl Tree {
         let median_red = red_dict.get(rank)?;
         let parent_red_thresh = red_dict.get(parent_rank(rank)?)?.midpoint(median_red);
         let child_red_thresh = red_dict.get(child_rank)?.midpoint(median_red);
+        let highest_below = self.highest_named_rank_below()?;
 
         for (node, node_label) in self.newick.ids().zip(&self.node_labels) {
             // Skip nodes without a bootstrap (i.e. leaf nodes), which are never refined.
@@ -623,6 +655,17 @@ impl Tree {
                         if cur_bs >= min_bs || cur_bs > original_bs {
                             // Stop if this would incorporate any nested ranks.
                             if self.would_cause_conflicts(cur_node, rank, taxon) {
+                                break;
+                            }
+                            // Stop if a taxon of a higher rank is below this node (the original
+                            // node included): the taxon would be placed above it. Every higher
+                            // ancestor has it below too, so the walk ends here.
+                            if highest_below
+                                .get(cur_node.index())
+                                .copied()
+                                .flatten()
+                                .is_some_and(|higher| higher < rank)
+                            {
                                 break;
                             }
 
