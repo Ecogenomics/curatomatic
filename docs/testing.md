@@ -93,6 +93,24 @@ writes:
 
 These inputs round trip with 0 differences (see the README and `scripts/check_round_trip.py`).
 
+### Prior taxonomy (`--prior-taxonomy`)
+
+Moving taxa down needs the taxonomy of a previous release (`docs/refinement.md`, rule D2). Make it
+from the Python metadata (both domains of a release share one metadata file; genomes that aren't on
+the tree are ignored):
+
+- **r226**: column 2 `taxonomy`, 596,626 named rows. It is probably r220 (not checked). The `none`
+  rows must be dropped:
+  `awk -F'\t' 'NR>1 && $2!="none"{print $1"\t"$2}' test_data/python/input/$d.metadata.tsv`
+- **r232**: column 3 `gtdb_taxonomy`, 731,926 named rows. For every genome named in both, it is
+  identical to the curated r226 taxonomy. Its 320,439 placeholder-only rows
+  (`d__Bacteria;p__;…;s__`, genomes new in r232) must be dropped, or those genomes count as having
+  a prior and rule D2a never applies to them:
+  `awk -F'\t' 'NR>1{n=split($3,a,";"); for(i=2;i<=n;i++) if(length(a[i])>3){print $1"\t"$3; next}}' test_data/python/input/$d.metadata.tsv`
+
+These give the prior files that the [curator workload](#curator-workload-at-be526b9) was measured
+with.
+
 ### Stored Python outputs
 
 - Run with `--min-bs 95.0` by Python v0.0.2. Each is a tree and a log only.
@@ -131,6 +149,9 @@ For each dataset, `<out_dir>/<d>/` holds:
 The first sanity check in `python_comparison/summary.md` must say that the topology of all three
 trees and the taxa of the converted input match the input.
 
+The script doesn't pass `--prior-taxonomy` yet, so it measures curatomatic without downward
+refinement, and it doesn't score the curator workload (`TODO.md` Job 18).
+
 ### Results at `b44e6b6`
 
 Per cent of tree genomes whose taxon is the truth's (`pct_correct` in `scores.tsv`):
@@ -161,6 +182,40 @@ Per cent of tree genomes whose taxon is the truth's (`pct_correct` in `scores.ts
   they change. The other differences are taxa only Python moved (1 / 13 / 146 / 1,470) and novel
   taxa only Python made (15 / 578 / 245 / 3,120), for r226_ar53 / r226_bac120 / r232_ar53 /
   r232_bac120.
+
+### Curator workload at `be526b9`
+
+The user's metric of success is the curator's manual work, not the genome-weighted scores above.
+It counts, per rank p to g and with each taxon counted once however many genomes it has, the
+operations a curator needs to turn an output into the truth: `move` (a truth taxon whose name is in
+the output, on a different genome set), `create` (a truth taxon with no counterpart, including
+ranks left empty) and `delete` (an output taxon with no counterpart in the truth). Renames are left
+out: curatomatic never edits a name. The scorer is `wip/scripts/workload.py`, which is not
+committed yet (`TODO.md` Job 18).
+
+Operations (move / create / delete), with the prior files [above](#prior-taxonomy---prior-taxonomy):
+
+| Dataset | Input | Python | `32d3350` | Jobs 10 to 13 (`2622c2f`) | `be526b9` (Jobs 10 to 13 and 15) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| r226_ar53 | 469 (108 / 337 / 24) | 248 (105 / 104 / 39) | 263 (105 / 119 / 39) | 173 | 179 |
+| r226_bac120 | 7,621 (1,726 / 5,449 / 446) | 3,860 (1,570 / 1,431 / 851) | 4,103 (1,573 / 1,837 / 693) | 2,656 | 2,758 |
+| r232_ar53 | 1,237 (296 / 822 / 119) | 470 (168 / 66 / 236) | 693 (258 / 255 / 180) | 474 | 482 |
+| r232_bac120 | 13,580 (3,060 / 9,400 / 1,120) | 5,030 (1,844 / 1,062 / 2,107) | 7,918 (2,835 / 3,570 / 1,513) | 5,088 | 5,128 |
+| Total | 22,907 | 9,608 | 12,977 | 8,391 | 8,547 |
+
+`32d3350` is the code before Jobs 10 to 15. Each job's effect on the total, against `32d3350`:
+Job 10 +3, Job 11 -659, Job 12 -236, Jobs 11 and 12 -903, Jobs 10 to 12 -900, Job 13 alone -2,073,
+Jobs 10 to 13 -4,586. Job 15 then adds +156. Applied to every genus, it added +3,003 (11,394 in
+total): it stopped 1,992 moves down, and for most of them the truth was closer to the move, as new
+genomes' species echo the decoration. The user chose the narrowed rule (Latin names inside the RED
+window, `docs/differences.md` L9), accepting +156, to keep genera such as `g__Noviluteimonas`
+(r237) whole. Without `--prior-taxonomy`, Jobs 10 to 13 give the same output as Jobs
+10 to 12.
+
+Caveat: the r232 prior is the curated r226, and the r232 truth was probably curated from the Python
+output, which made the same moves down (146 / 1,451 taxa, equal to Rust's). So r232 favours Job 13.
+r226 (prior probably r220; Python made no moves down there) is the less biased evidence: Jobs 10 to
+13 save 90 operations in r226_ar53 and 1,447 in r226_bac120.
 
 ## Running the Rust version
 
@@ -287,8 +342,10 @@ tree.to_file(out_dir / f'{tree_p.stem}.curatomatic.tree')
 
 ## Known differences between the two versions
 
-From an earlier session (`scripts/compare_outputs.py`, see its docstring). Every difference
-between the stored Python and Rust outputs was explained by one of these:
+From an earlier session (`scripts/compare_outputs.py`, see its docstring), before Jobs 10 to 15
+(L8 and L9 did not exist yet, and the L2 and L7 rows have changed since, see below
+the table). Every difference between the stored Python and Rust outputs was explained by one of
+these:
 
 | Cause (`docs/differences.md`) | Effect on these datasets |
 | --- | --- |
@@ -305,15 +362,26 @@ Per-genome counts that differ between the two versions (r226_ar53 / r226_bac120 
 r232_bac120, after mapping `NOVEL-` names): p 0 / 628 / 53 / 5,110, c 0 / 3,620 / 26 / 3,981,
 o 1 / 429 / 16 / 1,924, f 4 / 329 / 72 / 899, g 35 / 753 / 254 / 3,776, s 0 everywhere.
 
-### Open issues (state at the time of writing)
+Changes since the table was made:
 
-- `TODO.md` Job 10: an upward move can put a taxon above a higher rank. Rust puts
-  `f__Sporomusaceae` above `o__Sporomusales` in `r226_bac120`. Both versions have this gap.
-- L6 (nested singletons dropped): fixed in `cd09ece`. `--debug` and `scripts/check_round_trip.py` show the inputs load with 0 differences.
-- L2: whether Rust should take a separate prior taxonomy so downward refinement can run is still
-  being discussed.
-- The end-of-run check (`check_taxa_unchanged`, `src/main.rs`) covers the taxa on the tree after
-  the leaf assignment. It doesn't cover taxa in `--taxonomy` that were never assigned.
+- **L2**: with `--prior-taxonomy` (Job 13, `2622c2f`), Rust moves taxa down: 37 / 816 / 146 /
+  1,451 taxa with Jobs 10 to 13. The r232 counts equal Python's. Without it, Rust still makes no
+  moves down.
+- **L7**: Jobs 11 and 12 (`fd77429`, `7513c7d`) removed both causes in the row: a novel genus is
+  now created above a named species, and skipping a rank no longer stops the lower ranks being
+  filled. Rust still makes no novel taxon above a named taxon of a lower rank, other than a species.
+- **L8** (Job 10, `9a6125a`): Rust no longer moves `f__Sporomusaceae` above `o__Sporomusales` in
+  r226_bac120. Python has this gap.
+
+### Open issues
+
+- Novel taxa can break rank order (`TODO.md` Job 16, needs approval).
+- Rewritten labels round the RED and bootstrap (`TODO.md` Job 17).
+- `scripts/benchmark.sh` doesn't use a prior or score the curator workload (`TODO.md` Job 18).
+
+Settled: L6 was fixed in `cd09ece`. Since then every named taxon of a `--taxonomy` row is on the
+genome's path or assigned to its leaf, and anything else fails the run, so the end-of-run check
+(`check_taxa_unchanged`) covers every input taxon.
 
 ## Tools already in the repository
 
@@ -336,7 +404,7 @@ o 1 / 429 / 16 / 1,924, f 4 / 329 / 72 / 899, g 35 / 753 / 254 / 3,776, s 0 ever
   repository. Give the user full absolute paths to anything they should inspect.
 - `test_data/` and `test_output/` are the user's. Don't modify or delete them.
 - Files for the user to review go in a temporary directory, with the path given to the user.
-- The repository has untracked dotfiles in its root (`.bashrc`, `.zshrc`, `.claude/*`, ...) and a
-  modified `.gitignore` that aren't part of the project. Leave them out of commits.
+- The dotfiles that the Claude Code sandbox creates in the root (`.bashrc`, `.zshrc`, ...) are
+  ignored by `.gitignore`. So is `wip/`, for work-in-progress notes and runs: never commit it.
 - After any code change: `cargo fmt`, `cargo clippy --all-targets` (lints are `deny`) and
   `cargo nextest run`, then commit with a semantic message.
