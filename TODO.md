@@ -99,6 +99,88 @@ the unrounded RED? Either answer changes some outputs, so measure it on the four
    `docs/testing.md`.
 3. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload".
 
+## Job 25: Release a Linux binary on every push to main
+
+**Status: approved. Settle the questions below with the user before starting.**
+
+### Problem
+
+There are no releases: a user has to clone the repository and build curatomatic themselves (`README.md`, "Building"),
+and the version in `Cargo.toml` (`0.1.0`, logged on every run as `curatomatic v{CARGO_PKG_VERSION}`) is never
+changed. There is no `.github/` directory.
+
+### Rule
+
+On a push to `main`, a GitHub Actions workflow (`.github/workflows/release.yml`) releases a new version if the
+Conventional Commits since the last tag call for one, and does nothing otherwise. The steps, in order:
+
+1. **Work out the version.** semantic-release, in a dry run, reads the commits since the last `v*` tag:
+   `fix`/`perf` give a patch, `feat` a minor, and `!` or a `BREAKING CHANGE:` footer a major. Other types (`docs`,
+   `chore`, `refactor`, `test`, `ci`, ...) give no release, and the workflow stops. With no tag yet, the first
+   release is `v1.0.0`.
+2. **Set the version and tag it.** semantic-release writes the version to `Cargo.toml` and `Cargo.lock`
+   (`@semantic-release/exec`), commits them to `main` as `chore(release): <version> [skip ci]`
+   (`@semantic-release/git`), and tags that commit `v<version>`. The binary must be built after this, from the tag, so
+   that the version it logs is the released one.
+3. **Create the GitHub release** `v<version>` (`@semantic-release/github`), its description the release notes made
+   from the commits (`conventional-changelog-conventionalcommits` preset: features, bug fixes, performance, breaking
+   changes).
+4. **Build the Linux binary and attach it.** Check out the tag, build a static `x86_64-unknown-linux-musl` release
+   binary (no glibc dependency, so it runs on old cluster nodes), package it as
+   `curatomatic-v<version>-x86_64-unknown-linux-musl.tar.gz` (binary, `README.md`, licence) with a `.sha256` beside
+   it, and upload both with `gh release upload`.
+
+The build runs in the same workflow (a `needs:` job after the release), because a release created with
+`GITHUB_TOKEN` does not start other workflows.
+
+Use the workflow pasted by the user from another Rust project as the reference (summarised here, as it is not in this
+repository):
+
+- `on: push: branches: [main]` and `workflow_dispatch`; `concurrency: {group: release, cancel-in-progress: false}`;
+  `permissions: contents: read` at the top, `contents: write` only on the jobs that need it.
+- semantic-release run with `npx --yes -p semantic-release@25 -p @semantic-release/git@11 -p
+  @semantic-release/exec@7 -p conventional-changelog-conventionalcommits@9 semantic-release` (pinned majors), on
+  Node 24 (`actions/setup-node`), with `actions/checkout` at `fetch-depth: 0` so it sees the tags.
+- Jobs: `plan` (`--dry-run`, outputs the next version, empty if none) → `release` (if a version: tags, commits,
+  creates the release, outputs the version) → `build` (checks out the tag, builds, uploads with
+  `GH_TOKEN: ${{ github.token }}`).
+- Its `sync-dev` job merges the release tag into `dev` (`chore(release): Merge v<version> into dev`), so `dev` keeps
+  the version commit; a conflict fails that job and pushes nothing. See question 2.
+
+The semantic-release config goes in `.releaserc.json` (`branches: ["main"]`, `tagFormat: "v${version}"`). Setting the
+version needs no new crate or cargo tool: `sed` the `version` line of the `[package]` table, then
+`cargo update --workspace --offline` to update `Cargo.lock`. This is not a crate dependency, so it doesn't need the
+approval in "Rules", but no other new tool should be added without asking.
+
+### Tasks
+
+1. `.releaserc.json` and `.github/workflows/release.yml` as above.
+2. Check the release config locally with `npx semantic-release --dry-run --no-ci` on a branch (it reports the
+   version and the notes it would make without publishing), and check the musl build locally or in a test workflow
+   run (`cargo build --release --locked --target x86_64-unknown-linux-musl`, then run the binary on the `example/`
+   data).
+3. Docs: `README.md` (a new "Installation" section: download the binary from the releases page, check the
+   `.sha256`; keep "Building"), and `AGENTS.md` "Development" (pushes to `main` are released; the commit type decides
+   the version, so a breaking change to the CLI or the output files must be marked with `!`).
+
+### Questions for the user
+
+1. **Checks before releasing.** The reference has no CI gate (`AGENTS.md` has `cargo fmt`, `cargo clippy` and
+   `cargo nextest run` run locally). Should the workflow run `cargo fmt --check`, `cargo clippy --all-targets` and
+   `cargo nextest run` before step 2, so a failing `main` is not released? Recommended: yes, in the `plan` job.
+2. **The version commit.** Committing the version to `main` needs `GITHUB_TOKEN` to be allowed to push there (branch
+   protection), and leaves `dev` behind until it is merged back. Either keep the reference's `sync-dev` job, or don't
+   commit the version at all and only write it into `Cargo.toml` in the build job (the tag is then the only record
+   of the version, and a local build logs `0.1.0`). Recommended: commit it, with `sync-dev`.
+3. **musl or glibc.** musl gives a binary that runs anywhere, but its allocator can be slower. Measure the run time of
+   the musl and the glibc (`x86_64-unknown-linux-gnu`) binaries on the r237 example. If musl is clearly slower, build
+   for glibc on the oldest Ubuntu runner instead (the oldest glibc it is built on is the oldest it runs on), or ask
+   about an allocator crate.
+4. **Starting version.** The first release will be `v1.0.0` (semantic-release's default with no tag). Is that right,
+   or should it start below 1.0 (e.g. a `v0.1.0` tag made by hand first)?
+5. **Changelog file.** Should releases also write a `CHANGELOG.md` (`@semantic-release/changelog`, committed with the
+   version), or are the GitHub release notes enough? Recommended: the notes are enough.
+
 ## Open questions (ask the user before starting)
 
 - Moving down (Job 13) adds work as well as saving it: the operations added against the input went from 764 at
