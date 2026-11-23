@@ -1,0 +1,86 @@
+[package]
+name = "curatomatic"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3"
+repository = "https://github.com/Ecogenomics/curatomatic"
+keywords = ["phylogenetics", "tree", "curation", "taxonomy", "curate"]
+description = "Semi-automatic curation of decorated phylogenetic trees."
+categories = ["command-line-utilities", "science::bioinformatics"]
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.6.9", features = ["derive"] }
+flate2 = "1.1.11"
+log = { version = "0.4.35", features = ["std"] }
+strum = { version = "0.28.0", features = ["derive"] }
+thousands = "0.2.0"
+
+[profile.release]
+overflow-checks = true
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1
+debug = true
+incremental = true
+codegen-units = 256
+
+[profile.dev.package."*"]
+opt-level = 1
+debug = false
+
+[lints.rust]
+unsafe_code = "forbid"
+rust_2018_idioms = { level = "deny", priority = -1 }
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+redundant_lifetimes = "deny"
+meta_variable_misuse = "deny"
+dead_code = "deny"
+unused_macro_rules = "deny"
+unreachable_pub = "deny"
+unused_qualifications = "deny"
+unused_lifetimes = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+# Allowed
+multiple_crate_versions = "allow"
+
+# Additional restrictions
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+arithmetic_side_effects = "deny"
+dbg_macro = "deny"
+exit = "deny"
+expect_used = "deny"
+fallible_impl_from = "deny"
+get_unwrap = "deny"
+indexing_slicing = "deny"
+infinite_loop = "deny"
+iter_over_hash_type = "deny"
+let_underscore_must_use = "deny"
+lossy_float_literal = "deny"
+map_err_ignore = "deny"
+mem_forget = "deny"
+mod_module_files = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+rc_mutex = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+significant_drop_tightening = "deny"
+string_slice = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+unused_result_ok = "deny"
+unwrap_in_result = "deny"
+unwrap_used = "deny"
+wildcard_enum_match_arm = "deny"

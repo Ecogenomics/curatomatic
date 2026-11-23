@@ -164,3 +164,40 @@ test/
 data/
 
 .DS_Store
+
+
+# Added by cargo
+
+/target
+
+/test_data
+/test_output
+
+
+# Placeholders the Claude Code sandbox creates to block writes to these paths
+/.bash_profile
+/.bashrc
+/.profile
+/.zprofile
+/.zshrc
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.ripgreprc
+/.vscode
+/.claude/agents
+/.claude/commands
+/.claude/hooks
+/.claude/launch.json
+/.claude/loop.md
+/.claude/output-styles
+/.claude/routines
+/.claude/scheduled_tasks.json
+/.claude/skills
+/.claude/workflows
+
+# Work in progress notes and runs (not committed)
+/wip
+
+# Written by the release workflow (semantic-release, .releaserc.json)
+/.release-version

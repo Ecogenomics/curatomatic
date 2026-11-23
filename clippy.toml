@@ -1,0 +1,21 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+too-many-lines-threshold = 100
+cognitive-complexity-threshold = 25
+
+disallowed-methods = [
+    { path = "std::fs::File::open", reason = "an input may be gzipped: open it with input::open_input" },
+    { path = "std::fs::read", reason = "an input may be gzipped: open it with input::open_input" },
+    { path = "std::fs::read_to_string", reason = "an input may be gzipped: read it with input::read_input_to_string" },
+#    { path = "std::fs::write", reason = "writes are atomic: use gview_platform::fs::write_atomically" },
+#    { path = "std::fs::File::create", reason = "writes are atomic: use gview_platform::fs::write_atomically" },
+#    { path = "std::fs::OpenOptions::open", reason = "writes are atomic: use gview_platform::fs::write_atomically" },
+#    { path = "std::fs::read", reason = "cap anything sized by the file: read through a size-limited reader" },
+#    { path = "std::fs::read_to_string", reason = "cap anything sized by the file: read through a size-limited reader" },
+#    { path = "std::io::stdout", reason = "log, never print: use log::{debug, info, warn, error}!" },
+#    { path = "std::io::stderr", reason = "log, never print: use log::{debug, info, warn, error}!" },
+#    { path = "std::thread::spawn", reason = "name every thread: use std::thread::Builder::new().name(..).spawn(..)" }
+]

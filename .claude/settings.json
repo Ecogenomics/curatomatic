@@ -1,0 +1,59 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(./test_data)"
+    ],
+    "allow": [
+      "Bash(cargo build)",
+      "Bash(cargo build *)",
+      "Bash(cargo nextest run)",
+      "Bash(cargo nextest run *)",
+      "Bash(cargo clippy)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo shear)",
+      "Bash(cargo shear *)",
+      "Bash(cargo fmt)",
+      "Bash(cargo fmt *)",
+      "Bash(cargo xtask)",
+      "Bash(cargo xtask *)",
+      "Bash(cargo msrv)",
+      "Bash(cargo msrv *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show)",
+      "Bash(git show *)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "excludedCommands": ["cargo", "cargo *"],
+    "filesystem": {
+      "denyRead": [
+        "~/"
+      ],
+      "allowRead": [
+        ".",
+        "~/.rustup",
+        "~/.cargo",
+        "~/.gitconfig",
+        "~/.config/git/ignore",
+        "/Users/aaron/miniforge3/envs/curatomatic"
+      ]
+    }
+  },
+  "skillOverrides": {
+    "anthropic-skills:docs": "off",
+    "anthropic-skills:docx": "off",
+    "anthropic-skills:google-workspace": "off",
+    "anthropic-skills:import-memory": "off",
+    "anthropic-skills:morning": "off",
+    "anthropic-skills:pdf": "off",
+    "anthropic-skills:pptx": "off",
+    "anthropic-skills:skill-creator": "off",
+    "anthropic-skills:xlsx": "off"
+  }
+}
