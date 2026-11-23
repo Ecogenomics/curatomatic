@@ -157,10 +157,18 @@ rank, in order: `d__`, `p__`, `c__`, `o__`, `f__`, `g__`, `s__`, each with a nam
 - two taxa of a rank: `…;g__A;g__B;s__X y` → `the genus rank has g__A and g__B, …`
 - out of order or too many taxa: already caught by the shared checks, keep their messages.
 
-`--taxonomy` keeps its current rules: placeholders stripped, missing ranks and nested taxa allowed.
+The species must be a valid binomial name (decided by the user on 2026-11-23): exactly two words separated by one
+space, where the first word is the name of the row's genus (`g__Escherichia;s__Escherichia coli`,
+`g__CAG-698;s__CAG-698 sp000123`). So `s__{unresolved} NAME` is an error in the prior, though it is still allowed in
+`--taxonomy`. Errors, e.g.:
 
-`s__{unresolved} NAME` is a named species (see `AGENTS.md`), so it is allowed. None of the prior files below has one.
-Ask the user if that should change.
+- `s__{unresolved} sp1` → `the species s__{unresolved} sp1 is not a binomial name, but a prior taxonomy names every
+  species`
+- `s__Escherichia` (one word) or `s__Escherichia coli K12` (three words) → the same message.
+- `g__Escherichia;s__Salmonella enterica` → `the species s__Salmonella enterica is not in the genus g__Escherichia`
+
+`--taxonomy` keeps its current rules: placeholders stripped, missing ranks and nested taxa allowed, and unresolved
+species allowed.
 
 ### Tasks
 
@@ -170,10 +178,13 @@ Ask the user if that should change.
    `read_metadata` takes `Option<&TaxonomyFile>`: update its signature to match.
 2. Tests in `src/taxonomy_file/tests.rs`: a full row loads, and one test per error above (placeholder in each
    position including `d__` and `s__`, a missing rank, two taxa of a rank, a row of placeholders only, a domain-only
-   row). Check that `--taxonomy` still accepts all of these, apart from the ones the shared checks reject.
+   row, an unresolved species, a one word and a three word species, a double space, and a species whose first word
+   is not the row's genus). Check that `--taxonomy` still accepts all of these, apart from the ones the shared checks
+   reject.
 3. Docs: `AGENTS.md` ("Taxonomy files"), `README.md` (the `--prior-taxonomy` option and "Taxonomy file"), and
    `docs/differences.md` (the placeholder table at the "In a row of `--taxonomy` / `--prior-taxonomy`" row).
-4. Check the real prior files still load (all passed this rule on 2026-11-23, 0 rows failing):
+4. Check the real prior files still load (all passed this rule on 2026-11-23, 0 rows failing, the binomial and
+   genus checks included):
    `example/gtdb_r232_bac120_taxonomy.tsv`, `test_data/curated/*.tsv`, and the four files that the recipe in
    `docs/testing.md` ("Prior taxonomy") makes from `test_data/python/input/*.metadata.tsv`. The r232 recipe drops
    placeholder-only rows; if it ever kept a partly placeholder row, the run would now stop, so say so there.
