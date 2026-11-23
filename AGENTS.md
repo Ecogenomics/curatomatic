@@ -98,6 +98,27 @@ cargo nextest run
 
 After finishing a task, commit the changes using semantic commit messages. Never push.
 
+### Releases
+
+Every push to `main` is checked and, if due, released by `.github/workflows/release.yml` (semantic-release, configured
+in `.releaserc.json`):
+
+1. `check` runs the three commands above (`cargo fmt --check`). If any fails, nothing is released.
+2. `plan` works out the next version from the Conventional Commits since the last `v*` tag: `fix`/`perf` give a
+   patch, `feat` a minor, and `!` or a `BREAKING CHANGE:` footer a major. Any other type (`docs`, `chore`, `refactor`,
+   `test`, `ci`, ...) gives no release. The first release is `v1.0.0`.
+3. `release` writes the version to `Cargo.toml` and `Cargo.lock`, adds the release notes to `CHANGELOG.md`, commits
+   them to `main` as `chore(release): <version> [skip ci]`, tags it `v<version>` and creates the GitHub release.
+4. `build` checks out the tag, builds a static `x86_64-unknown-linux-musl` binary, runs it on the `example/` data, and
+   attaches `curatomatic-v<version>-x86_64-unknown-linux-musl.tar.gz` and its `.sha256` to the release.
+5. `sync-dev` merges the tag into `dev` (`chore(release): Merge v<version> into dev`). A conflict fails it and pushes
+   nothing.
+
+So the commit type decides the version: a breaking change to the CLI or to the output files must be marked with `!`
+(`feat(output)!: ...`). `CHANGELOG.md` and the `version` in `Cargo.toml` are written by the workflow: never edit them
+by hand. The tests must pass on a clean clone (CI has no `test_data/`, `test/` or `data/`, which are not in git):
+read committed files such as `example/` only.
+
 ### Notes for agents
 
 - Development happens on several machines and accounts. Anything an agent needs to remember about this project goes in

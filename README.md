@@ -19,6 +19,20 @@ cargo run --release -- --min-bs 95.0 --taxonomy example/gtdb_r237_decorated_taxo
 
 See [docs/refinement.md](docs/refinement.md) for the rules curatomatic follows when refining the taxa on the tree.
 
+## Installation
+
+A static Linux binary (`x86_64-unknown-linux-musl`, no glibc needed) is attached to every
+[release](https://github.com/Ecogenomics/curatomatic/releases). Download the `.tar.gz` and its `.sha256`, check it,
+and unpack it (replace `VERSION`, e.g. `1.0.0`):
+
+```shell
+sha256sum -c curatomatic-vVERSION-x86_64-unknown-linux-musl.tar.gz.sha256
+tar xzf curatomatic-vVERSION-x86_64-unknown-linux-musl.tar.gz
+./curatomatic-vVERSION-x86_64-unknown-linux-musl/curatomatic --version
+```
+
+The changes in each version are in [CHANGELOG.md](CHANGELOG.md). On any other platform, build it from source.
+
 ## Building
 
 ```shell
