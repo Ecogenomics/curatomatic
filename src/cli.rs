@@ -38,6 +38,7 @@ pub(crate) struct Cli {
     /// Tab separated file with no header giving the taxonomy of each genome in a previous release,
     /// in the format of `--taxonomy`. It is the prior taxonomy for downward refinement and the
     /// report: without it no taxon is moved down. Genomes that are not on the tree are ignored.
+    /// Every row must name all seven ranks, one taxon each, with a binomial species in its genus.
     #[arg(long, value_name = "PATH")]
     pub(crate) prior_taxonomy: Option<PathBuf>,
 

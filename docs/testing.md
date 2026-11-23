@@ -107,6 +107,14 @@ the tree are ignored):
   (`d__Bacteria;p__;…;s__`, genomes new in r232) must be dropped, or those genomes count as having
   a prior and rule D2a never applies to them:
   `awk -F'\t' 'NR>1{n=split($3,a,";"); for(i=2;i<=n;i++) if(length(a[i])>3){print $1"\t"$3; next}}' test_data/python/input/$d.metadata.tsv`
+  It keeps a row with any named rank below the domain: a partly placeholder row would now stop the run, as every
+  rank of a prior row must be named (none of r232's rows is one).
+
+All four of these, `test_data/curated/*.tsv` and `example/gtdb_r232_bac120_taxonomy.tsv` load as priors (checked on
+2026-11-23). `test_data/r237/final_taxonomy.tsv` does not (5,070 rows with `g__;s__{unresolved} …`, and 605 whose
+species is in another genus), but it is the curated truth of r237, not a prior. Requiring the full
+prior row (`TODO.md` Job 23) left the output with these four priors byte-identical, and the curator
+workload below at 8,547.
 
 These give the prior files that the [curator workload](#curator-workload-at-be526b9) was measured
 with.

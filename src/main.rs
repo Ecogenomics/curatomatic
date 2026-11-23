@@ -32,7 +32,7 @@ use crate::rank::Rank;
 use crate::red::Red;
 use crate::report::{ReportInput, build_report, write_report};
 use crate::taxon::{Taxon, TaxonCounts};
-use crate::taxonomy_file::TaxonomyFile;
+use crate::taxonomy_file::{PriorTaxonomyFile, TaxonomyFile};
 use crate::tree::{Tree, fill_in_missing_ranks};
 
 fn run(cli: &Cli) -> io::Result<ExitCode> {
@@ -152,7 +152,7 @@ fn read_metadata(
     cli: &Cli,
     tree: &Tree,
     tree_n_nodes: usize,
-    prior: Option<&TaxonomyFile>,
+    prior: Option<&PriorTaxonomyFile>,
 ) -> CuratomaticResult<(Metadata, BTreeSet<Taxon>)> {
     let mut metadata = Metadata::default();
     if let (Some(path), Some(column)) = (&cli.novel_name_file, &cli.novel_name_column) {
@@ -294,7 +294,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let prior = match &cli.prior_taxonomy {
         Some(path) => {
             info!("Reading prior taxonomy");
-            Some(TaxonomyFile::from_file(path)?)
+            Some(PriorTaxonomyFile::from_file(path)?)
         }
         None => None,
     };

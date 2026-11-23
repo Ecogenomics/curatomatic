@@ -47,7 +47,7 @@ The following options are available:
 - `--log [debug|info|warning|error|critical]` = Output logging messages equal, or above this level (default = info).
 - `--min-bs FLOAT` = Minimum bootstrap value to consider for decoration (default = 95).
 - `--taxonomy PATH` = **Required.** The taxonomy of each genome (see [Taxonomy file](#taxonomy-file---taxonomy)). It names the ranks the tree can't hold, and gives every leaf its species.
-- `--prior-taxonomy PATH` = The taxonomy of each genome in a previous release, in the format of the [taxonomy file](#taxonomy-file---taxonomy). It is the prior taxonomy for downward refinement and the report: without it no taxon is moved down. Genomes that are not on the tree are ignored, and a genome on the tree that is not in the file has no prior. It can't be `--taxonomy`: that is the decoration of the same tree, so every genome below a taxon has it, and a taxon could never move down.
+- `--prior-taxonomy PATH` = The taxonomy of each genome in a previous release, in the format of the [taxonomy file](#taxonomy-file---taxonomy). It is the prior taxonomy for downward refinement and the report: without it no taxon is moved down. Genomes that are not on the tree are ignored, and a genome on the tree that is not in the file has no prior. It can't be `--taxonomy`: that is the decoration of the same tree, so every genome below a taxon has it, and a taxon could never move down. A previous release classifies every genome fully, so each row (including genomes not on the tree) must be exactly seven named taxa, one per rank, and a binomial species in the row's genus; anything else stops the run (see [Taxonomy file](#taxonomy-file---taxonomy)).
 - `--novel-name-file PATH` = File giving the name used for novel taxa of each genome (see [Novel name file](#novel-name-file---novel-name-file)). Requires `--novel-name-column`.
 - `--novel-accession NAME` = The column of `--novel-name-file` that holds the genome IDs, e.g. `db_name` (default = `accession`). Requires `--novel-name-file`.
 - `--novel-name-column NAME` = The column of `--novel-name-file` that holds the names, e.g. `ncbi_wgs_formatted`. Requires `--novel-name-file`.
@@ -88,11 +88,15 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
   taxon stops the run.
 - A bare prefix (`g__`) is a placeholder, not a name. Placeholders are stripped from each row as it is read, so
   `d__Bacteria;p__;c__;o__;f__;g__;s__Escherichia coli` holds only the domain and species. A rank that holds both a
-  placeholder and a name (`g__;g__Escherichia`) is an error. The same applies to `--prior-taxonomy`. A placeholder in
-  a label of the tree (e.g. `100:g__|RED=0.9`) is an error that stops the run.
+  placeholder and a name (`g__;g__Escherichia`) is an error. A placeholder in `--prior-taxonomy` is an error (see
+  below). A placeholder in a label of the tree (e.g. `100:g__|RED=0.9`) is an error that stops the run.
 - Each row must be in rank order (domain first, species last), give each taxon once, and have at most one domain and
   one species. A row that does not is an error that stops the run, in both `--taxonomy` and `--prior-taxonomy`. A rank
   other than the domain and species can hold several taxa (nested taxa, e.g. `g__JAAYFO01;g__Neosphaerochaeta`).
+- `--prior-taxonomy` is stricter: every row must be exactly seven taxa, `d__` to `s__` in order, each with a name, and
+  the species must be a binomial name (two words separated by one space) whose first word is the row's genus
+  (`g__Escherichia;s__Escherichia coli`, `g__CAG-698;s__CAG-698 sp000123`). A placeholder, a missing rank, two taxa of
+  a rank, an unresolved species (`s__{unresolved} sp1`) or a species of another genus stops the run, naming the line.
 - Genome IDs are matched to the tree the same way as the novel name file (`GB_GCA_003697165.1` is `G003697165`).
 - The file holds what the dummy nodes of the old trees held. Each row is the full taxonomy of the genome: the taxa on
   its path in the tree, plus its own. Each leaf is given every named taxon of its row that is **not on its path** in

@@ -46,12 +46,20 @@ in a `Taxonomy`: `Taxonomy::add_taxon` (`src/taxonomy.rs`) refuses one with `Cur
 - **Tree:** a placeholder in any node label stops the run (`CuratomaticError::PlaceholderOnTree`, naming the label).
   `d__Bacteria|RED=0.000` is fine; `100:g__|RED=0.9`, `100:f__F;g__|RED=0.9` and `d__|RED=0.0` are not. A rank
   with no named taxon on a genome's path is simply missing, and can be filled with a novel taxon.
-- **Taxonomy files** (`--taxonomy` and `--prior-taxonomy`, read by `TaxonomyFile::from_reader`): a rank of a row that
+- **Taxonomy files** (`--taxonomy` and `--prior-taxonomy`, read by `TaxonomyFile::from_reader` and
+  `PriorTaxonomyFile::from_reader`): a rank of a row that
   holds both a placeholder and a name (`g__;g__X`) is a `CuratomaticError::TaxonomyFile` error on that line. Otherwise
   the placeholders are stripped, so each row holds named taxa only.
 - A row must come properly formatted: its taxa in rank order (placeholders included), no named taxon twice, and at
   most one named domain and one named species. Anything else is a `CuratomaticError::TaxonomyFile` error on that line:
   a row is never reordered or deduplicated. Several taxa of any other rank are allowed (nested taxa).
+- `--prior-taxonomy` is a previous release, where every genome is fully classified, so it has its own reader
+  (`PriorTaxonomyFile::from_reader`, a newtype so the prior can't be read with the lenient reader). Beyond the checks
+  above, every row (genomes off the tree included) must be exactly seven taxa, one per rank in order, each with a
+  name, and its species a binomial name (two words, one space) whose first word is the row's genus
+  (`g__CAG-698;s__CAG-698 sp000123`). A placeholder, a missing rank, two taxa of a rank, an unresolved species
+  (`s__{unresolved} NAME`) and a species of another genus are `CuratomaticError::TaxonomyFile` errors on that line.
+  `--taxonomy` keeps the lenient rules above.
 - The output taxonomy files write a placeholder for a rank with no named taxon, so every row has all 7 ranks. This
   is decided and intended: the placeholder is only formatting, made by the writers (`Tree::leaf_taxonomies` and
   `Tree::full_taxonomies`, `src/tree.rs`), and is never held on the tree or in a `Taxonomy`. After loading, the only
@@ -137,7 +145,7 @@ Test data are available here:
   is why `--taxonomy` is required.
 - Every leaf has a named domain, on itself or on a node above it. This is checked by `Tree::check_leaves_have_domain`
   (`src/tree.rs`) at the same two points as the species, failing the run with `CuratomaticError::LeafWithoutDomain`.
-  `--prior-taxonomy` rows are not checked.
+  `--prior-taxonomy` rows are not checked here: the reader requires every rank of them to be named (see "Taxonomy").
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
   file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.

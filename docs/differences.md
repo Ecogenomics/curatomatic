@@ -194,7 +194,8 @@ A placeholder is a rank prefix with no name (`g__`).
 | | Python | Rust |
 | --- | --- | --- |
 | In a tree label (`100:g__\|RED=0.9`) | Read as a taxon like any other, and refined like a name | `PlaceholderOnTree` error, naming the label |
-| In a row of `--taxonomy` / `--prior-taxonomy` | (no such file) | Stripped as the row is read |
+| In a row of `--taxonomy` | (no such file) | Stripped as the row is read |
+| In a row of `--prior-taxonomy` | (no such file) | `TaxonomyFile` error on that line: every rank of a prior row must be named |
 | A rank with both a placeholder and a name (`g__;g__X`) | (no such file) | `TaxonomyFile` error on that line |
 
 None of the trees in `example/` or `test_data/` has a placeholder on it, so this does not change

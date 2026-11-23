@@ -1,4 +1,5 @@
 use super::*;
+use strum::IntoEnumIterator;
 
 fn read(contents: &str) -> CuratomaticResult<TaxonomyFile> {
     TaxonomyFile::from_reader(contents.as_bytes(), Path::new("taxonomy.tsv"))
@@ -212,4 +213,152 @@ fn several_taxa_of_a_rank_other_than_the_domain_or_species_are_kept() {
     let taxonomy = file.get(&GenomeId::new("G1")).unwrap();
     assert_eq!(taxonomy.o, vec![Taxon::new("o__O1"), Taxon::new("o__O2")]);
     assert_eq!(taxonomy.g, vec![Taxon::new("g__G1"), Taxon::new("g__G2")]);
+}
+
+fn read_prior(contents: &str) -> CuratomaticResult<PriorTaxonomyFile> {
+    PriorTaxonomyFile::from_reader(contents.as_bytes(), Path::new("prior.tsv"))
+}
+
+/// The message of the error of reading `row` as the second line of a prior taxonomy, after a
+/// valid first line.
+fn prior_row_error(row: &str) -> String {
+    match read_prior(&format!("G1\t{ECOLI}\nG2\t{row}\n")) {
+        Err(CuratomaticError::TaxonomyFile {
+            line: 2, message, ..
+        }) => message,
+        other => panic!("{row}: expected an error on line 2, got {other:?}"),
+    }
+}
+
+/// `ECOLI` with the taxon of `rank` replaced by `taxa` (empty to drop the rank).
+fn ecoli_with(rank: Rank, taxa: &[&str]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for taxon in ECOLI.split(';') {
+        if Taxon::new(taxon).rank().unwrap() == rank {
+            out.extend(taxa.iter().map(|t| (*t).to_owned()));
+        } else {
+            out.push(taxon.to_owned());
+        }
+    }
+    out.join(";")
+}
+
+#[test]
+fn a_full_prior_row_loads() {
+    let file = read_prior(&format!(
+        "G1\t{ECOLI}\nG2\td__B;p__P;c__C;o__O;f__F;g__CAG-698;s__CAG-698 sp000123\n"
+    ))
+    .unwrap();
+    assert_eq!(
+        file.get(&GenomeId::new("G1")),
+        Some(&Taxonomy::from_string(ECOLI).unwrap())
+    );
+    assert_eq!(file.iter().count(), 2);
+}
+
+#[test]
+fn a_placeholder_in_any_rank_of_a_prior_row_is_an_error() {
+    for rank in Rank::iter() {
+        let placeholder = format!("{}__", rank.prefix());
+        let row = ecoli_with(rank, &[&placeholder]);
+        assert_eq!(
+            prior_row_error(&row),
+            format!(
+                "the {} rank is the placeholder {placeholder}, but a prior taxonomy names every \
+                 rank",
+                rank.name().to_lowercase()
+            ),
+            "{row}"
+        );
+    }
+}
+
+#[test]
+fn a_missing_rank_in_a_prior_row_is_an_error() {
+    assert_eq!(
+        prior_row_error(&ecoli_with(Rank::Genus, &[])),
+        "the genus rank is missing, but a prior taxonomy names every rank"
+    );
+    assert_eq!(
+        prior_row_error("d__Bacteria"),
+        "the phylum rank is missing, but a prior taxonomy names every rank"
+    );
+}
+
+#[test]
+fn two_taxa_of_a_rank_in_a_prior_row_is_an_error() {
+    assert_eq!(
+        prior_row_error(&ecoli_with(Rank::Genus, &["g__A", "g__Escherichia"])),
+        "the genus rank has g__A and g__Escherichia, but a prior taxonomy has one taxon per rank"
+    );
+}
+
+#[test]
+fn a_prior_row_of_placeholders_only_is_an_error() {
+    assert_eq!(
+        prior_row_error("d__;p__;c__;o__;f__;g__;s__"),
+        "the domain rank is the placeholder d__, but a prior taxonomy names every rank"
+    );
+}
+
+#[test]
+fn a_prior_species_that_is_not_binomial_is_an_error() {
+    for species in [
+        "s__{unresolved} sp1",
+        "s__Escherichia",
+        "s__Escherichia coli K12",
+        "s__Escherichia  coli",
+    ] {
+        assert_eq!(
+            prior_row_error(&ecoli_with(Rank::Species, &[species])),
+            format!(
+                "the species {species} is not a binomial name, but a prior taxonomy names every \
+                 species"
+            ),
+        );
+    }
+}
+
+#[test]
+fn a_prior_species_of_another_genus_is_an_error() {
+    assert_eq!(
+        prior_row_error(&ecoli_with(Rank::Species, &["s__Salmonella enterica"])),
+        "the species s__Salmonella enterica is not in the genus g__Escherichia"
+    );
+}
+
+#[test]
+fn the_shared_checks_keep_their_messages_in_a_prior_row() {
+    assert_eq!(
+        prior_row_error("d__B;g__G;f__F;s__G b"),
+        "the taxa are not in rank order: f__F is after g__G"
+    );
+    assert_eq!(
+        prior_row_error(&ecoli_with(
+            Rank::Genus,
+            &["g__Escherichia", "g__Escherichia"]
+        )),
+        "g__Escherichia is given more than once"
+    );
+}
+
+#[test]
+fn the_taxonomy_file_still_accepts_what_a_prior_rejects() {
+    let rows = Rank::iter()
+        .map(|rank| ecoli_with(rank, &[&format!("{}__", rank.prefix())]))
+        .chain([
+            ecoli_with(Rank::Genus, &[]),
+            "d__Bacteria".to_owned(),
+            ecoli_with(Rank::Genus, &["g__A", "g__Escherichia"]),
+            "d__;p__;c__;o__;f__;g__;s__".to_owned(),
+            ecoli_with(Rank::Species, &["s__{unresolved} sp1"]),
+            ecoli_with(Rank::Species, &["s__Escherichia"]),
+            ecoli_with(Rank::Species, &["s__Escherichia coli K12"]),
+            ecoli_with(Rank::Species, &["s__Escherichia  coli"]),
+            ecoli_with(Rank::Species, &["s__Salmonella enterica"]),
+        ]);
+    for row in rows {
+        assert!(read(&format!("G1\t{row}\n")).is_ok(), "{row}");
+        assert!(read_prior(&format!("G1\t{row}\n")).is_err(), "{row}");
+    }
 }
