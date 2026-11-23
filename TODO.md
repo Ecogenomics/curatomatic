@@ -61,16 +61,25 @@ the unrounded RED? Either answer changes some outputs, so measure it on the four
 
 - `scripts/benchmark.sh` runs curatomatic without `--prior-taxonomy`, so it measures the behaviour without downward
   refinement (Jobs 13 and 15 are not measured).
+- It compares against the stored Python outputs, whose r226 runs had no prior, so Python is not given the same input
+  as Rust.
 - The curator workload, the user's metric of success, is scored by `wip/scripts/workload.py` and
-  `wip/scripts/summary.py`, which are not committed (`wip/` is git-ignored).
+  `wip/scripts/summary.py`, which are not committed (`wip/` is git-ignored). The Python metadata with the prior is
+  made by `wip/scripts/make_py_meta.py`, also not committed.
+
+The benchmark was run by hand on 2026-11-23 (`docs/testing.md`, "Curator workload at `3dc483a`", steps in "Running
+it"). This job scripts it.
 
 ### Tasks
 
-1. Make the prior files in `benchmark.sh` from the Python metadata (recipes in `docs/testing.md`, "Prior taxonomy")
-   and pass them with `--prior-taxonomy`.
-2. Move the workload scorer into `scripts/`, run it in `benchmark.sh`, and document its metrics in
+1. Take the prior files as arguments (the official GTDB releases joined across ar53 and bac120: r220 for the r226
+   datasets, r226 for the r232 datasets, see `docs/testing.md`, "Prior taxonomy") and pass them with
+   `--prior-taxonomy`.
+2. Move `make_py_meta.py` into `scripts/`, and re-run Python (`main`) with the same prior instead of linking the
+   stored outputs (r232_bac120 takes about 40 min).
+3. Move the workload scorer into `scripts/`, run it in `benchmark.sh`, and document its metrics in
    `docs/testing.md`.
-3. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload".
+4. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload at `3dc483a`".
 
 ## Job 25: Release a Linux binary on every push to main
 

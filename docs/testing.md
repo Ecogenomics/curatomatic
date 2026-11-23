@@ -8,8 +8,9 @@ tests in separate files).
 
 1. **Rust vs truth.** Run the current Rust version on each dataset and compare its output taxonomy
    with the curated taxonomy of that release (the source of truth, see [Datasets](#datasets)).
-2. **Python vs truth.** Compare the stored output of the Python version with the same source of
-   truth, and compare how well each version does.
+2. **Python vs truth.** Compare the output of the Python version with the same source of truth,
+   and compare how well each version does. Both versions must be given the same prior taxonomy
+   (see [Prior taxonomy](#prior-taxonomy---prior-taxonomy)).
 3. **Rust vs Python.** Compare the two outputs node by node, and list the taxa they place
    differently.
 
@@ -47,6 +48,9 @@ test_data/
 └── rust/input/gtdb_r237_*                              the r237 Rust inputs (no Python, no truth)
 ```
 
+The prior taxonomies are the official GTDB release files, which are not in `test_data/` either
+(see [Prior taxonomy](#prior-taxonomy---prior-taxonomy)).
+
 | Dataset `<d>` | Truth rows | Tree genomes |
 | --- | ---: | ---: |
 | `r226_ar53` | 17,245 | 6,968 |
@@ -73,10 +77,19 @@ There are no Rust inputs for these four in `test_data/`: they are made from the 
 ### Python inputs
 
 - The r226 metadata columns are `accession, taxonomy, ncbi_wgs_formatted`. Python reads a prior
-  taxonomy only from a column named `gtdb_taxonomy`, so **the r226 Python runs had no prior
-  taxonomy and did no downward refinement**.
-- The r232 metadata columns are `accession, ncbi_wgs_formatted, gtdb_taxonomy` (last release's
-  taxonomy), so **the r232 Python runs did refine downward**.
+  taxonomy only from a column named `gtdb_taxonomy`, so **the stored r226 Python runs had no prior
+  taxonomy and did no downward refinement**. The `taxonomy` column is r220 (checked, see below).
+- The r232 metadata columns are `accession, ncbi_wgs_formatted, gtdb_taxonomy` (the r226
+  taxonomy), so **the stored r232 Python runs did refine downward**. Genomes new in r232 have a
+  placeholder-only row (`d__Bacteria;p__;…;s__`), which Python keeps as taxa (`Taxonomy.from_string`
+  doesn't drop placeholders), so it counts them as having a prior.
+- **For a benchmark, don't use these metadata files as they are.** Give Python a metadata file whose
+  `gtdb_taxonomy` is the same prior that Rust gets: `accession` and `ncbi_wgs_formatted` from the
+  release's metadata, and `gtdb_taxonomy` = the genome's row in the prior, or `none` if it has none
+  (`wip/scripts/make_py_meta.py <release metadata> <prior> <rust taxonomy.tsv> <out>`, not
+  committed yet, `TODO.md` Job 18). The number of tree genomes with a prior is then the same for
+  both versions: 5,511 / 103,421 / 6,927 / 135,025 (r226_ar53 / r226_bac120 / r232_ar53 /
+  r232_bac120).
 
 ### Rust inputs
 
@@ -95,29 +108,35 @@ These inputs round trip with 0 differences (see the README and `scripts/check_ro
 
 ### Prior taxonomy (`--prior-taxonomy`)
 
-Moving taxa down needs the taxonomy of a previous release (`docs/refinement.md`, rule D2). Make it
-from the Python metadata (both domains of a release share one metadata file; genomes that aren't on
-the tree are ignored):
+Moving taxa down needs the taxonomy of the **previous release** (`docs/refinement.md`, rule D2),
+for both versions. Never use the release being curated (its truth) or `--taxonomy` (its
+decoration).
 
-- **r226**: column 2 `taxonomy`, 596,626 named rows. It is probably r220 (not checked). The `none`
-  rows must be dropped:
-  `awk -F'\t' 'NR>1 && $2!="none"{print $1"\t"$2}' test_data/python/input/$d.metadata.tsv`
-- **r232**: column 3 `gtdb_taxonomy`, 731,926 named rows. For every genome named in both, it is
-  identical to the curated r226 taxonomy. Its 320,439 placeholder-only rows
-  (`d__Bacteria;p__;…;s__`, genomes new in r232) must be dropped, or those genomes count as having
-  a prior and rule D2a never applies to them:
-  `awk -F'\t' 'NR>1{n=split($3,a,";"); for(i=2;i<=n;i++) if(length(a[i])>3){print $1"\t"$3; next}}' test_data/python/input/$d.metadata.tsv`
-  It keeps a row with any named rank below the domain: a partly placeholder row would now stop the run, as every
-  rank of a prior row must be named (none of r232's rows is one).
+| Datasets | Prior release | File (ar53 and bac120 joined, so one file serves both domains) |
+| --- | --- | --- |
+| `r226_ar53`, `r226_bac120` | r220 | `cat ar53_taxonomy_r220.tsv bac120_taxonomy_r220.tsv` (596,859 rows) |
+| `r232_ar53`, `r232_bac120` | r226 | `cat ar53_taxonomy_r226.tsv bac120_taxonomy_r226.tsv` (732,475 rows) |
 
-All four of these, `test_data/curated/*.tsv` and `example/gtdb_r232_bac120_taxonomy.tsv` load as priors (checked on
-2026-11-23). `test_data/r237/final_taxonomy.tsv` does not (5,070 rows with `g__;s__{unresolved} …`, and 605 whose
+The `{ar53,bac120}_taxonomy_r{220,226,232}.tsv` files are the official GTDB releases (accession,
+then the taxonomy). On the user's Mac they are in `wip/priors_v3/` (git-ignored, supplied by the
+user on 2026-11-23); on another machine, get them from the GTDB release downloads. The joined files
+used for the results below are `wip/bench_v3/priors/prior_r220.tsv` and `prior_r226.tsv`. Genomes
+that aren't on the tree are ignored, apart from the report's set of prior taxa.
+
+Checked on 2026-11-23 (genome IDs made canonical):
+
+- `test_data/curated/<d>.tsv` is the official release of its dataset, row for row (all four).
+- The r226 metadata's `taxonomy` column (596,626 named rows) equals r220 on every row, and the r232
+  metadata's `gtdb_taxonomy` (731,926 named rows, placeholder-only rows left out) equals r226 on
+  every row. The official files add only off-tree genomes (233 in r220, 549 in r226), so they give
+  every tree genome the same prior as those columns did, and the same output.
+- The joined files load as `--prior-taxonomy` (seven named ranks per row, binomial species in the
+  row's genus).
+
+`example/gtdb_r232_bac120_taxonomy.tsv` and `test_data/curated/*.tsv` also load as priors.
+`test_data/r237/final_taxonomy.tsv` does not (5,070 rows with `g__;s__{unresolved} …`, and 605 whose
 species is in another genus), but it is the curated truth of r237, not a prior. Requiring the full
-prior row (`TODO.md` Job 23) left the output with these four priors byte-identical, and the curator
-workload below at 8,547.
-
-These give the prior files that the [curator workload](#curator-workload-at-be526b9) was measured
-with.
+prior row (`TODO.md` Job 23) left the output byte-identical.
 
 `example/gtdb_r232_bac120_taxonomy.tsv` (the prior for the r237 example) is cut down so that it can
 be pushed to GitHub (the full file is 126 MB, over its 100 MB limit). It keeps every row whose
@@ -133,6 +152,13 @@ tree (`read_metadata`, `src/main.rs`). The output is byte-identical to that of t
 - The r232 runs were made on a server, from `/srv/projects/gtdb/release232/...` paths (see the
   first line of each log). They are assumed to be the same files as the local ones, which has not
   been checked.
+- **The stored r226 outputs had no prior** (see [Python inputs](#python-inputs)), so they are not a
+  fair comparison with Rust run with `--prior-taxonomy`. Re-run Python with the prior instead (see
+  [Running the Python version](#running-the-python-version)). Outputs re-run that way, with the
+  priors above, are in `wip/bench_v3/<d>/python` (`main` at `a105c3b`). For r232 they give the same
+  taxonomy as the stored runs for every genome (only the tree's formatting differs), so the
+  placeholder-only rows made no difference. For r226 they differ in 65 / 1,511 genome-ranks
+  (r226_ar53 / r226_bac120), from the r220 prior.
 
 ## Running the benchmark
 
@@ -164,7 +190,9 @@ The first sanity check in `python_comparison/summary.md` must say that the topol
 trees and the taxa of the converted input match the input.
 
 The script doesn't pass `--prior-taxonomy` yet, so it measures curatomatic without downward
-refinement, and it doesn't score the curator workload (`TODO.md` Job 18).
+refinement, it compares against the stored Python outputs (r226 without a prior), and it doesn't
+score the curator workload (`TODO.md` Job 18). Until then, run the
+[curator workload benchmark](#curator-workload-at-3dc483a) by hand.
 
 ### Results at `b44e6b6`
 
@@ -197,19 +225,107 @@ Per cent of tree genomes whose taxon is the truth's (`pct_correct` in `scores.ts
   taxa only Python made (15 / 578 / 245 / 3,120), for r226_ar53 / r226_bac120 / r232_ar53 /
   r232_bac120.
 
-### Curator workload at `be526b9`
+### Curator workload at `3dc483a`
 
 The user's metric of success is the curator's manual work, not the genome-weighted scores above.
 It counts, per rank p to g and with each taxon counted once however many genomes it has, the
-operations a curator needs to turn an output into the truth: `move` (a truth taxon whose name is in
-the output, on a different genome set), `create` (a truth taxon with no counterpart, including
-ranks left empty) and `delete` (an output taxon with no counterpart in the truth). Renames are left
-out: curatomatic never edits a name. The scorer is `wip/scripts/workload.py`, which is not
-committed yet (`TODO.md` Job 18).
+operations a curator needs to turn an output into the truth:
 
-Operations (move / create / delete), with the prior files [above](#prior-taxonomy---prior-taxonomy):
+| Action | Meaning |
+| --- | --- |
+| `move` | A truth taxon whose name is in the output, on a different genome set (move, extend or shrink it). |
+| `create` | A truth taxon with no counterpart in the output, including ranks left empty. |
+| `delete` | An output taxon with no counterpart in the truth (e.g. a wrong novel taxon). |
+| `resolve` | Python only: a taxon on a node with another taxon of its rank. |
+| `rename` | A truth taxon whose best match is an unpaired output taxon of another name. **Left out of the total**: curatomatic never edits a name. |
 
-| Dataset | Input | Python | `32d3350` | Jobs 10 to 13 (`2622c2f`) | `be526b9` (Jobs 10 to 13 and 15) |
+`added` is the work a version introduced: operations it needs that the input didn't. The scorer is
+`wip/scripts/workload.py` (its docstring defines each metric), which is not committed yet
+(`TODO.md` Job 18).
+
+#### Running it
+
+Until Job 18 puts this in `scripts/benchmark.sh`, the steps are (all four datasets, both versions
+with `--min-bs 95.0` and the [priors above](#prior-taxonomy---prior-taxonomy)):
+
+1. Convert the Python inputs to the Rust inputs (`scripts/convert_python_inputs.py`, see
+   [Rust inputs](#rust-inputs)) into `<run>/<d>/input`.
+2. Run Rust with `--prior-taxonomy <prior>` (see [Running the Rust version](#running-the-rust-version))
+   into `<run>/<d>/rust`.
+3. Make the Python metadata from the same prior (`wip/scripts/make_py_meta.py`, see
+   [Python inputs](#python-inputs)) and run Python with it (see
+   [Running the Python version](#running-the-python-version)) into `<run>/<d>/python`.
+4. `python3 -I wip/scripts/workload.py <run> > <run>/workload.tsv`. The baseline (the input, no
+   curatomatic) is read from `wip/runs/head/<d>/input`, which equals step 1's output.
+
+The 2026-11-23 run is `wip/bench_v3/` (`wip/task.md` has its log): Rust `825c317` in
+`<d>/rust`, Rust `3dc483a` in `head_3dc483a/<d>/rust`, Python `a105c3b` in `<d>/python`.
+
+#### Results (2026-11-23)
+
+Operations, renames excluded (move / create / delete / resolve):
+
+| Dataset | Input | Python `main` (`a105c3b`) | Rust `3dc483a` |
+| --- | ---: | ---: | ---: |
+| r226_ar53 | 469 (108 / 337 / 24 / 0) | 172 (74 / 58 / 40 / 0) | 179 (77 / 62 / 40 / 0) |
+| r226_bac120 | 7,621 (1,726 / 5,449 / 446 / 0) | 2,663 (1,035 / 601 / 1,019 / 8) | 2,755 (1,094 / 733 / 928 / 0) |
+| r232_ar53 | 1,237 (296 / 822 / 119 / 0) | 470 (168 / 66 / 236 / 0) | 482 (172 / 76 / 234 / 0) |
+| r232_bac120 | 13,580 (3,060 / 9,400 / 1,120 / 0) | 5,030 (1,844 / 1,062 / 2,107 / 17) | 5,127 (1,880 / 1,248 / 1,999 / 0) |
+| **Total** | **22,907** | **8,335** | **8,543** |
+
+Totals over the four datasets, by action:
+
+| Version | Move | Create | Delete | Resolve | Total | Rename (not counted) | Added |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Input | 5,190 | 16,008 | 1,709 | 0 | 22,907 | 839 | – |
+| Python `a105c3b` | 3,121 | 1,787 | 3,402 | 25 | 8,335 | 1,030 | 2,094 |
+| Rust `3dc483a` | 3,223 | 2,119 | 3,201 | 0 | 8,543 | 982 | 1,816 |
+
+- With the same prior, Python needs 208 fewer operations than Rust. The difference is in every
+  dataset, and is mostly at genus. Rust needs more creates (it leaves more ranks empty) and fewer
+  deletes (it makes fewer wrong taxa), and adds less work than Python.
+- `825c317` (before Job 14) is the same apart from r226_bac120 2,758 (1,094 / 733 / 931) and
+  r232_bac120 5,128 (1,880 / 1,248 / 2,000): 8,547 in total.
+- Python runtime: 14 s / 209 s / 22 s / 2,315 s (r226_ar53 / r226_bac120 / r232_ar53 /
+  r232_bac120). Rust: 11 to 23 s each.
+
+#### Effect of each rule (ablation at `825c317`)
+
+`825c317` with the `src` changes of one job reversed (tests left out; for Job 15, `src/taxon.rs`
+kept as it is, since the prior reader uses `genus_of_species`, built with
+`RUSTFLAGS="-A dead_code"`), with the same inputs and priors. Binaries and outputs are in
+`wip/bench_v3/ablation/`.
+
+| Version | r226_ar53 | r226_bac120 | r232_ar53 | r232_bac120 | Total | vs `825c317` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `825c317` | 179 | 2,758 | 482 | 5,128 | 8,547 | 0 |
+| without Job 10 (P1, `9a6125a`) | 179 | 2,755 | 482 | 5,128 | 8,544 | −3 |
+| without Job 11 (P2, `fd77429`) | 217 | 3,442 | 568 | 6,513 | 10,740 | +2,193 |
+| without Job 12 (P3, `7513c7d`) | 179 | 2,788 | 483 | 5,392 | 8,842 | +295 |
+| without Job 15 (`f439325`, `e073a16`) | 173 | 2,656 | 474 | 5,088 | 8,391 | −156 |
+| without Jobs 10, 11, 12 and 15 | 214 | 3,423 | 565 | 6,702 | 10,904 | +2,357 |
+| Python `a105c3b` | 172 | 2,663 | 470 | 5,030 | 8,335 | −212 |
+
+- Without all four, the total equals the earlier run of `32d3350` with the prior (`wip/runs/p4`),
+  which checks the reversal.
+- Jobs 11 and 12 account for nearly all of Rust's gain. Job 15 costs 156 (accepted by the user,
+  see below), Job 10 costs 3.
+- Without Job 15, Rust beats Python in r226_bac120 (2,656 vs 2,663) and is 1 behind in r226_ar53.
+  The rest of the gap (about 56, all in r232) is not from these rules.
+- By action (move / create / delete), without Job 11: 3,178 / 5,033 / 2,529; without Job 12:
+  3,210 / 2,484 / 3,148; without Job 15: 3,145 / 1,993 / 3,253; without all four: 3,088 / 5,309 /
+  2,507.
+
+#### Earlier results (Python column unfair)
+
+The table below compares Rust with the **stored** Python outputs, whose r226 runs had no prior
+(see [Stored Python outputs](#stored-python-outputs)), so its Python column is too high for r226
+(248 and 3,860, against 172 and 2,663 with the prior). Its Rust columns are with the priors from
+the metadata, which give the same output as the priors above.
+
+Operations (move / create / delete):
+
+| Dataset | Input | Python (stored) | `32d3350` | Jobs 10 to 13 (`2622c2f`) | `be526b9` (Jobs 10 to 13 and 15) |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | r226_ar53 | 469 (108 / 337 / 24) | 248 (105 / 104 / 39) | 263 (105 / 119 / 39) | 173 | 179 |
 | r226_bac120 | 7,621 (1,726 / 5,449 / 446) | 3,860 (1,570 / 1,431 / 851) | 4,103 (1,573 / 1,837 / 693) | 2,656 | 2,758 |
@@ -233,10 +349,11 @@ one `unresolvable` report row, and every other output is unchanged. With the `wi
 priors, the total falls from 8,547 to 8,543 (r226_bac120 2,758 to 2,755, r232_bac120 5,128 to
 5,127): the sentinels were taxa to delete.
 
-Caveat: the r232 prior is the curated r226, and the r232 truth was probably curated from the Python
-output, which made the same moves down (146 / 1,451 taxa, equal to Rust's). So r232 favours Job 13.
-r226 (prior probably r220; Python made no moves down there) is the less biased evidence: Jobs 10 to
-13 save 90 operations in r226_ar53 and 1,447 in r226_bac120.
+Caveat: the r232 truth was probably curated from the stored Python output, which made the same
+moves down as Rust (146 / 1,451 taxa), so r232 favours Python and Job 13. r226 (prior r220) is the
+less biased evidence: the stored r226 Python runs had no prior, so no Python suggestion of a move
+down can have reached its truth. Jobs 10 to 13 save 90 operations in r226_ar53 and 1,447 in
+r226_bac120.
 
 ## Running the Rust version
 
@@ -247,9 +364,13 @@ cargo build --release
 d=r226_ar53
 ./target/release/curatomatic --min-bs 95.0 \
     --taxonomy <in>/$d.taxonomy.tsv \
+    --prior-taxonomy <prior> \
     --novel-name-file <in>/$d.metadata.tsv --novel-name-column ncbi_wgs_formatted \
     <in>/$d.decorated.scaled.red.tree <in>/$d.median_red.tsv <out_dir>
 ```
+
+`<prior>` is the previous release (`prior_r220.tsv` for r226, `prior_r226.tsv` for r232, see
+[Prior taxonomy](#prior-taxonomy---prior-taxonomy)). Without it, no taxon is moved down.
 
 Each run takes a few seconds. The output directory must not exist (unless `--log debug`).
 
@@ -280,19 +401,25 @@ The Python implementation is on the `main` branch (`curatomatic/`). Its CLI need
 isn't installed. Rather than install it, export `main` and run its steps with a small driver; this
 reproduced the stored `r226_bac120` output byte for byte.
 
-**Environment:** the conda environment `general`, at `/home/aaron/.conda/envs/general/bin/python`.
-It has dendropy 5.1.3 and no typer. The shell's default `python` is the system one and has no
-dendropy. The sandbox can't read `~/.conda`, so these commands need the sandbox disabled. The user
-allows installing curatomatic's Python dependencies **only** if you are certain you are in the
-`general` environment, but the driver makes that unnecessary.
+**Environment:** it depends on the machine. The shell's default `python` has no dendropy.
+
+- The user's Mac: `/Users/aaron/miniforge3/envs/curatomatic/bin/python` (dendropy 5.0.8, Python
+  3.12). The sandbox can read it.
+- The Linux machine: the conda environment `general`, at
+  `/home/aaron/.conda/envs/general/bin/python` (dendropy 5.1.3, no typer). The sandbox can't read
+  `~/.conda`, so the commands need the sandbox disabled. The user allows installing curatomatic's
+  Python dependencies **only** if you are certain you are in the `general` environment, but the
+  driver makes that unnecessary.
 
 ```shell
-PY=/home/aaron/.conda/envs/general/bin/python
+PY=<python with dendropy>
 PYDIR=<scratch dir>/pymain                 # a fresh, empty directory
 git archive main curatomatic | tar -x -C $PYDIR
 # write the driver below to $PYDIR/run_py.py, then, from inside $PYDIR:
 cd $PYDIR && $PY run_py.py <tree> <dict> <out_dir> <metadata>
 ```
+
+`<metadata>` must carry the prior in `gtdb_taxonomy` (see [Python inputs](#python-inputs)).
 
 `run_py.py`, the body of `run()` in `main:curatomatic/__main__.py` without typer, with
 `--min-bs 95.0`:
@@ -330,7 +457,12 @@ tree.remove_red_labels()
 tree.to_file(out_dir / f'{tree_p.stem}.curatomatic.tree')
 ```
 
-- Runtime: about 70 s for `r226_bac120`. `r232_bac120` is larger.
+- Runtime on the user's Mac, with the prior: 14 s / 209 s / 22 s / 2,315 s (r226_ar53 /
+  r226_bac120 / r232_ar53 / r232_bac120); about 70 s for `r226_bac120` on the Linux machine, without
+  the prior. After the genus step, `fill_in_missing_ranks` writes nothing to the log (about 2 min
+  in r226_bac120, about 36 min in r232_bac120), so a silent log doesn't mean it has stopped: check
+  with `ps -axo pid,etime,%cpu,rss,command | grep '[r]un_py.py'` (about 100 % CPU and 4 GB for
+  r232_bac120). The sandbox hides the process, so the user must run it.
 - The driver writes the tree and `curatomatic.log` only, like the original. The stored
   `.taxonomy.tsv` files were made separately, and are the **raw path** (every taxon on the path
   joined with `; `, gaps and repeats kept), so they are not comparable with the truth as is.
@@ -396,7 +528,8 @@ Changes since the table was made:
 
 - **L2**: with `--prior-taxonomy` (Job 13, `2622c2f`), Rust moves taxa down: 37 / 816 / 146 /
   1,451 taxa with Jobs 10 to 13. The r232 counts equal Python's. Without it, Rust still makes no
-  moves down.
+  moves down. The "None in r226" of the table is only because the stored r226 Python runs had no
+  prior: given the r220 prior, Python moves taxa down in r226 too.
 - **L7**: Jobs 11 and 12 (`fd77429`, `7513c7d`) removed both causes in the row: a novel genus is
   now created above a named species, and skipping a rank no longer stops the lower ranks being
   filled. Rust still makes no novel taxon above a named taxon of a lower rank, other than a species.
@@ -407,7 +540,8 @@ Changes since the table was made:
 
 - Novel taxa can break rank order (`TODO.md` Job 16, needs approval).
 - Rewritten labels round the RED and bootstrap (`TODO.md` Job 17).
-- `scripts/benchmark.sh` doesn't use a prior or score the curator workload (`TODO.md` Job 18).
+- `scripts/benchmark.sh` doesn't use a prior, re-run Python with it, or score the curator workload
+  (`TODO.md` Job 18).
 
 Settled: L6 was fixed in `cd09ece`. Since then every named taxon of a `--taxonomy` row is on the
 genome's path or assigned to its leaf, and anything else fails the run, so the end-of-run check

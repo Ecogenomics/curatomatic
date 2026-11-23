@@ -53,9 +53,10 @@ changed is where the prior taxonomy comes from.
   disabled."* `--taxonomy` is never the prior: it is the decoration of the same tree, so no taxon
   could ever move down.
 
-The r226 test data's `metadata.tsv` has a `taxonomy` column, not `gtdb_taxonomy`, so the r226
-Python reference outputs did no downward refinement. The r232 metadata has `gtdb_taxonomy` (the
-curated r226 taxonomy), so the r232 Python outputs did move taxa down.
+The r226 test data's `metadata.tsv` has a `taxonomy` column (r220), not `gtdb_taxonomy`, so the
+stored r226 Python reference outputs did no downward refinement. The r232 metadata has
+`gtdb_taxonomy` (r226), so the r232 Python outputs did move taxa down. To compare the two versions,
+give both the same prior from the previous release (`docs/testing.md`, "Prior taxonomy").
 
 ### L3. The species placeholder is not rewritten
 
