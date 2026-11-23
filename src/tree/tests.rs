@@ -320,7 +320,7 @@ fn the_walk_stops_at_the_first_node_with_a_higher_rank_below() {
 
 #[test]
 fn nested_inside_finds_the_closest_named_ancestor_of_the_same_rank() {
-    let tree = tree(&nested_tree("100.0:g__A; g__")).unwrap();
+    let tree = tree(&nested_tree("100.0:g__A")).unwrap();
     let b = tree
         .newick
         .ids()
@@ -548,7 +548,7 @@ fn an_unresolved_species_reaches_the_leaf_unchanged() {
 #[test]
 fn a_leaf_with_no_taxon_on_its_path_gets_its_whole_row() {
     let (tree, _) = assigned(
-        "((G1:0.1,G2:0.1)'100:red=0.5':0.1)'d__|red=0.0';",
+        "((G1:0.1,G2:0.1)'100:red=0.5':0.1)'100|red=0.0';",
         "G1\td__D;p__P;c__C;o__O;f__F;g__G;s__G one\nG2\td__D2;s__H two\n",
     );
     assert_eq!(
@@ -598,7 +598,7 @@ fn a_row_without_the_nearest_taxon_on_the_tree_is_an_error() {
 
 #[test]
 fn a_row_missing_one_of_the_nearest_nodes_taxa_is_an_error() {
-    let newick = "((G1:0.1,G2:0.1)'100:p__A;p__B|red=0.3':0.1)'d__|red=0.0';";
+    let newick = "((G1:0.1,G2:0.1)'100:p__A;p__B|red=0.3':0.1)'100|red=0.0';";
     let taxonomy = "G1\td__;p__A;s__X one\nG2\td__;p__A;p__B;s__X two\n";
     assert_eq!(
         conflict(newick, taxonomy),
@@ -846,7 +846,7 @@ fn leaf_taxonomies_read_the_ranks_in_order_from_the_leaf_and_its_ancestors() {
 fn leaf_taxonomies_use_the_nearest_of_two_nested_taxa() {
     let tree = tree_with_leaf_taxa(
         "(((G1:0.1,G2:0.1)'100:g__Inner|red=0.95':0.1,G3:0.1)'100:g__Outer|red=0.9':0.1)\
-         'd__D; g__|red=0.0';",
+         'd__D|red=0.0';",
         &[(0, "s__A one"), (1, "s__A two"), (3, "s__B three")],
     )
     .unwrap();
@@ -1138,7 +1138,7 @@ fn a_genome_that_is_not_skipped_still_gets_its_lower_ranks() {
 #[test]
 fn taxon_counts_include_the_taxa_of_internal_nodes_and_leaves() {
     let tree = tree_with_leaf_taxa(
-        "((G1:0.1,G2:0.1)'100:f__F; g__A|red=0.9':0.1,G3:0.1)'d__D; p__|red=0.0';",
+        "((G1:0.1,G2:0.1)'100:f__F; g__A|red=0.9':0.1,G3:0.1)'d__D|red=0.0';",
         &[(0, "s__A one"), (1, "s__A two"), (3, "g__B; s__B three")],
     )
     .unwrap();

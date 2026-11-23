@@ -34,7 +34,8 @@ impl TaxonomyFile {
     ///
     /// Genome IDs are made canonical (see [`gid_to_canonical`]). Blank lines are skipped. A line
     /// without exactly two columns, an invalid taxonomy and a genome given twice are errors.
-    /// Placeholders (e.g. `g__`) are kept as read, they are not names and are never assigned.
+    /// Placeholders (e.g. `g__`) are not names: they are stripped, so each row holds named taxa
+    /// only. A rank that holds both a placeholder and a name (`g__;g__X`) is an error.
     pub(crate) fn from_reader(reader: impl BufRead, path: &Path) -> CuratomaticResult<Self> {
         let error = |line: usize, message: String| CuratomaticError::TaxonomyFile {
             path: path.display().to_string(),
@@ -59,8 +60,7 @@ impl TaxonomyFile {
                 ));
             };
             let gid = gid_to_canonical(gid.trim());
-            let taxonomy = Taxonomy::from_string(taxonomy)
-                .map_err(|e| error(line_no, format!("invalid taxonomy: {e}")))?;
+            let taxonomy = parse_row(taxonomy).map_err(|message| error(line_no, message))?;
             if rows.insert(gid.clone(), taxonomy).is_some() {
                 return Err(error(line_no, format!("{gid} is given more than once")));
             }
@@ -97,6 +97,37 @@ impl TaxonomyFile {
             .collect();
         (missing, extra)
     }
+}
+
+/// Parse the taxonomy string of a row, stripping its placeholders (see
+/// [`TaxonomyFile::from_reader`]). The error is the message for the line.
+fn parse_row(tax_string: &str) -> Result<Taxonomy, String> {
+    let mut taxa = Vec::new();
+    for taxon in tax_string.split(TAXON_SEPARATOR) {
+        let taxon = Taxon::new(taxon.trim());
+        let rank = taxon.rank().map_err(|e| format!("invalid taxonomy: {e}"))?;
+        taxa.push((rank, taxon));
+    }
+
+    // Checked before stripping, which would hide the placeholder.
+    for (rank, placeholder) in taxa.iter().filter(|(_, taxon)| !taxon.is_named()) {
+        if let Some((_, name)) = taxa
+            .iter()
+            .find(|(other, taxon)| other == rank && taxon.is_named())
+        {
+            return Err(format!(
+                "the {} rank holds both the placeholder {placeholder} and the name {name}",
+                rank.name().to_lowercase()
+            ));
+        }
+    }
+
+    let mut out = Taxonomy::default();
+    for (_, taxon) in taxa.into_iter().filter(|(_, taxon)| taxon.is_named()) {
+        out.add_taxon(taxon)
+            .map_err(|e| format!("invalid taxonomy: {e}"))?;
+    }
+    Ok(out)
 }
 
 /// Format rows in the format of the taxonomy file: the genome ID, a tab, and the taxa joined with

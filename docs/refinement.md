@@ -20,7 +20,7 @@ bootstrap values or its RED values, and it never creates, renames or deletes a t
 | RED delta | `|median RED of the rank − RED of the node|`. Smaller is better. |
 | `min_bs` | The `--min-bs` argument (default `95.0`). A node is *supported* if its bootstrap is `≥ min_bs`. |
 | Original node | The node the taxon is on when the rank's pass starts. |
-| Named taxon | A taxon with a name after its prefix (`g__Escherichia`). A bare prefix (`g__`) is a placeholder, and the rules below that say "named" ignore placeholders. |
+| Named taxon | A taxon with a name after its prefix (`g__Escherichia`). A bare prefix (`g__`) is a placeholder. Placeholders are banned on the tree and stripped from the input files (see [Input preparation](#input-preparation)), so every taxon on the tree is named. |
 | Prior taxonomy | The taxonomy of each genome in the `--prior-taxonomy` file (a previous release). Only used for moving labels down (and by the report). |
 
 ## Order of processing
@@ -207,7 +207,7 @@ These are checked during or after the refinement, and break the run if violated:
   named taxa on the tree are compared with those after the leaf assignment, counting the nodes
   that hold each one. Every taxon must still be on as many nodes as before (moved, not removed or
   copied), and with the same text. Every other taxon must be a novel taxon that does not reuse an
-  existing name. Placeholders (e.g. `g__`) are not counted. A violation fails the run with an
+  existing name. A violation fails the run with an
   error that lists each taxon that was removed, copied, reused or gained.
 - The label of a leaf is never changed (`NewickTree::set_internal_label` refuses a leaf): the
   output tree labels each leaf exactly as it was read. The taxa held by a leaf are kept on its
@@ -230,6 +230,13 @@ Before refinement, when the tree is read:
   (`gFoo`, `g_Foo`, `g___Foo`, `g__ Foo`) is `InvalidTaxon`. Both stop the run. This is checked by
   `Rank::split_taxon` (`src/rank.rs`), which every taxon passes through on its way into a
   `Taxonomy`. A bare prefix (`g__`) is a placeholder: `Taxon::is_named` is false for it.
+- A placeholder is never held by a `Taxonomy` (`Taxonomy::add_taxon` refuses one with
+  `Placeholder`). A placeholder in a node label of the tree stops the run (`PlaceholderOnTree`,
+  naming the label): `100:g__|RED=0.9`, `100:f__F;g__|RED=0.9` and `d__|RED=0.0` are errors. In
+  a row of `--taxonomy` or `--prior-taxonomy`, a rank that holds both a placeholder and a name
+  (`g__;g__X`) is a `TaxonomyFile` error on that line; otherwise the placeholders are stripped,
+  so the row holds named taxa only. A row whose species is a placeholder has no species, and is
+  caught by the leaf checks below.
 - If `--taxonomy` is given, every leaf is given the taxa the tree can't hold, before anything else
   runs (`Tree::assign_leaf_taxonomy`). The file holds what the dummy nodes of the old trees held:
   each row is the genome's full taxonomy, the taxa on its path plus its own.
@@ -241,8 +248,8 @@ Before refinement, when the tree is read:
     taxon in it says nothing. If every taxon is on the path (an old style tree, with the dummy
     nodes still on it), the leaf gets nothing.
   - The taxa already on the tree are never changed.
-  - Placeholders (`g__`) are never assigned. `s__{unresolved} <name>` species are names, and are
-    assigned as read.
+  - `s__{unresolved} <name>` species are names, and are assigned as read. There are no
+    placeholders to assign: they were stripped from the rows.
   - A taxon to assign that is already elsewhere on the tree, or that more than one leaf would get,
     is an error (`TaxonomyFileConflict`). Nothing is skipped silently.
   - A leaf whose genome is not in the file is an error. A genome in the file that is not on the

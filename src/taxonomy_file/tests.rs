@@ -25,11 +25,44 @@ fn genome_ids_are_made_canonical_like_the_metadata() {
 }
 
 #[test]
-fn placeholders_and_unresolved_species_are_kept_as_read() {
+fn placeholders_are_stripped_from_a_row() {
+    let file = read("G1\td__B;p__;c__;o__;f__;g__;s__X y\n").unwrap();
+    assert_eq!(
+        file.get(&GenomeId::new("G1")).unwrap(),
+        &Taxonomy::from_string("d__B;s__X y").unwrap()
+    );
+}
+
+#[test]
+fn a_row_of_placeholders_only_is_empty() {
+    // A missing domain or species is caught later, by the checks on the leaves.
+    let file = read("G1\td__;p__;g__;g__;s__\n").unwrap();
+    assert_eq!(
+        file.get(&GenomeId::new("G1")).unwrap(),
+        &Taxonomy::default()
+    );
+}
+
+#[test]
+fn unresolved_species_are_kept_as_read() {
     let file = read("G1\td__Bacteria;p__;g__;s__{unresolved} sp053939565\n").unwrap();
     let taxonomy = file.get(&GenomeId::new("G1")).unwrap();
-    assert_eq!(taxonomy.p, vec![Taxon::new("p__")]);
     assert_eq!(taxonomy.s, vec![Taxon::new("s__{unresolved} sp053939565")]);
+}
+
+#[test]
+fn a_rank_with_a_placeholder_and_a_name_is_an_error() {
+    for row in ["d__B;g__;g__X;s__X y", "d__B;g__X;g__;s__X y"] {
+        let contents = format!("G1\td__B;s__A b\nG2\t{row}\n");
+        assert!(
+            matches!(
+                read(&contents),
+                Err(CuratomaticError::TaxonomyFile { line: 2, ref message, .. })
+                    if message.contains("g__X")
+            ),
+            "{row}"
+        );
+    }
 }
 
 #[test]

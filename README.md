@@ -84,8 +84,12 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
 - Each taxon is a rank prefix (`d`, `p`, `c`, `o`, `f`, `g` or `s`), then `__`, then its name: `g__Escherichia`,
   `s__Escherichia coli`, `g__Luteimonas_D`, `g__CAG-698`, `s__{unresolved} sp1`. The name must not start with `_` or
   whitespace, and must not end with whitespace (`gFoo`, `g_Foo`, `g___Foo` and `g__ Foo` are errors). Spaces around a
-  `;` are ignored. A bare prefix (`g__`) is a placeholder, not a name. The same format applies to the taxa in the
-  tree's labels and in `--prior-taxonomy`; a malformed taxon stops the run.
+  `;` are ignored. The same format applies to the taxa in the tree's labels and in `--prior-taxonomy`; a malformed
+  taxon stops the run.
+- A bare prefix (`g__`) is a placeholder, not a name. Placeholders are stripped from each row as it is read, so
+  `d__Bacteria;p__;c__;o__;f__;g__;s__Escherichia coli` holds only the domain and species. A rank that holds both a
+  placeholder and a name (`g__;g__Escherichia`) is an error. The same applies to `--prior-taxonomy`. A placeholder in
+  a label of the tree (e.g. `100:g__|RED=0.9`) is an error that stops the run.
 - Genome IDs are matched to the tree the same way as the novel name file (`GB_GCA_003697165.1` is `G003697165`).
 - The file holds what the dummy nodes of the old trees held. Each row is the full taxonomy of the genome: the taxa on
   its path in the tree, plus its own. Each leaf is given every named taxon of its row that is **not on its path** in
@@ -95,11 +99,10 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
   never changed.
 - The nearest taxon above each leaf on the tree must be in its row, otherwise the tree and the file disagree and the
   run fails.
-- A placeholder (e.g. `g__`) is not a name, and is never assigned. A species such as `s__{unresolved} sp053939565` is
-  a name, and is kept exactly as read.
+- A species such as `s__{unresolved} sp053939565` is a name, and is kept exactly as read.
 - A taxon to assign that is already elsewhere on the tree, or that more than one leaf would get, is an error.
 - Every leaf must hold its own named species once the file is assigned: a row whose species is a placeholder
-  (`s__`), or a species on an internal node of the tree, is an error. This is checked again at the end of the run,
+  (`s__`, stripped, so the row has no species), or a species on an internal node of the tree, is an error. This is checked again at the end of the run,
   before any output is written.
 - A genome on the tree that is not in the file is an error. A genome in the file that is not on the tree is a warning.
 - A line without two columns, an invalid taxonomy, or a genome given twice is an error.

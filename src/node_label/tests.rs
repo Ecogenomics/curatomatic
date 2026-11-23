@@ -298,3 +298,16 @@ fn a_node_label_with_a_malformed_taxon_is_an_error() {
         Err(CuratomaticError::InvalidTaxon("gFoo".to_owned()))
     );
 }
+
+#[test]
+fn a_placeholder_on_a_tree_label_is_an_error() {
+    for label in ["100:g__|RED=0.9", "100:f__F;g__|RED=0.9", "d__|RED=0.0"] {
+        assert_eq!(
+            internal(label),
+            Err(CuratomaticError::PlaceholderOnTree(label.to_owned())),
+            "{label}"
+        );
+    }
+    // A label holding only named taxa is fine.
+    assert!(internal("d__Bacteria|RED=0.000").is_ok());
+}

@@ -40,9 +40,16 @@ or whitespace, and must not end with whitespace. Anything else stops the run (`C
 `UnknownRank` for an unknown prefix such as `x__Foo`). This is checked by `Rank::split_taxon` (`src/rank.rs`), which
 every taxon passes through on its way into a `Taxonomy`, from the tree, the taxonomy files and novel naming.
 
-Some taxa within the tree may have no name assigned to them, they are given in the placeholder format (prefix only, i.e.
-`p__`, `c__`, `o__`, `f__`, `g__`).
-These can be refined by curatomatic at will.
+A placeholder is a rank prefix with no name (`p__`, `c__`, `o__`, `f__`, `g__`). It is not a name, and is never held
+in a `Taxonomy`: `Taxonomy::add_taxon` (`src/taxonomy.rs`) refuses one with `CuratomaticError::Placeholder`.
+
+- **Tree:** a placeholder in any node label stops the run (`CuratomaticError::PlaceholderOnTree`, naming the label).
+  `d__Bacteria|RED=0.000` is fine; `100:g__|RED=0.9`, `100:f__F;g__|RED=0.9` and `d__|RED=0.0` are not. A rank
+  with no named taxon on a genome's path is simply missing, and can be filled with a novel taxon.
+- **Taxonomy files** (`--taxonomy` and `--prior-taxonomy`, read by `TaxonomyFile::from_reader`): a rank of a row that
+  holds both a placeholder and a name (`g__;g__X`) is a `CuratomaticError::TaxonomyFile` error on that line. Otherwise
+  the placeholders are stripped, so each row holds named taxa only.
+- The output taxonomy files still write a placeholder for a rank with no named taxon (see TODO Job 22).
 
 The domain and species never have a placeholder: every genome always has a named domain (`d__`), and its species
 (`s__`) is always given in the taxonomy file.
@@ -93,7 +100,7 @@ Test data are available here:
 - Curatomatic must never change the structure of the tree, its bootstrap values, or RED values: the only changes to
   the final tree are the taxon labels at each node (which form the taxonomy).
 - Curatomatic can only ever move taxa or create novel taxa. It never removes a taxon, and never edits the text of one.
-  Placeholders (e.g. `g__`) are not names, and are exempt. This is checked at the end of every run, before any output
+  This is checked at the end of every run, before any output
   is written, by `check_taxa_unchanged` (`src/main.rs`), which fails the run with `CuratomaticError::TaxaChanged`.
 - Tests live in a separate file, never inline: declare `#[cfg(test)] mod tests;` in `foo.rs` and put the tests in
   `foo/tests.rs` (see `src/taxonomy.rs`).

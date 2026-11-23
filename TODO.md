@@ -99,61 +99,9 @@ the unrounded RED? Either answer changes some outputs, so measure it on the four
    `docs/testing.md`.
 3. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload".
 
-## Job 20: No placeholders on the tree, and placeholders stripped from the input files
-
-**Status: approved** (decided with the user on 2026-11-23). Job 19, which it needed, is done.
-
-### Problem
-
-Placeholders (`p__`, `g__`, ...) are not names, but the code carries them around:
-
-- A placeholder in a tree label is accepted. None of the trees in `example/` or `test_data/` has one (checked
-  2026-11-23), but if one did: two nodes with the same placeholder fail to load with `NonUniqueTaxon`
-  (`Tree::get_taxon_labels` only exempts `UNRESOLVABLE`). Refinement would move a placeholder like a name. A
-  placeholder on a genome's path stops `Tree::get_leaf_nodes_missing_rank` from reporting that rank as missing. And
-  `check_taxa_unchanged` would not notice if one disappeared.
-- The rows of `--taxonomy` and `--prior-taxonomy` keep their placeholders. Every reader then filters them out again
-  with `Taxon::is_named`.
-
-### Rule
-
-- **Tree:** a placeholder in any node label is an error that stops the run (new error,
-  `CuratomaticError::PlaceholderOnTree`, naming the label). `d__Bacteria|RED=0.000` is fine; `100:g__|RED=0.9`,
-  `100:f__F;g__|RED=0.9` and `d__|RED=0.0` are not.
-- **Taxonomy files** (`--taxonomy` and `--prior-taxonomy`, both read by `TaxonomyFile::from_reader`): each row is
-  checked, then its placeholders are stripped:
-  1. A rank that holds both a placeholder and a name (`g__;g__X`) fails with a `TaxonomyFile` error on that line.
-     This must be checked before stripping.
-  2. The placeholders are removed, so the row's `Taxonomy` holds named taxa only. A row whose domain or species is a
-     placeholder is caught later, by the leaf checks (Job 21 and `Tree::check_leaves_have_species`).
-- Placeholders are not assigned to leaves. They already aren't, and with stripping there are none to assign.
-- Suggested approach: make it impossible for a `Taxonomy` to hold a placeholder (`Taxonomy::add_taxon` refuses one).
-  `TaxonomyFile` strips before building the row, and `NodeLabel` turns the refusal into `PlaceholderOnTree`. The
-  output rows built by `Tree::leaf_taxonomies` and `Tree::full_taxonomies` are `Vec<Taxon>`, not `Taxonomy`, so
-  they are not affected (see Job 22).
-- The `is_named` filters on tree taxa (`would_cause_conflicts`, `nested_inside` and others) become redundant. Keep
-  them unless removing one is trivial; this job must not change behaviour on valid input.
-
-### Tasks
-
-1. `src/node_label.rs`, `src/taxonomy_file.rs`, `src/taxonomy.rs`, `src/error.rs`.
-2. Tests:
-   - `src/node_label/tests.rs`: `a_placeholder_on_a_tree_label_is_an_error`, with the three labels above.
-   - `src/taxonomy_file/tests.rs`:
-     - `placeholders_are_stripped_from_a_row`: `G1\td__B;p__;c__;o__;f__;g__;s__X y` holds only `d__B` and
-       `s__X y`.
-     - `a_rank_with_a_placeholder_and_a_name_is_an_error`: `g__;g__X` gives `TaxonomyFile { line, .. }`.
-   - Update the existing tests that expect placeholders in a `TaxonomyFile` row (e.g. `src/taxonomy_file/tests.rs`
-     line 29).
-3. Docs: replace the AGENTS.md text saying the tree may hold placeholders (Taxonomy section) with this rule. Also
-   update "Input preparation" in `docs/refinement.md`, the taxonomy file format in `README.md`, and add an entry to
-   `docs/differences.md`.
-4. Check the r237 run and the round trip of the r226 and r232 Python trees (README, "Output") still pass with 0
-   differences.
-
 ## Job 21: Each genome's taxonomy on the tree must match its row, and include a named domain
 
-**Status: approved** (decided with the user on 2026-11-23, option A). Needs Job 20.
+**Status: approved** (decided with the user on 2026-11-23, option A). Job 20, which it needed, is done.
 
 ### Problem
 
@@ -265,7 +213,7 @@ genome has its species.
 2. Always create the novel taxon: drop the L7 skip, as Python did. This brings back the curator work L7 removed.
 3. Write a marked name for a curator to resolve, e.g. `o__UNRESOLVABLE`, the existing convention for a novel taxon
    that can't be named.
-4. Keep placeholders in the output only (they are banned on the tree and stripped from the inputs by Job 20).
+4. Keep placeholders in the output only (they are banned on the tree and stripped from the inputs, see `AGENTS.md`).
 
 Also decide the `--debug` taxonomy: `scripts/check_round_trip.py` compares it with the input file, which has
 placeholders, so the script must change if the debug output does.

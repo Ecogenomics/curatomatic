@@ -63,7 +63,8 @@ curated r226 taxonomy), so the r232 Python outputs did move taxa down.
   whole label set to `s__{unresolved} <gid>|RED=…`. Any other taxon on that node (e.g. `g__X; s__`)
   is **dropped**.
 - **Rust**: the tree is read as is. No input tree has a species placeholder any more: the species
-  of each genome comes from `--taxonomy`, and is put on the leaf (see L6).
+  of each genome comes from `--taxonomy`, and is put on the leaf (see L6). A placeholder of any
+  rank on the tree is an error (see [Placeholders](#placeholders)).
 
 ### L4. Naming novel taxa without a WGS prefix
 
@@ -185,6 +186,19 @@ a TSV converted from it.
 | Missing `accession` column | `KeyError` | `MissingColumn` error |
 
 The genome ID canonicalisation (`gid_to_canonical`) is the same in both versions.
+
+### Placeholders
+
+A placeholder is a rank prefix with no name (`g__`).
+
+| | Python | Rust |
+| --- | --- | --- |
+| In a tree label (`100:g__\|RED=0.9`) | Read as a taxon like any other, and refined like a name | `PlaceholderOnTree` error, naming the label |
+| In a row of `--taxonomy` / `--prior-taxonomy` | (no such file) | Stripped as the row is read |
+| A rank with both a placeholder and a name (`g__;g__X`) | (no such file) | `TaxonomyFile` error on that line |
+
+None of the trees in `example/` or `test_data/` has a placeholder on it, so this does not change
+their output.
 
 ### Command line
 

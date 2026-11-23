@@ -12,6 +12,12 @@ pub(crate) enum CuratomaticError {
     UnknownRank(String),
     /// The taxon is not in the `<prefix>__<name>` format (see [`crate::rank::Rank::split_taxon`]).
     InvalidTaxon(String),
+    /// A placeholder (a rank prefix with no name, e.g. `g__`) was added to a
+    /// [`crate::taxonomy::Taxonomy`], which only holds named taxa.
+    Placeholder(String),
+    /// A node label of the tree holds a placeholder (e.g. `100:g__|RED=0.9`): the tree only holds
+    /// named taxa.
+    PlaceholderOnTree(String),
     /// The taxon to remove is not present in the taxonomy.
     TaxonNotFound(String),
     /// A file could not be read.
@@ -67,6 +73,15 @@ impl fmt::Display for CuratomaticError {
                 "Invalid taxon {taxon:?}: expected a rank prefix, then `__`, then a name that \
                  does not start with `_` or whitespace and does not end with whitespace (e.g. \
                  g__Escherichia)"
+            ),
+            CuratomaticError::Placeholder(taxon) => write!(
+                f,
+                "Placeholder {taxon} is not a name: a taxonomy only holds named taxa"
+            ),
+            CuratomaticError::PlaceholderOnTree(label) => write!(
+                f,
+                "Node label {label} holds a placeholder (a rank prefix with no name, e.g. g__): \
+                 the tree only holds named taxa"
             ),
             CuratomaticError::TaxonNotFound(taxon) => write!(f, "Taxon not found: {taxon}"),
             CuratomaticError::Io(message) => write!(f, "I/O error: {message}"),

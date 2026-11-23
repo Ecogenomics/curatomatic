@@ -68,6 +68,20 @@ fn invalid_taxa() {
     );
 }
 
+#[test]
+fn a_placeholder_is_refused() {
+    let mut taxonomy = Taxonomy::default();
+    assert_eq!(
+        taxonomy.add_taxon(Taxon::new("g__")),
+        Err(CuratomaticError::Placeholder("g__".to_owned()))
+    );
+    assert_eq!(taxonomy, Taxonomy::default());
+    assert_eq!(
+        Taxonomy::from_string("d__Bacteria;p__"),
+        Err(CuratomaticError::Placeholder("p__".to_owned()))
+    );
+}
+
 // Expected values for the duplicate rank and ordering tests were produced by the Python
 // implementation (`curatomatic/model/taxonomy.py`, `Taxonomy.from_string` and `iter_ranks`):
 // `Taxonomy.from_string('p__B; g__Z; p__A; d__X; g__Y')` has `to_string()`

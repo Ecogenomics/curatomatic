@@ -16,7 +16,8 @@ const RED_KEYS: [&str; 2] = ["RED=", "red="];
 /// A leaf is labelled `<gid>[|RED=<red>]`, a leaf without a RED has a RED of [`RedValue::LEAF`].
 /// A leaf label never holds a taxonomy, and is never written: the taxa of a leaf are kept on
 /// [`crate::tree::Leaf`]. An internal node is labelled `[<bootstrap>][:][<taxonomy>]|RED=<red>`, with
-/// at least one of the bootstrap and taxonomy. The RED key may also be written `|red=`, or `:red=`
+/// at least one of the bootstrap and taxonomy. The taxonomy holds named taxa only: a placeholder
+/// (e.g. `100:g__|RED=0.9`) is [`CuratomaticError::PlaceholderOnTree`]. The RED key may also be written `|red=`, or `:red=`
 /// straight after a bootstrap (e.g. `100:red=0.889`).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NodeLabel {
@@ -39,10 +40,17 @@ impl NodeLabel {
 
         // Either the bootstrap, the taxonomy, or both.
         let (red, bootstrap, taxonomy) = parse_node_label(label)?;
+        let taxonomy = parse_taxonomy(taxonomy.unwrap_or_default()).map_err(|e| {
+            if matches!(e, CuratomaticError::Placeholder(_)) {
+                CuratomaticError::PlaceholderOnTree(label.to_owned())
+            } else {
+                e
+            }
+        })?;
         Ok(NodeLabel {
             red,
             bootstrap,
-            taxonomy: parse_taxonomy(taxonomy.unwrap_or_default())?,
+            taxonomy,
             gid: None,
         })
     }

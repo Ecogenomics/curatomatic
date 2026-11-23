@@ -9,7 +9,8 @@ use crate::taxon::Taxon;
 
 /// The taxa assigned to each rank.
 ///
-/// A rank may hold more than one taxon (e.g. when a name is shared), or none at all.
+/// A rank may hold more than one taxon (e.g. when a name is shared), or none at all. Only named
+/// taxa are held: a placeholder (e.g. `g__`) is refused by [`Taxonomy::add_taxon`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Taxonomy {
     pub(crate) d: Vec<Taxon>,
@@ -22,7 +23,8 @@ pub(crate) struct Taxonomy {
 }
 
 impl Taxonomy {
-    /// Parse a semicolon separated taxonomy string (e.g. `d__Bacteria; p__Pseudomonadota`).
+    /// Parse a semicolon separated taxonomy string (e.g. `d__Bacteria; p__Pseudomonadota`). A
+    /// placeholder is an error, see [`Taxonomy::add_taxon`].
     pub(crate) fn from_string(tax_string: &str) -> CuratomaticResult<Self> {
         let mut out = Taxonomy::default();
         for taxon in tax_string.split(';') {
@@ -48,9 +50,13 @@ impl Taxonomy {
         Ok(())
     }
 
-    /// Add a taxon to the rank indicated by its prefix.
+    /// Add a taxon to the rank indicated by its prefix. A malformed taxon is an error (see
+    /// [`Taxon::rank`]), and so is a placeholder ([`CuratomaticError::Placeholder`]).
     pub(crate) fn add_taxon(&mut self, taxon: Taxon) -> CuratomaticResult<()> {
         let rank = taxon.rank()?;
+        if !taxon.is_named() {
+            return Err(CuratomaticError::Placeholder(taxon.to_string()));
+        }
         self.rank_mut(rank).push(taxon);
         Ok(())
     }
