@@ -111,6 +111,12 @@ the tree are ignored):
 These give the prior files that the [curator workload](#curator-workload-at-be526b9) was measured
 with.
 
+`example/gtdb_r232_bac120_taxonomy.tsv` (the prior for the r237 example) is cut down so that it can
+be pushed to GitHub (the full file is 126 MB, over its 100 MB limit). It keeps every row whose
+genome is on `example/gtdb_r237_median_red_marked.nwk`, plus one row for each taxon that only
+off-tree genomes have: the report's set of prior taxa is read before the prior is subset to the
+tree (`read_metadata`, `src/main.rs`). The output is byte-identical to that of the full file.
+
 ### Stored Python outputs
 
 - Run with `--min-bs 95.0` by Python v0.0.2. Each is a tree and a log only.
