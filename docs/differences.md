@@ -18,7 +18,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | L6 | Leaf taxa | Leaves can't hold a taxon, the tree needs a species node above each leaf | `--taxonomy` assigns the ranks the tree can't hold to the leaves | **Yes**, a new input |
 | L7 | Novel taxa above names | A novel taxon is created for every missing rank, even above named taxa | Only created where no valid name of a lower rank is below it | **Yes** |
 | L8 | Refining up | A taxon can be moved up above a taxon of a higher rank | The upward walk stops at a node with a higher rank below it | **Yes** |
-| L9 | Refining down | Genomes without a prior taxonomy are in no genus | A new genome is in the genus its binomial species names, so a Latin-named genus inside the RED window is not moved down away from it | **Yes**, if a prior taxonomy was given |
+| L9 | Refining down | Genomes without a prior taxonomy are in no genus | A new genome is in the genus its binomial species names, so a genus inside the RED window (and, if its name is not Latin, on a supported node) is not moved down away from it | **Yes**, if a prior taxonomy was given |
 
 All other refinement and novel-rank rules are the same; see
 [Unchanged logic](#unchanged-logic).
@@ -133,12 +133,19 @@ genome, they get the same name.
   that holds its old genomes, leaving behind a new genome whose species names the genus.
 - **Rust** (`Tree::species_genera_of_new_genomes` / `Tree::child_rank_taxa`, `src/tree.rs`): when
   refining the genus, a new genome with a binomial species (`s__X epithet`, not
-  `s__{unresolved}`) counts as being in `g__X`, if `g__X` is a Latin name (`Taxon::is_latin_name`)
-  and the original node of the genus is inside the genus RED window. If the new genome is under a
-  different child from the genus' old genomes, the descent stops, so the genus is not split. In
-  r237 bac120, `g__Noviluteimonas` stays on its node (bootstrap 91, RED 0.958) with the new genome
-  G057139745 (`s__Noviluteimonas sp057139745`), rather than moving to its 8 genome child
-  (bootstrap 100) and leaving G057139745 to a novel genus. See
+  `s__{unresolved}`) counts as being in `g__X`, if the original node of the genus is inside the
+  genus RED window and, when `g__X` is not a Latin name (`Taxon::is_latin_name`), also supported
+  (bootstrap at least `--min-bs`). If the new genome is under a different child from the genus'
+  old genomes, the descent stops, so the genus is not split. In r237 bac120 (with the r232 prior):
+  - `g__Noviluteimonas` (Latin, so the window is enough) stays on its node (bootstrap 91, RED
+    0.958) with the new genome G057139745 (`s__Noviluteimonas sp057139745`), rather than moving to
+    its 8 genome child (bootstrap 100) and leaving G057139745 to a novel genus.
+  - `g__JAHELV01` (not Latin, on a supported node) stays on
+    `100:f__JAHELV01;g__JAHELV01|red=0.8758` with all 9 genomes, as the curators would keep it,
+    rather than moving to its 8 genome child (`100:red=0.9095`, which holds the 5 prior genomes)
+    and leaving the new genome G057028815 (`s__JAHELV01 sp057028815`) to a novel `g__JBXLYT01`.
+
+  See
   [refinement.md](refinement.md#rule-d2-follow-the-genomes-of-the-taxon), rule D2a.
 
 ## Failures that are now reported errors

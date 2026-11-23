@@ -736,16 +736,18 @@ impl Tree {
                 continue;
             };
             let original_red_delta = median_red.distance(node_label.red);
-            // The species of new genomes only keep a genus that is inside the RED window.
             let in_window =
                 parent_red_thresh <= node_label.red && node_label.red <= child_red_thresh;
-            let new_genomes = if in_window {
-                &species_genera
-            } else {
-                &no_species_genera
-            };
 
             for taxon in taxonomy.get_rank(rank) {
+                // The species of new genomes only keep a genus whose original node is inside the
+                // RED window, and, for a genus that is not a Latin name, is also supported.
+                let new_genomes = if in_window && (taxon.is_latin_name() || original_bs >= min_bs) {
+                    &species_genera
+                } else {
+                    &no_species_genera
+                };
+
                 // Check up the tree (this is valid for all cases). A taxon nested inside another
                 // taxon of the same rank is not moved up: it would climb onto or past the node of
                 // that taxon, taking its genomes.
@@ -925,10 +927,11 @@ impl Tree {
     /// not in the prior, but a binomial species name says which genus it belongs to, so the genus
     /// is not moved down away from it: a genus is not split from the genomes its species name.
     ///
-    /// Only Latin genus names are given (see [`Taxon::is_latin_name`]), and the caller only uses
-    /// them for a genus whose original node is inside the genus RED window: the decoration names
-    /// new species after the genus it decorated, so for placeholder names, or a genus at the
-    /// wrong depth, the species is no evidence.
+    /// The caller only uses them for a genus whose original node is inside the genus RED window
+    /// and, when the genus is not a Latin name (see [`Taxon::is_latin_name`]), is also supported
+    /// (bootstrap at least `--min-bs`): the decoration names new species after the genus it
+    /// decorated, so for a genus at the wrong depth, or a placeholder name on a poorly supported
+    /// node, the species is no evidence.
     fn species_genera_of_new_genomes(
         &self,
         rank: Rank,
@@ -945,8 +948,7 @@ impl Tree {
                     .taxonomy
                     .get_rank(Rank::Species)
                     .iter()
-                    .find_map(Taxon::genus_of_species)
-                    .filter(Taxon::is_latin_name)?;
+                    .find_map(Taxon::genus_of_species)?;
                 Some((leaf.gid.clone(), genus))
             })
             .collect()

@@ -125,16 +125,26 @@ For a node, each child is assigned the set of taxa of this rank that the prior t
 the genomes at or below it (a child may be a leaf itself). Genomes without a prior taxonomy
 contribute nothing, with one exception for the genus:
 
-- **Rule D2a: new genomes keep the Latin genus their species names.** When refining the genus,
+- **Rule D2a: new genomes keep the genus their species names.** When refining the genus,
   a genome without a prior taxonomy (new in this release) whose species (from `--taxonomy`) is a
   binomial name, e.g. `s__Noviluteimonas sp057139745`, is taken to be in the genus that the first
   part of the name gives (`g__Noviluteimonas`, see `Taxon::genus_of_species`). So a genus is not
   moved down away from a new genome that its species puts in the genus: the child holding it also
-  contains the genus, and the descent stops as below. This only applies when both:
-  - the genus is a Latin name (`Taxon::is_latin_name`: `g__Noviluteimonas`, `g__Luteimonas_D`),
-    not a placeholder style name such as `g__JANWYU01` or `g__CAG-698`; and
-  - the original node of the genus is inside the genus [RED window](#red-window-of-a-rank). A
-    genus decorated at a node too deep or too shallow for a genus is moved down as before.
+  contains the genus, and the descent stops as below. This only applies to a genus whose
+  original node:
+  - is inside the genus [RED window](#red-window-of-a-rank), for every genus. A genus decorated
+    at a node too deep or too shallow for a genus is moved down as before; and
+  - for a genus that is not a Latin name (`Taxon::is_latin_name`), a placeholder style name such
+    as `g__JAHELV01` or `g__CAG-698`, is also supported (bootstrap at least `--min-bs`). A Latin
+    name (`g__Noviluteimonas`, `g__Luteimonas_D`) needs the window only.
+
+  | Genus name | Original node | Rule D2a |
+  | --- | --- | --- |
+  | Latin | in window | applies |
+  | Latin | outside window | no |
+  | not Latin | in window, supported | applies |
+  | not Latin | in window, unsupported | no |
+  | not Latin | outside window | no |
 
   Unresolved species (`s__{unresolved} NAME`) give no genus. A genome that is in the prior
   taxonomy is never given the genus of its species, even if the prior has a different genus (or a
@@ -145,7 +155,13 @@ contribute nothing, with one exception for the genus:
   genome usually echoes the decoration rather than being independent evidence. Applied to every
   genus, the rule raised the curator workload of r226 and r232 by 36% (8,391 to 11,394
   operations); limited to Latin names inside the window, by 2% (to 8,547), in exchange for keeping
-  genera such as `g__Noviluteimonas` in r237 whole.
+  genera such as `g__Noviluteimonas` in r237 whole (`91:g__Noviluteimonas|red=0.9579`, an
+  unsupported node, which is why the support condition is not applied to Latin names). Extending
+  it to non-Latin names on a supported node raised the workload by a further 3% (8,543 to 8,827,
+  `docs/testing.md`), in exchange for keeping genera such as `g__JAHELV01` in r237 whole: on
+  `100:f__JAHELV01;g__JAHELV01|red=0.8758`, it was moved down to the child holding its prior
+  genomes, leaving the new genome G057028815 (`s__JAHELV01 sp057028815`) to a novel genus. The
+  curators keep such a genus on its node.
 
 - If **more than one** child contains the taxon, moving down would make it polyphyletic, so the
   descent stops here.

@@ -2087,19 +2087,21 @@ G3\td__;p__P;c__;o__;f__;g__B;s__B three
 /// G1, G2 and G4 are in the prior taxonomy; G3 is in it only if `g3_prior` is given. The species
 /// of G3 is `g3_species`.
 fn genus_above_a_new_genome(g3_species: &str, g3_prior: Option<&str>) -> (Tree, Vec<Move>) {
-    genus_above_a_new_genome_at("g__Alpha", "0.940", g3_species, g3_prior)
+    genus_above_a_new_genome_at("g__Alpha", "91", "0.940", g3_species, g3_prior)
 }
 
-/// [`genus_above_a_new_genome`] with the genus named `genus` on a node with RED `red`.
+/// [`genus_above_a_new_genome`] with the genus named `genus` on a node with bootstrap `bs` and
+/// RED `red`.
 fn genus_above_a_new_genome_at(
     genus: &str,
+    bs: &str,
     red: &str,
     g3_species: &str,
     g3_prior: Option<&str>,
 ) -> (Tree, Vec<Move>) {
     let mut tree = tree_with_leaf_taxa(
         &format!(
-            "(((G1:0.1,G2:0.1)'100:red=0.97':0.1,G3:0.1)'91:{genus}|red={red}':0.1,G4:0.1)\
+            "(((G1:0.1,G2:0.1)'100:red=0.97':0.1,G3:0.1)'{bs}:{genus}|red={red}':0.1,G4:0.1)\
              '100:f__F|red=0.70';"
         ),
         &[
@@ -2164,12 +2166,37 @@ fn the_species_of_a_genome_in_the_prior_taxonomy_does_not_override_its_prior_gen
 }
 
 #[test]
-fn a_genus_with_a_placeholder_name_is_moved_down_away_from_a_new_genome_its_species_names() {
-    // Only a Latin genus name keeps its new genomes: `s__JANWYU01 sp3` echoes the decoration.
+fn an_unsupported_genus_with_a_placeholder_name_is_moved_down_away_from_a_new_genome_its_species_names()
+ {
+    // On an unsupported node, only a Latin genus name keeps its new genomes: `s__JANWYU01 sp3`
+    // echoes the decoration.
     let (tree, moves) =
-        genus_above_a_new_genome_at("g__JANWYU01", "0.940", "s__JANWYU01 sp3", None);
+        genus_above_a_new_genome_at("g__JANWYU01", "91", "0.940", "s__JANWYU01 sp3", None);
     assert_eq!(moves.len(), 1);
     assert_eq!(label(&tree, 2), "100.0:g__JANWYU01|RED=0.970");
+}
+
+#[test]
+fn a_supported_genus_with_a_placeholder_name_is_not_moved_down_away_from_a_new_genome_its_species_names()
+ {
+    // The r237 `g__JAHELV01` case: on a supported node inside the RED window, a genus that is not
+    // a Latin name keeps the new genomes its species name.
+    let (tree, moves) =
+        genus_above_a_new_genome_at("g__JAHELV01", "100", "0.940", "s__JAHELV01 sp3", None);
+    assert_eq!(moves, []);
+    assert_eq!(label(&tree, 4), "100:g__JAHELV01|red=0.940");
+    assert_eq!(label(&tree, 2), "100:red=0.97");
+}
+
+#[test]
+fn a_supported_genus_with_a_placeholder_name_outside_the_red_window_is_moved_down_away_from_a_new_genome()
+ {
+    // The genus window of `red_dict` is 0.80 to 0.95: support does not stand in for the window.
+    let (tree, moves) =
+        genus_above_a_new_genome_at("g__JAHELV01", "100", "0.790", "s__JAHELV01 sp3", None);
+    assert_eq!(moves.len(), 1);
+    assert_eq!(label(&tree, 2), "100.0:g__JAHELV01|RED=0.970");
+    assert_eq!(label(&tree, 4), "100.0|RED=0.790");
 }
 
 #[test]
@@ -2177,7 +2204,8 @@ fn a_genus_outside_the_red_window_is_moved_down_away_from_a_new_genome_its_speci
     // The genus window of `red_dict` is 0.80 to 0.95: the species of a new genome only keeps a
     // genus whose node is inside it.
     for red in ["0.958", "0.790"] {
-        let (tree, moves) = genus_above_a_new_genome_at("g__Alpha", red, "s__Alpha sp3", None);
+        let (tree, moves) =
+            genus_above_a_new_genome_at("g__Alpha", "91", red, "s__Alpha sp3", None);
         assert_eq!(moves.len(), 1, "{red}");
         assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970", "{red}");
     }

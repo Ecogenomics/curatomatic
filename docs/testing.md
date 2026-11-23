@@ -286,8 +286,37 @@ Totals over the four datasets, by action:
   deletes (it makes fewer wrong taxa), and adds less work than Python.
 - `825c317` (before Job 14) is the same apart from r226_bac120 2,758 (1,094 / 733 / 931) and
   r232_bac120 5,128 (1,880 / 1,248 / 2,000): 8,547 in total.
+- [Job 26](#job-26-rule-d2a-for-non-latin-genera-on-a-supported-node) raises Rust to 8,827, 492
+  more than Python.
 - Python runtime: 14 s / 209 s / 22 s / 2,315 s (r226_ar53 / r226_bac120 / r232_ar53 /
   r232_bac120). Rust: 11 to 23 s each.
+
+#### Job 26: Rule D2a for non-Latin genera on a supported node
+
+Job 26 extends Rule D2a ([refinement.md](refinement.md#rule-d2-follow-the-genomes-of-the-taxon))
+to a genus that is not a Latin name, when its original node is supported as well as inside the
+window. Rust only (the Python outputs don't change), same inputs and priors, run with
+`wip/scripts/run_variant.sh job26` into `wip/runs/job26/`. Its outputs are byte for byte those of
+the variant measured before the job (`wip/runs/jahelv01_opt1`).
+
+| Version | r226_ar53 | r226_bac120 | r232_ar53 | r232_bac120 | Total | Move | Create | Delete | Added |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `3dc483a` | 179 | 2,755 | 482 | 5,127 | 8,543 | 3,223 | 2,119 | 3,201 | 1,816 |
+| Job 26 | 181 | 2,800 | 480 | 5,366 | 8,827 (+284) | 3,362 | 2,523 | 2,942 | 1,355 |
+| D2a for every genus, window only (rejected) | 210 | 3,349 | 570 | 6,448 | 10,577 (+2,034) | | | | |
+
+By dataset (move / create / delete): r226_ar53 78 / 64 / 39, r226_bac120 1,117 / 859 / 824,
+r232_ar53 172 / 88 / 220, r232_bac120 1,995 / 1,512 / 1,859.
+
+- All of the change is at genus (6,501 to 6,785 operations over the four datasets). Fewer genera
+  are moved down, so fewer wrong taxa are made (259 fewer deletes) and less work is added (461
+  fewer), but more ranks are left for the curator (404 more creates).
+- Of the genera it changes, the truth equals `3dc483a` for 744 and Job 26 for 460 (r226_bac120:
+  233 and 189). The r232 truth was probably curated from the Python output, which made these moves
+  down, so it favours `3dc483a` (see the caveat below).
+- The user accepted the +284 (2026-11-23) to keep genera such as `g__JAHELV01` (r237) whole. In
+  r237 bac120 with the r232 prior, G057028815 stays in `g__JAHELV01` (no novel `g__JBXLYT01`),
+  genera moved down go from 802 to 597, and novel genera from 4,677 to 4,456.
 
 #### Effect of each rule (ablation at `825c317`)
 
@@ -339,7 +368,8 @@ Jobs 10 to 13 -4,586. Job 15 then adds +156. Applied to every genus, it added +3
 total): it stopped 1,992 moves down, and for most of them the truth was closer to the move, as new
 genomes' species echo the decoration. The user chose the narrowed rule (Latin names inside the RED
 window, `docs/differences.md` L9), accepting +156, to keep genera such as `g__Noviluteimonas`
-(r237) whole. Without `--prior-taxonomy`, Jobs 10 to 13 give the same output as Jobs
+(r237) whole. Job 26 extended it to non-Latin names on a supported node (+284, see
+[above](#job-26-rule-d2a-for-non-latin-genera-on-a-supported-node)). Without `--prior-taxonomy`, Jobs 10 to 13 give the same output as Jobs
 10 to 12.
 
 Job 14 (an unresolvable novel taxon is reported, never written) changes only the genomes that got
