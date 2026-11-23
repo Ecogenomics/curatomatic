@@ -133,6 +133,54 @@ placeholders, so the script must change if the debug output does.
    `Skipped N novel <rank>__ taxa that have a valid name below them.` for each rank.
 2. Implement the chosen option, with tests, and update `README.md` ("Output") and `docs/refinement.md`.
 
+## Job 23: Require a full seven rank taxonomy in every row of `--prior-taxonomy`
+
+**Status: approved** (requested by the user on 2026-11-23).
+
+### Problem
+
+`--prior-taxonomy` is read by the same parser as `--taxonomy` (`TaxonomyFile::from_reader` and `parse_row`,
+`src/taxonomy_file.rs`), so it is as lenient. Placeholders are stripped (`d__Bacteria;p__;c__;…;s__X y` loads as
+`d__Bacteria;s__X y`), a rank can be missing (`d__B;p__P;s__X y`), and a rank can hold several taxa
+(`g__A;g__B`). It is only required to be in rank order, give each taxon once, and have at most one domain and one
+species (commit `da1a5bf`). A prior taxonomy is a previous release, where every genome is fully classified, so a
+row that is not is a broken input that should stop the run, not a gap downward refinement silently works around.
+
+### Rule
+
+Every row of `--prior-taxonomy` (including genomes that are not on the tree) must be exactly seven taxa, one per
+rank, in order: `d__`, `p__`, `c__`, `o__`, `f__`, `g__`, `s__`, each with a name. Anything else is a
+`CuratomaticError::TaxonomyFile` error on that line, naming the problem, e.g.:
+
+- a placeholder: `d__B;p__;c__C;…` → `the phylum rank is the placeholder p__, but a prior taxonomy names every rank`
+- a missing rank: `d__B;p__P;c__C;o__O;f__F;s__X y` → `the genus rank is missing, …`
+- two taxa of a rank: `…;g__A;g__B;s__X y` → `the genus rank has g__A and g__B, …`
+- out of order or too many taxa: already caught by the shared checks, keep their messages.
+
+`--taxonomy` keeps its current rules: placeholders stripped, missing ranks and nested taxa allowed.
+
+`s__{unresolved} NAME` is a named species (see `AGENTS.md`), so it is allowed. None of the prior files below has one.
+Ask the user if that should change.
+
+### Tasks
+
+1. Give the prior its own reader, checking the raw row before placeholders are stripped. Prefer a newtype (e.g.
+   `PriorTaxonomyFile` wrapping `TaxonomyFile`, or a row format parameter that `from_reader` takes) so that
+   `main.rs` (`let prior = match &cli.prior_taxonomy`, around line 294) can't read the prior with the lenient reader.
+   `read_metadata` takes `Option<&TaxonomyFile>`: update its signature to match.
+2. Tests in `src/taxonomy_file/tests.rs`: a full row loads, and one test per error above (placeholder in each
+   position including `d__` and `s__`, a missing rank, two taxa of a rank, a row of placeholders only, a domain-only
+   row). Check that `--taxonomy` still accepts all of these, apart from the ones the shared checks reject.
+3. Docs: `AGENTS.md` ("Taxonomy files"), `README.md` (the `--prior-taxonomy` option and "Taxonomy file"), and
+   `docs/differences.md` (the placeholder table at the "In a row of `--taxonomy` / `--prior-taxonomy`" row).
+4. Check the real prior files still load (all passed this rule on 2026-11-23, 0 rows failing):
+   `example/gtdb_r232_bac120_taxonomy.tsv`, `test_data/curated/*.tsv`, and the four files that the recipe in
+   `docs/testing.md` ("Prior taxonomy") makes from `test_data/python/input/*.metadata.tsv`. The r232 recipe drops
+   placeholder-only rows; if it ever kept a partly placeholder row, the run would now stop, so say so there.
+   `test_data/r237/final_taxonomy.tsv` fails (5,070 rows with `g__;s__{unresolved} …`), but it is the curated truth
+   of r237, not a prior.
+5. Run the benchmark with a prior (`docs/testing.md`, "Curator workload") and check that the numbers do not change.
+
 ## Open questions (ask the user before starting)
 
 - Moving down (Job 13) adds work as well as saving it: the operations added against the input went from 764 at
