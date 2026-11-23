@@ -52,7 +52,12 @@ in a `Taxonomy`: `Taxonomy::add_taxon` (`src/taxonomy.rs`) refuses one with `Cur
 - A row must come properly formatted: its taxa in rank order (placeholders included), no named taxon twice, and at
   most one named domain and one named species. Anything else is a `CuratomaticError::TaxonomyFile` error on that line:
   a row is never reordered or deduplicated. Several taxa of any other rank are allowed (nested taxa).
-- The output taxonomy files still write a placeholder for a rank with no named taxon (see TODO Job 22).
+- The output taxonomy files write a placeholder for a rank with no named taxon, so every row has all 7 ranks. This
+  is decided and intended: the placeholder is only formatting, made by the writers (`Tree::leaf_taxonomies` and
+  `Tree::full_taxonomies`, `src/tree.rs`), and is never held on the tree or in a `Taxonomy`. After loading, the only
+  ranks left empty are those of a novel taxon that `fill_in_missing_ranks` skipped because a valid name of a lower
+  rank is at or below its node (`docs/refinement.md` "Novel taxa"); a curator fills them. Don't propose removing
+  these placeholders or always creating the novel taxon.
 
 The domain and species never have a placeholder: every genome always has a named domain (`d__`), and its species
 (`s__`) is always given in the taxonomy file.

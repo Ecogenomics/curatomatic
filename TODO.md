@@ -99,40 +99,6 @@ the unrounded RED? Either answer changes some outputs, so measure it on the four
    `docs/testing.md`.
 3. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload".
 
-## Job 22: Should the output taxonomy contain placeholders?
-
-**Status: needs the user's decision. Discuss before starting.**
-
-### Problem
-
-The user does not want placeholders written to the output taxonomy (`<stem>.curatomatic.taxonomy.tsv`). Today
-`Tree::leaf_taxonomies` (`src/tree.rs`) builds each output row one rank at a time, and writes the bare prefix
-(`o__`) for a rank with no named taxon on the genome's path. `Tree::full_taxonomies`, which writes the `--debug`
-taxonomy, does the same.
-
-In a normal run every such placeholder comes from a novel taxon that `fill_in_missing_ranks` skipped, because a
-valid name of a lower rank is at or below its node (`docs/differences.md` L7, `docs/refinement.md` "Novel taxa":
-"the genomes of a skipped taxon keep the placeholder for that rank only"). A missing domain stops the run, and every
-genome has its species.
-
-### Options to discuss
-
-1. Leave the rank out of the row (e.g. no `o__`). Rows then have varying lengths, which may break downstream tools
-   that expect 7 ranks.
-2. Always create the novel taxon: drop the L7 skip, as Python did. This brings back the curator work L7 removed.
-3. Write a marked name for a curator to resolve, e.g. `o__UNRESOLVABLE`, the existing convention for a novel taxon
-   that can't be named.
-4. Keep placeholders in the output only (they are banned on the tree and stripped from the inputs, see `AGENTS.md`).
-
-Also decide the `--debug` taxonomy: `scripts/check_round_trip.py` compares it with the input file, which has
-placeholders, so the script must change if the debug output does.
-
-### Tasks (once decided)
-
-1. Count how many genomes and ranks get a placeholder in the r237, r226 and r232 outputs. The log prints
-   `Skipped N novel <rank>__ taxa that have a valid name below them.` for each rank.
-2. Implement the chosen option, with tests, and update `README.md` ("Output") and `docs/refinement.md`.
-
 ## Job 23: Require a full seven rank taxonomy in every row of `--prior-taxonomy`
 
 **Status: approved** (requested by the user on 2026-11-23).
