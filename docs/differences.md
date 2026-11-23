@@ -230,6 +230,8 @@ their output.
 
 - `--meta` was replaced by `--novel-name-file` and `--novel-name-column` (see above).
 - The second positional argument is now the median RED TSV (`MEDIAN_RED`), not the JSON dict.
+- Any input whose name ends in `.gz` is decompressed as it is read (`src/input.rs`); Python read every
+  input as plain text. The outputs are not compressed, and are named after the tree without `.gz`.
 - `--log`, `--min-bs` (default `95.0`) and the "output directory exists" check (skipped at debug
   level) are unchanged.
 

@@ -2,6 +2,7 @@ mod bootstrap;
 mod cli;
 mod error;
 mod genome;
+mod input;
 mod log;
 mod metadata;
 mod newick;
@@ -297,7 +298,7 @@ fn write_taxonomies(tree: &Tree, out_dir: &Path, stem: &str) -> CuratomaticResul
 }
 
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
-    let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
+    let stem = input::input_stem(&cli.tree);
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
     let path_report_out = cli.out_dir.join(format!("{stem}.curatomatic.report.tsv"));
 
@@ -429,4 +430,8 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 #[path = "main/tests.rs"]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the tests read the outputs, which are never gzipped"
+)]
 mod tests;

@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs;
 use std::num::ParseFloatError;
 use std::path::Path;
 use std::str::FromStr;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
+use crate::input::read_input_to_string;
 use crate::rank::Rank;
 
 /// A relative evolutionary divergence (RED) value.
@@ -84,8 +84,7 @@ pub(crate) struct Red {
 impl Red {
     /// Read the median RED of each rank from a tab separated file, see [`Red::from_tsv`].
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
-        let text = fs::read_to_string(path)
-            .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
+        let text = read_input_to_string(path)?;
         Self::from_tsv(&text).map_err(|e| {
             if let CuratomaticError::Red(message) = e {
                 CuratomaticError::Red(format!("{}: {message}", path.display()))

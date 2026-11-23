@@ -43,7 +43,8 @@ scripts/benchmark.sh /tmp/benchmark   # against Python and the curated releases,
 
 ## Input
 
-All files are tab separated. Genome IDs are matched in their canonical form (`GB_GCA_003697165.1` is `G003697165`).
+All files are tab separated. Any input may be gzipped: a file whose name ends in `.gz` is decompressed as it is
+read (bgzip and concatenated gzip files included), and any other file is read as plain text. Genome IDs are matched in their canonical form (`GB_GCA_003697165.1` is `G003697165`).
 A taxon is a rank prefix (`d`, `p`, `c`, `o`, `f`, `g`, `s`), `__`, then its name; a bare prefix (`g__`) is a
 placeholder. Anything malformed or inconsistent stops the run, naming the line (the full rules are in
 [AGENTS.md](AGENTS.md), "Taxonomy").
@@ -91,7 +92,8 @@ G000008885	none
 
 ## Output
 
-Written to `OUT_DIR`, where `<stem>` is the file name of `TREE` without its last extension:
+Written to `OUT_DIR`, uncompressed, where `<stem>` is the file name of `TREE` without `.gz` and then its last
+extension (`x.nwk` and `x.nwk.gz` both give `x`):
 
 | File | Contents |
 | --- | --- |

@@ -165,6 +165,11 @@ Test data are available here:
   `scripts/convert_python_inputs.py` converts the Python inputs to this format. On real data, check it with
   `--debug` and `scripts/check_round_trip.py` (see `docs/testing.md`, "Round trip"): the r226 and r232 Python trees
   and the r237 inputs all round trip with 0 differences, and any change to how the inputs are loaded must keep it that way.
+- Any input may be gzipped: one whose name ends in `.gz` is decompressed as it is read, decided by the name only,
+  never by the content (`src/input.rs`). Every input is opened with `input::open_input` (or
+  `input::read_input_to_string`): `File::open`, `fs::read` and `fs::read_to_string` are `disallowed-methods` in
+  `clippy.toml`. The outputs are never compressed, and `<stem>` drops `.gz` before the last extension
+  (`input::input_stem`).
 - Every leaf holds at least one taxon, and one of them is always its named species (never a placeholder, never on an
   internal node). This is checked by `Tree::check_leaves_have_species` (`src/tree.rs`) once the taxonomy file is
   assigned and again before any output is written, failing the run with `CuratomaticError::LeafWithoutSpecies`. This

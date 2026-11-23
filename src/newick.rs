@@ -12,6 +12,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
+use crate::input::read_input_to_string;
 
 /// Identifies a node of a [`NewickTree`].
 ///
@@ -58,9 +59,7 @@ pub(crate) struct NewickTree {
 impl NewickTree {
     /// Read a Newick file.
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
-        let text = fs::read_to_string(path)
-            .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::parse(&text)
+        Self::parse(&read_input_to_string(path)?)
     }
 
     /// Parse a Newick string. Comments (`[...]`, e.g. `[&R]`) are ignored.

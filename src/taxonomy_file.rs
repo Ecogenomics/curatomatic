@@ -2,14 +2,15 @@
 //! gDecorate), and the taxonomy of a previous release, given by `--prior-taxonomy`.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::fs;
+use std::io::BufRead;
 use std::path::Path;
 
 use strum::IntoEnumIterator;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::{GenomeId, gid_to_canonical};
+use crate::input::open_input;
 use crate::rank::Rank;
 use crate::taxon::Taxon;
 use crate::taxonomy::Taxonomy;
@@ -38,9 +39,7 @@ pub(crate) struct TaxonomyFile {
 impl TaxonomyFile {
     /// Read a taxonomy file, see [`TaxonomyFile`].
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
-        let file = File::open(path)
-            .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_reader(BufReader::new(file), path)
+        Self::from_reader(open_input(path)?, path)
     }
 
     /// Read a taxonomy file from a reader. `path` is only used in error messages.
@@ -132,9 +131,7 @@ pub(crate) struct PriorTaxonomyFile(TaxonomyFile);
 impl PriorTaxonomyFile {
     /// Read a prior taxonomy file, see [`PriorTaxonomyFile::from_reader`].
     pub(crate) fn from_file(path: &Path) -> CuratomaticResult<Self> {
-        let file = File::open(path)
-            .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_reader(BufReader::new(file), path)
+        Self::from_reader(open_input(path)?, path)
     }
 
     /// Read a prior taxonomy file from a reader. `path` is only used in error messages.

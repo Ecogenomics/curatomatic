@@ -8,7 +8,12 @@ use crate::metadata::COL_ACCESSION;
 
 /// Semi-automatic curation of decorated phylogenetic trees.
 #[derive(Debug, Parser)]
-#[command(version, about)]
+#[command(
+    version,
+    about,
+    after_help = "Any input whose name ends in `.gz` is read gzipped, and any other as plain text. \
+                  The outputs are not compressed."
+)]
 pub(crate) struct Cli {
     /// Path to the RED decorated and scaled tree.
     pub(crate) tree: PathBuf,

@@ -590,3 +590,123 @@ fn curate_passes_the_taxa_check_after_moving_a_taxon_and_creating_one() {
          G4\td__D;p__P;c__C;o__O;f__F;g__G4;s__{unresolved} sp4\n"
     );
 }
+
+// Any input may be gzipped (its name ends in `.gz`): the run must be the same as on the plain
+// files, outputs and their names included.
+
+/// The inputs of the README example, in `example/`: `--taxonomy`, `--prior-taxonomy`,
+/// `--novel-name-file`, `TREE` and `MEDIAN_RED`.
+const EXAMPLE_INPUTS: [&str; 5] = [
+    "gtdb_r237_decorated_taxonomy.tsv",
+    "gtdb_r232_bac120_taxonomy.tsv",
+    "gtdb_r237_bac120_metadata_slim.tsv",
+    "gtdb_r237_median_red_marked.nwk",
+    "gtdb_r237_median_red_rank_distribution.tsv",
+];
+
+/// The arguments of the README example, on the inputs `paths` (in the order of
+/// [`EXAMPLE_INPUTS`]), writing to `out_dir`.
+fn example_cli(paths: &[PathBuf], out_dir: &Path) -> Cli {
+    let [taxonomy, prior, names, tree, red] = paths else {
+        panic!("expected the five example inputs");
+    };
+    Cli::try_parse_from([
+        "curatomatic".as_ref(),
+        "--min-bs".as_ref(),
+        "95.0".as_ref(),
+        "--taxonomy".as_ref(),
+        taxonomy.as_os_str(),
+        "--prior-taxonomy".as_ref(),
+        prior.as_os_str(),
+        "--novel-name-file".as_ref(),
+        names.as_os_str(),
+        "--novel-accession".as_ref(),
+        "db_name".as_ref(),
+        "--novel-name-column".as_ref(),
+        "ncbi_wgs_formatted".as_ref(),
+        tree.as_os_str(),
+        red.as_os_str(),
+        out_dir.as_os_str(),
+    ])
+    .unwrap()
+}
+
+/// The name and contents of every file in `dir`, ordered by name.
+fn files_in(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            (name, std::fs::read(&path).unwrap())
+        })
+        .collect()
+}
+
+#[test]
+fn curate_on_the_gzipped_example_inputs_writes_the_outputs_of_the_plain_inputs() {
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("example");
+    let dir = std::env::temp_dir().join(format!(
+        "curatomatic-gzipped-example-{}",
+        std::process::id()
+    ));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let plain: Vec<PathBuf> = EXAMPLE_INPUTS
+        .iter()
+        .map(|name| example.join(name))
+        .collect();
+    let gzipped: Vec<PathBuf> = EXAMPLE_INPUTS
+        .iter()
+        .map(|name| {
+            let path = dir.join(format!("{name}.gz"));
+            let mut encoder =
+                GzEncoder::new(std::fs::File::create(&path).unwrap(), Compression::fast());
+            io::copy(
+                &mut std::fs::File::open(example.join(name)).unwrap(),
+                &mut encoder,
+            )
+            .unwrap();
+            encoder.finish().unwrap();
+            path
+        })
+        .collect();
+
+    // Both runs at once: each takes a while on the full example.
+    let (out_plain, out_gzipped) = (dir.join("out-plain"), dir.join("out-gzipped"));
+    std::fs::create_dir_all(&out_plain).unwrap();
+    std::fs::create_dir_all(&out_gzipped).unwrap();
+    let (result_plain, result_gzipped) = std::thread::scope(|scope| {
+        let plain_run = scope.spawn(|| curate(&example_cli(&plain, &out_plain)));
+        let gzipped_run = scope.spawn(|| curate(&example_cli(&gzipped, &out_gzipped)));
+        (plain_run.join().unwrap(), gzipped_run.join().unwrap())
+    });
+    result_plain.unwrap();
+    result_gzipped.unwrap();
+
+    let (files_plain, files_gzipped) = (files_in(&out_plain), files_in(&out_gzipped));
+    std::fs::remove_dir_all(&dir).unwrap();
+    // The outputs are named after the tree without `.gz`, and are not compressed.
+    assert_eq!(
+        files_plain.keys().collect::<Vec<_>>(),
+        [
+            "gtdb_r237_median_red_marked.curatomatic.leaf-taxonomy.tsv",
+            "gtdb_r237_median_red_marked.curatomatic.report.tsv",
+            "gtdb_r237_median_red_marked.curatomatic.taxonomy.tsv",
+            "gtdb_r237_median_red_marked.curatomatic.tree",
+        ]
+    );
+    assert_eq!(
+        files_gzipped.keys().collect::<Vec<_>>(),
+        files_plain.keys().collect::<Vec<_>>()
+    );
+    for (name, contents) in &files_plain {
+        assert!(contents == &files_gzipped[name], "{name} differs");
+    }
+}

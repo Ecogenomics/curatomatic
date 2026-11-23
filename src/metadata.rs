@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufRead;
 use std::path::Path;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::{GenomeId, gid_to_canonical};
+use crate::input::open_input;
 use crate::rank::Rank;
 use crate::taxon::Taxon;
 use crate::taxonomy::Taxonomy;
@@ -44,9 +44,7 @@ impl Metadata {
         accession_column: &str,
         column: &str,
     ) -> CuratomaticResult<Self> {
-        let file = File::open(path)
-            .map_err(|e| CuratomaticError::Io(format!("{}: {e}", path.display())))?;
-        Self::from_reader(BufReader::new(file), path, accession_column, column)
+        Self::from_reader(open_input(path)?, path, accession_column, column)
     }
 
     /// Read the novel names from a reader, see [`Metadata::from_file`]. `path` is only used in
