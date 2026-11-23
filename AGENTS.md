@@ -19,6 +19,9 @@ Curatomatic is written in Rust. It replaces an earlier Python implementation, wh
 - `docs/testing.md` = the test datasets, and how to benchmark against the Python version and the curated releases
   (`scripts/benchmark.sh`).
 - `TODO.md` = specifications for upcoming work.
+- `docs/architecture.md` = diagrams of the pipeline, data structures and rules, with an interactive version in
+  `docs/architecture.html`. Both are a once-off snapshot, not kept up to date: update them only when asked, following
+  the "Regenerating" section of `docs/architecture.md`.
 
 ## Relative evolutionary divergence (RED)
 

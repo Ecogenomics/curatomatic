@@ -1,0 +1,1200 @@
+<title>Inside Curatomatic</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column with a sticky section bar; diagrams and explorers break out to a wider measure.
+   Colour: a green-grey neutral (the tree), with a RED ramp from root (indigo) to leaves (amber). */
+:root {
+  --bg: #f4f7f5;
+  --surface: #ffffff;
+  --surface-2: #eaf0ed;
+  --ink: #13201b;
+  --muted: #586a63;
+  --line: #d3ddd8;
+  --accent: #0d7562;
+  --accent-ink: #ffffff;
+  --root: #4a4fb5;
+  --leaf: #d0861a;
+  --ok: #1f7a43;
+  --ok-bg: #e2f3e8;
+  --warn: #93600c;
+  --warn-bg: #fbefd6;
+  --stop: #b23a16;
+  --stop-bg: #fbe4dc;
+  --idle: #6d7b76;
+  --idle-bg: #edf1ef;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --measure: 68ch;
+  --wide: 1080px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1512; --surface: #151f1b; --surface-2: #1b2722; --ink: #e2ebe7; --muted: #93a69e; --line: #2a3832;
+    --accent: #4cc9ad; --accent-ink: #062019; --root: #8f93ff; --leaf: #f0aa45;
+    --ok: #6fd796; --ok-bg: #173323; --warn: #f0bd5c; --warn-bg: #352a12; --stop: #ff8a66; --stop-bg: #3a1c13;
+    --idle: #8e9d97; --idle-bg: #1f2a26; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1512; --surface: #151f1b; --surface-2: #1b2722; --ink: #e2ebe7; --muted: #93a69e; --line: #2a3832;
+  --accent: #4cc9ad; --accent-ink: #062019; --root: #8f93ff; --leaf: #f0aa45;
+  --ok: #6fd796; --ok-bg: #173323; --warn: #f0bd5c; --warn-bg: #352a12; --stop: #ff8a66; --stop-bg: #3a1c13;
+  --idle: #8e9d97; --idle-bg: #1f2a26; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: var(--wide); margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; letter-spacing: -0.01em; }
+h3 { font-size: 1.15rem; font-weight: 500; }
+p { margin: 0; max-width: var(--measure); }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--surface-2); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* Hero */
+.hero { background: var(--surface); border-bottom: 1px solid var(--line); margin-top: calc(-1 * env(safe-area-inset-top, 0px)); padding-top: calc(env(safe-area-inset-top, 0px) + 3rem); padding-bottom: 2.5rem; }
+.hero .wrap { display: grid; gap: 1.25rem; }
+.hero p.lede { font-size: 1.15rem; color: var(--muted); }
+.ribbon { margin-top: 0.75rem; }
+.ribbon svg { width: 100%; height: auto; display: block; }
+
+/* Section nav */
+nav.sections { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+nav.sections .wrap { overflow-x: auto; }
+nav.sections ul { list-style: none; display: flex; gap: 0.25rem; margin: 0; padding: 0.5rem 0; white-space: nowrap; }
+nav.sections a { display: block; padding: 0.35rem 0.7rem; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
+nav.sections a:hover, nav.sections a:focus-visible { background: var(--surface-2); color: var(--ink); }
+
+main section { padding-block: 3.25rem; border-bottom: 1px solid var(--line); scroll-margin-top: 3.5rem; }
+main section > .wrap { display: grid; gap: 1.25rem; }
+.head { display: grid; gap: 0.5rem; }
+.head p { color: var(--muted); }
+
+/* Panels */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; min-width: 0; }
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; }
+.diagram pre.mermaid { margin: 0; background: transparent; font-family: var(--font-body); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1.25rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
+.card h3 { margin-bottom: 0.4rem; }
+.card ul { margin: 0; padding-left: 1.1rem; }
+.card li + li { margin-top: 0.3rem; }
+.note { font-size: 0.92rem; color: var(--muted); }
+.rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.6rem; }
+.rules li { display: grid; grid-template-columns: 2rem 1fr; gap: 0.5rem; align-items: baseline; }
+.rules li b.n { font-family: var(--font-mono); color: var(--accent); font-weight: 500; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; background: var(--surface-2); font-size: 0.82rem; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Pipeline stepper */
+.stepper { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+@media (max-width: 720px) { .stepper { grid-template-columns: 1fr; } }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: step; }
+.steps button { width: 100%; text-align: left; display: grid; grid-template-columns: 1.9rem 1fr; gap: 0.4rem; align-items: baseline; padding: 0.45rem 0.6rem; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: inherit; font-size: 0.92rem; cursor: pointer; }
+.steps button .i { font-family: var(--font-mono); color: var(--muted); font-size: 0.8rem; }
+.steps button:hover { background: var(--surface-2); }
+.steps button[aria-current="true"] { background: var(--accent); color: var(--accent-ink); }
+.steps button[aria-current="true"] .i { color: var(--accent-ink); }
+.steps button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.step-detail { display: grid; gap: 0.9rem; }
+.step-detail dl { display: grid; grid-template-columns: 7.5rem 1fr; gap: 0.45rem 1rem; margin: 0; }
+.step-detail dt { font-size: 0.8rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 0.15rem; }
+.step-detail dd { margin: 0; min-width: 0; }
+@media (max-width: 480px) { .step-detail dl { grid-template-columns: 1fr; } }
+
+/* Controls */
+.controls { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: end; }
+.field { display: grid; gap: 0.25rem; }
+.field label, .field .lbl { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+input[type="number"], input[type="text"], select { font: inherit; font-size: 0.92rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.5rem; min-width: 0; }
+input[type="number"] { width: 6.5rem; font-variant-numeric: tabular-nums; }
+input[type="text"].wide { width: 100%; font-family: var(--font-mono); font-size: 0.88rem; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.btn { font: inherit; font-size: 0.86rem; font-weight: 500; padding: 0.35rem 0.75rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chip { display: inline-block; font-size: 0.8rem; font-weight: 500; padding: 0.15rem 0.55rem; border-radius: 999px; white-space: nowrap; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.warn { color: var(--warn); background: var(--warn-bg); }
+.chip.stop { color: var(--stop); background: var(--stop-bg); }
+.chip.idle { color: var(--idle); background: var(--idle-bg); }
+.sample { font-family: var(--font-mono); font-size: 0.78rem; }
+
+/* RED explorer */
+.red-svg { width: 100%; height: auto; display: block; }
+.red-svg text { font-family: var(--font-body); fill: var(--ink); }
+.red-svg .muted { fill: var(--muted); }
+.readout { display: grid; gap: 0.5rem; }
+
+/* Label reader */
+.parsed { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 0.75rem; }
+.parsed .kv { background: var(--surface-2); border-radius: 8px; padding: 0.6rem 0.75rem; min-width: 0; }
+.parsed .k { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.parsed .v { font-family: var(--font-mono); font-size: 0.88rem; overflow-wrap: anywhere; }
+.err { color: var(--stop); background: var(--stop-bg); border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.92rem; }
+
+/* Simulator */
+.sim-table input[type="number"] { width: 5.5rem; }
+.sim-table td { vertical-align: middle; }
+.rank-list { list-style: none; margin: 0; padding: 0; counter-reset: r; display: grid; gap: 0.35rem; }
+.rank-list li { display: grid; grid-template-columns: 1.6rem 1fr auto; gap: 0.5rem; align-items: center; padding: 0.4rem 0.6rem; border-radius: 6px; background: var(--surface-2); font-size: 0.9rem; }
+.rank-list li.best { outline: 2px solid var(--accent); }
+.rank-list .pos { font-family: var(--font-mono); color: var(--muted); }
+.verdict { font-size: 1.05rem; font-weight: 600; }
+
+/* Example path */
+.path { display: grid; gap: 0.3rem; font-family: var(--font-mono); font-size: 0.84rem; }
+.path div { display: grid; grid-template-columns: 1.4rem 1fr; gap: 0.4rem; }
+.path .on { color: var(--muted); }
+.path .gets { color: var(--ok); font-weight: 500; }
+
+footer { padding-block: 2.5rem 3.5rem; color: var(--muted); font-size: 0.9rem; }
+footer .wrap { display: grid; gap: 0.5rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">curatomatic · dev @ 27f27d5</span>
+    <h1>Inside Curatomatic</h1>
+    <p class="lede">Curatomatic reads a decorated tree, moves the existing taxon labels to better nodes, and creates
+      novel taxa where genomes are missing a rank. It never changes the tree itself. This page shows how it does that:
+      the pipeline, the data structures and the rules, as read from the code.</p>
+    <div class="ribbon" aria-label="Median RED of each rank in r237 bac120, from the root at 0 to the leaves at 1">
+      <svg id="ribbon" viewBox="0 0 1000 92" role="img"></svg>
+    </div>
+  </div>
+</header>
+
+<nav class="sections" aria-label="Sections">
+  <div class="wrap">
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#data">Data structures</a></li>
+      <li><a href="#red">RED windows</a></li>
+      <li><a href="#assign">Leaf taxa</a></li>
+      <li><a href="#refine">Refinement</a></li>
+      <li><a href="#novel">Novel taxa</a></li>
+      <li><a href="#checks">Checks</a></li>
+      <li><a href="#report">Report</a></li>
+      <li><a href="#code">Code map</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main>
+<!-- ============================================================ OVERVIEW -->
+<section id="overview">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Overview</span>
+      <h2>What goes in, what comes out</h2>
+    </div>
+    <div class="grid-3">
+      <div class="panel card">
+        <h3>Inputs</h3>
+        <ul>
+          <li><b>Tree</b>: Newick, internal nodes labelled <code>bootstrap:taxa|RED=x</code>, leaves labelled with their genome ID.</li>
+          <li><b>Median RED</b>: TSV with the median RED of each rank.</li>
+          <li><b><code>--taxonomy</code></b> (required): the full taxonomy of every genome. Gives the leaves the taxa the tree can't hold.</li>
+          <li><b><code>--prior-taxonomy</code></b>: the previous release. Needed to move taxa down.</li>
+          <li><b><code>--novel-name-file</code></b>: WGS names for novel taxa.</li>
+        </ul>
+      </div>
+      <div class="panel card">
+        <h3>What it does</h3>
+        <ul>
+          <li>Moves each phylum, class, order, family and genus label to the best node nearby, judged by RED and bootstrap.</li>
+          <li>Creates a novel taxon for each rank a genome is missing, where no named taxon below would be covered.</li>
+          <li>Checks, before writing anything, that taxa were only moved or created.</li>
+        </ul>
+      </div>
+      <div class="panel card">
+        <h3>Outputs</h3>
+        <ul>
+          <li><code>&lt;stem&gt;.curatomatic.tree</code>: same structure, new label positions, RED removed.</li>
+          <li><code>&lt;stem&gt;.curatomatic.taxonomy.tsv</code>: one row per genome.</li>
+          <li><code>&lt;stem&gt;.curatomatic.report.tsv</code>: one row per moved or novel taxon, with flags to review.</li>
+          <li><code>curatomatic.log</code>, and with <code>--debug</code> the inputs as loaded.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-bottom:0.75rem">The rules that hold everywhere</h3>
+      <ol class="rules">
+        <li><b class="n">1</b><span>The tree structure, branch lengths, bootstraps and RED values are never changed. Only the taxon labels move. RED is stripped from the internal labels only when the tree is written.</span></li>
+        <li><b class="n">2</b><span>A taxon is only ever moved or created. It is never removed, copied or renamed. Placeholders such as <code>g__</code> are not names and are exempt.</span></li>
+        <li><b class="n">3</b><span>The inputs are taken as given. Anything in the tree or <code>--taxonomy</code> that doesn't line up is an error, never a silent skip.</span></li>
+        <li><b class="n">4</b><span>A leaf label is always its genome ID. The taxa a leaf holds live on its <code>Leaf</code> and go to the taxonomy file only.</span></li>
+        <li><b class="n">5</b><span>Every leaf holds its own named species, checked after loading and again before output.</span></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ PIPELINE -->
+<section id="pipeline">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Pipeline · curate() in src/main.rs</span>
+      <h2>One run, start to finish</h2>
+      <p>Every step runs in this order. Any error stops the run before output is written. Pick a step to see the
+        function that does it and how it can fail.</p>
+    </div>
+    <div class="stepper">
+      <ol class="steps" id="steps"></ol>
+      <div class="panel step-detail" id="step-detail" aria-live="polite"></div>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    A["Parse the command line (Cli)"] --> B{"OUT_DIR exists and --log is not debug?"}
+    B -- yes --> X["Exit: output directory already exists"]
+    B -- no --> C["Create OUT_DIR, start the log (curatomatic.log)"]
+    C --> D["Tree::from_file: parse the Newick tree and every node label"]
+    D --> E["read_taxonomy_file: every genome on the tree must be in --taxonomy"]
+    E --> F["Tree::assign_leaf_taxonomy: leaves get the taxa the tree can't hold"]
+    F --> G["Tree::check_leaves_have_species"]
+    G --> H{"--debug?"}
+    H -- yes --> H1["write_debug_inputs: zombie tree and full taxonomy"]
+    H -- no --> I
+    H1 --> I["Snapshot the taxa: Tree::taxon_counts"]
+    I --> J["read_metadata: --prior-taxonomy and --novel-name-file"]
+    J --> K["Red::from_file: the median RED of each rank"]
+    K --> L["For phylum, class, order, family, genus: refine_existing_labels, process_refinement, reload"]
+    L --> M["Tree::get_leaf_nodes_missing_rank"]
+    M --> N["fill_in_missing_ranks: create novel taxa"]
+    N --> O["check_taxa_unchanged: only moves and novel taxa"]
+    O --> P["Tree::check_leaves_have_species (again)"]
+    P --> Q["build_report"]
+    Q --> R["Write the taxonomy TSV"]
+    R --> S["Tree::remove_red_labels, write the tree"]
+    S --> T["Write the report TSV"]
+</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ DATA -->
+<section id="data">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Data structures</span>
+      <h2>How the tree is held in memory</h2>
+      <p>The Newick tree is an arena of nodes numbered in post-order, so a <code>NodeId</code> is also an index into
+        every per-node vector. <code>Tree</code> wraps it with the parsed labels and the leaves' taxa.</p>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+classDiagram
+    class Tree {
+        newick: NewickTree
+        leaves: map NodeId to Leaf
+        node_labels: Vec of NodeLabel, by NodeId
+        gids: set of GenomeId
+        taxon_labels: set of Taxon
+        reload()
+    }
+    class NewickTree {
+        nodes: Vec of Node, post-order
+        root: NodeId
+        set_internal_label()
+    }
+    class Node {
+        label: Option String
+        length: Option String
+        parent: Option NodeId
+        children: Vec of NodeId
+        first: NodeId
+    }
+    class Leaf {
+        gid: GenomeId
+        taxonomy: Taxonomy
+    }
+    class NodeLabel {
+        red: RedValue
+        bootstrap: Option BootstrapValue
+        taxonomy: Option Taxonomy
+        gid: Option GenomeId
+    }
+    class Taxonomy {
+        d, p, c, o, f, g, s: Vec of Taxon
+    }
+    class Taxon {
+        String, e.g. g__Escherichia
+        rank()
+        is_named()
+        is_valid_name()
+        is_latin_name()
+    }
+    class Rank {
+        Domain to Species
+        parent()
+        child()
+    }
+    Tree *-- NewickTree
+    Tree *-- Leaf
+    Tree *-- NodeLabel
+    NewickTree *-- Node
+    Leaf *-- Taxonomy
+    NodeLabel *-- Taxonomy
+    Taxonomy *-- Taxon
+    Taxon ..> Rank
+</pre>
+    </div>
+    <div class="grid-2">
+      <div class="panel card">
+        <h3>Where a node's taxa live</h3>
+        <ul>
+          <li><b>Internal node</b>: in its Newick label. Moving a taxon rewrites the label through <code>NewickTree::set_internal_label</code>.</li>
+          <li><b>Leaf</b>: on its <code>Leaf.taxonomy</code>. The label stays the genome ID, and <code>set_internal_label</code> refuses a leaf.</li>
+          <li><code>node_labels</code> merges both views, and is only current after <code>Tree::reload</code>, which also rebuilds <code>taxon_labels</code> and checks that each taxon is on one node.</li>
+        </ul>
+      </div>
+      <div class="panel card">
+        <h3>Newtypes</h3>
+        <ul>
+          <li><code>GenomeId</code>: canonical, <code>GB_GCA_003697165.1</code> → <code>G003697165</code>.</li>
+          <li><code>Taxon</code>: the name with its prefix. <code>g__</code> is a placeholder, not a name (<code>is_named</code> needs more than 3 characters).</li>
+          <li><code>RedValue</code>, <code>BootstrapValue</code>: wrapped <code>f64</code>. A leaf is RED 1.0, and counts as bootstrap 100 when moves are ranked.</li>
+          <li><code>Rank</code>: Domain → Species. Its order is the rank order, so “higher rank” means a smaller value.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+classDiagram
+    class TaxonomyFile {
+        rows: map GenomeId to Taxonomy
+    }
+    class Metadata {
+        rows: map GenomeId to MetadataRow
+        has_prior_taxonomy: bool
+    }
+    class MetadataRow {
+        accession: GenomeId
+        taxonomy: Option Taxonomy, from --prior-taxonomy
+        wgs: Option String, from --novel-name-file
+    }
+    class Red {
+        data: map Rank to RedValue
+        get()
+    }
+    class Refinement {
+        entries: Vec of Taxon and its moves, to and from
+    }
+    class Move {
+        taxon: Taxon
+        from: NodeId
+        to: NodeId
+    }
+    class TaxonCounts {
+        map Taxon to number of nodes
+    }
+    class ReportRow {
+        taxon, rank, action, flags
+        before: Option NodeStats
+        after: NodeStats
+        prior_taxa, nested_in, sister_taxa
+    }
+    class Action {
+        MovedUp
+        MovedDown
+        Novel
+    }
+    class Flag {
+        NestedInSameRank
+        NovelLowRed
+        SisterJoinPastChildThresh
+        UnsupportedLabel
+        LargeGain
+        DisplacedFromPrior
+        NewInDecoration
+    }
+    Metadata *-- MetadataRow
+    Refinement ..> Move : process_refinement makes
+    ReportRow --> Action
+    ReportRow --> Flag
+</pre>
+    </div>
+
+    <div class="panel" style="display:grid;gap:1rem">
+      <div class="head">
+        <h3>Read a node label</h3>
+        <p class="note">A JavaScript copy of <code>split_red</code>, <code>parse_leaf_label</code> and
+          <code>parse_node_label</code> (<code>src/node_label.rs</code>). Edit the label or pick an example from r237.</p>
+      </div>
+      <div class="controls">
+        <div class="field" style="flex:1 1 320px">
+          <label for="lbl-in">Label</label>
+          <input type="text" class="wide" id="lbl-in" value="100:f__CAYYKD01;g__CAYYKD01|red=0.8386" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="lbl-kind">Node is a</label>
+          <select id="lbl-kind"><option value="internal">internal node</option><option value="leaf">leaf</option></select>
+        </div>
+      </div>
+      <div class="chips" id="lbl-samples"></div>
+      <div id="lbl-out" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ RED -->
+<section id="red">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">RED windows · src/red.rs, src/tree.rs</span>
+      <h2>Where each rank belongs</h2>
+      <p>Each rank has a median RED. Its window runs from the midpoint with its parent rank (towards the root) to the
+        midpoint with its child rank (towards the leaves). The domain is fixed at 0.0 and the species at 1.0. Moving a
+        taxon up only considers ancestors inside the window, and a novel taxon is only placed at or below the top of
+        the window.</p>
+    </div>
+    <div class="panel" style="display:grid;gap:1rem">
+      <div class="controls">
+        <div class="field">
+          <label for="red-set">Medians</label>
+          <select id="red-set">
+            <option value="r237">r237 bac120 (example/…_rank_distribution.tsv)</option>
+            <option value="r226">r226 bac120 (docs/refinement.md)</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1 1 280px">
+          <label for="red-slider">Node RED: <span id="red-val" class="mono">0.880</span></label>
+          <input type="range" id="red-slider" min="0" max="1" step="0.001" value="0.88">
+        </div>
+      </div>
+      <svg id="red-svg" class="red-svg" viewBox="0 0 1000 300" role="img" aria-label="RED windows of each rank"></svg>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Rank</th><th class="num">Median</th><th class="num">Window (upper – lower)</th><th class="num">RED delta</th><th>This node for the rank</th></tr></thead>
+          <tbody id="red-rows"></tbody>
+        </table>
+      </div>
+      <p class="note">“Upper” is the bound nearer the root (the smaller RED). Moving up stops at the first ancestor
+        above the window, and skips ancestors below it. A novel taxon of a rank needs RED ≥ the upper bound
+        (<code>halfway_to</code>, which equals the midpoint except perhaps in the last bit).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ ASSIGN -->
+<section id="assign">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Leaf taxa · Tree::assign_leaf_taxonomy</span>
+      <h2>Giving the leaves what the tree can't hold</h2>
+      <p>The tree has nowhere to put the taxa of a single genome (its species, or a one-genome genus). Each row of
+        <code>--taxonomy</code> is a genome's full taxonomy, and the leaf gets every named taxon in the row that is not
+        already on its path. This is matched by taxon, never by position or rank.</p>
+    </div>
+    <div class="grid-2">
+      <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    L["Each leaf, genome G"] --> R{"G in --taxonomy?"}
+    R -- no --> E1["Error: MissingFromTaxonomyFile"]
+    R -- yes --> U["Walk up and collect the named taxa on the path. The first node with a named taxon is the anchor."]
+    U --> A{"Every anchor taxon in the row of G?"}
+    A -- no --> E2["Error: TaxonomyFileConflict"]
+    A -- yes --> D["The leaf gets every named taxon of the row that is not on the path"]
+    D --> X{"Taxon already on the tree, or wanted by another leaf?"}
+    X -- yes --> E3["Error: TaxonomyFileConflict"]
+    X -- no --> P["Add it to Leaf.taxonomy"]
+</pre>
+      </div>
+      <div class="panel" style="display:grid;gap:0.9rem;align-content:start">
+        <h3>Example: r237 G053840885</h3>
+        <p class="note">The row has two genera. The tree already holds <code>g__JAAYFO01</code> above the genome, so the
+          leaf gets the nested genus and the species.</p>
+        <div class="path">
+          <div class="on"><span>↑</span><span>d__Bacteria … f__Sphaerochaetaceae (on the path)</span></div>
+          <div class="on"><span>↑</span><span>g__JAAYFO01 (on the path, the anchor)</span></div>
+          <div class="gets"><span>＋</span><span>g__Neosphaerochaeta → leaf</span></div>
+          <div class="gets"><span>＋</span><span>s__Neosphaerochaeta fermentans → leaf</span></div>
+        </div>
+        <p class="note">Removing the dummy nodes of an old tree and assigning the file must give back exactly the taxa
+          they held. This is tested by <code>removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ REFINE -->
+<section id="refine">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Refinement · Tree::refine_existing_labels, Tree::process_refinement</span>
+      <h2>Moving labels to better nodes</h2>
+      <p>One pass per rank, from phylum down to genus. Each pass finds all candidate nodes for every taxon of the rank
+        on the tree as it is at the start of the pass, moves each taxon to its best candidate, then reloads the tree
+        so the next rank sees the moves.</p>
+    </div>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    S["Pass for rank R: phylum, class, order, family, then genus"] --> W["Window of R from the median RED"]
+    W --> N["Every node in post-order with a taxonomy and a bootstrap"]
+    N --> T["Every taxon of rank R on it"]
+    T --> U["Up candidates"]
+    T --> D["Down candidates"]
+    U --> F["Refinement: the candidates of each taxon, in the order found"]
+    D --> F
+    F --> P["process_refinement: move each taxon to its best node"]
+    P --> RL["Tree::reload, then the next rank"]
+</pre>
+    </div>
+    <div class="grid-2">
+      <div class="diagram">
+        <h3 style="margin-bottom:0.5rem">Moving up</h3>
+<pre class="mermaid">
+flowchart TD
+    S(["Taxon of rank R on its original node"]) --> U1{"U1: a different named taxon of R on an ancestor?"}
+    U1 -- yes --> NO(["No up candidates"])
+    U1 -- no --> NX["Go to the parent"]
+    NX --> TOP{"Past the root?"}
+    TOP -- yes --> DONE(["Done"])
+    TOP -- no --> S1{"RED above the window?"}
+    S1 -- yes --> DONE
+    S1 -- no --> S2{"RED below the window?"}
+    S2 -- yes --> NX
+    S2 -- no --> S3{"Supported, or a higher bootstrap than the original? No bootstrap is an error."}
+    S3 -- no --> NX
+    S3 -- yes --> S4{"A node below holds a different named taxon of R?"}
+    S4 -- yes --> DONE
+    S4 -- no --> S5{"A named taxon of a higher rank strictly below?"}
+    S5 -- yes --> DONE
+    S5 -- no --> S6{"Closer to the median than the original, or the original is unsupported?"}
+    S6 -- yes --> REC["Record a candidate"] --> NX
+    S6 -- no --> NX
+</pre>
+      </div>
+      <div class="diagram">
+        <h3 style="margin-bottom:0.5rem">Moving down</h3>
+<pre class="mermaid">
+flowchart TD
+    S(["Taxon of rank R on its original node"]) --> D1{"D1: original supported and RED below the window?"}
+    D1 -- yes --> NO(["No down candidates"])
+    D1 -- no --> CT["D2: the taxa of R that the prior taxonomy gives the genomes under each child. Genus only: a new genome adds the Latin genus of its species, if the original node is inside the window."]
+    CT --> K{"How many children contain the taxon?"}
+    K -- "none, or more than one" --> STOP(["Stop"])
+    K -- "exactly one" --> V["Visit that child"]
+    V --> KIND{"D3: what is the child?"}
+    KIND -- "a leaf" --> RL(["Record, stop"])
+    KIND -- "supported" --> RS["Record"]
+    RS --> FAR{"RED delta larger than the original?"}
+    FAR -- yes --> STOP
+    FAR -- no --> CT
+    KIND -- "unsupported, higher bootstrap than the original" --> RU["Record"] --> CT
+    KIND -- "anything else" --> CT
+</pre>
+      </div>
+    </div>
+    <p class="note">Moving down follows the genomes that <code>--prior-taxonomy</code> puts in the taxon. Without it no
+      child ever contains the taxon, so nothing moves down. It is never read from <code>--taxonomy</code>, because
+      that file decorates this same tree and every genome under a taxon would have it.</p>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    C["The candidates in the order found, with the original node after the first"] --> SO["Stable sort: supported first, then smallest RED delta, then highest bootstrap (a leaf counts as 100)"]
+    SO --> B{"Is the best the original node?"}
+    B -- yes --> K(["No move"])
+    B -- no --> M["transfer_taxon: remove from the original, add to the best"]
+    M --> R(["Record the Move for the report"])
+</pre>
+    </div>
+
+    <!-- Upward walk explorer -->
+    <div class="panel" style="display:grid;gap:1rem" id="sim">
+      <div class="head">
+        <h3>Try the upward walk</h3>
+        <p class="note">A JavaScript copy of the upward walk in <code>Tree::refine_existing_labels</code> and the sort in
+          <code>Tree::process_refinement</code>, with the r237 medians. Edit the original node and its ancestors (parent
+          first). The tick boxes stand in for what the code reads from the tree below each ancestor. Down candidates
+          are not simulated.</p>
+      </div>
+      <div class="chips" id="sim-presets"></div>
+      <div class="controls">
+        <div class="field"><label for="sim-rank">Rank</label>
+          <select id="sim-rank"><option value="p">phylum</option><option value="c">class</option><option value="o">order</option><option value="f">family</option><option value="g" selected>genus</option></select></div>
+        <div class="field"><label for="sim-minbs">--min-bs</label><input type="number" id="sim-minbs" step="1" value="95"></div>
+        <div class="field"><label for="sim-ored">Original RED</label><input type="number" id="sim-ored" step="0.001" min="0" max="1"></div>
+        <div class="field"><label for="sim-obs">Original bootstrap</label><input type="number" id="sim-obs" step="1" min="0" max="100"></div>
+        <div class="field"><span class="lbl">U1</span><label style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);font-size:0.9rem"><input type="checkbox" id="sim-nested"> Nested in another taxon of the rank</label></div>
+      </div>
+      <p class="note mono" id="sim-window"></p>
+      <div class="table-wrap">
+        <table class="sim-table">
+          <thead><tr><th>Ancestor</th><th>RED</th><th>Bootstrap</th><th>Other taxon of the rank below</th><th>Higher rank below</th><th>Outcome</th><th></th></tr></thead>
+          <tbody id="sim-rows"></tbody>
+        </table>
+      </div>
+      <div><button class="btn" id="sim-add" type="button">Add an ancestor above</button></div>
+      <div class="grid-2">
+        <div style="display:grid;gap:0.5rem;align-content:start;min-width:0">
+          <span class="eyebrow">Ranking</span>
+          <ol class="rank-list" id="sim-rank-list"></ol>
+        </div>
+        <div style="display:grid;gap:0.5rem;align-content:start;min-width:0">
+          <span class="eyebrow">Result</span>
+          <p class="verdict" id="sim-verdict"></p>
+          <p class="note" id="sim-why"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ NOVEL -->
+<section id="novel">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Novel taxa · fill_in_missing_ranks, generate_unique_rank</span>
+      <h2>Filling in missing ranks</h2>
+      <p>After refinement, every leaf whose path is missing a rank gets a novel taxon for that rank, placed as high
+        as the tree allows. Leaves that reach the same node share one taxon. A novel taxon is never placed above a
+        valid name of a lower rank, because a curator never would.</p>
+    </div>
+    <div class="grid-2">
+      <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    M["Tree::get_leaf_nodes_missing_rank: leaves whose path lacks a rank"] --> E["Each leaf and missing rank R, from phylum down"]
+    E --> W["Walk up from the leaf, the leaf included"]
+    W --> A{"A node below holds a taxon of R?"}
+    A -- yes --> H["Take the highest candidate. None is NoCandidateNode."]
+    A -- no --> OK{"No bootstrap or supported, and RED at least halfway from the parent median to the R median?"}
+    OK -- yes --> C["Candidate"] --> W
+    OK -- no --> W
+    H --> G["Leaves with the same highest node share one taxon"]
+    G --> V{"A valid name of a rank lower than R, species excluded, at or below the node?"}
+    V -- yes --> SK["Skip: the leaves keep the placeholder of R"]
+    V -- no --> NM["generate_unique_rank: the most readable WGS name, else the lowest unused genome ID, else R__UNRESOLVABLE"]
+    NM --> P["Add the novel taxon to the node"]
+</pre>
+      </div>
+      <div style="display:grid;gap:1rem;align-content:start">
+        <div class="panel card">
+          <h3>Naming, in order of preference</h3>
+          <ul>
+            <li>The WGS names of the genomes under the node, from <code>--novel-name-file</code>, that are not already taxa on the tree. Names without a confusable pair (<code>I/l</code>, <code>0/O</code>, <code>1/I</code>, <code>5/S</code>, <code>2/Z</code>) win, then the alphabetically lowest. For example <code>g__JAAYFO01</code>.</li>
+            <li>The lowest genome ID whose name is not taken. For example <code>g__G963674675</code>.</li>
+            <li><code>&lt;rank&gt;__UNRESOLVABLE</code>, the only taxon allowed on more than one node, for a curator to name.</li>
+          </ul>
+        </div>
+        <div class="panel card">
+          <h3>Details from the code</h3>
+          <ul>
+            <li>The candidates and the valid names below each node are read before any novel taxon is created.</li>
+            <li>Ranks are created from phylum down to genus.</li>
+            <li>A valid name is any named taxon except an unresolved species (<code>s__{unresolved} …</code>). Species never count, or every genome would block every novel genus.</li>
+            <li>A missing domain has no parent rank to bound its RED, and is a <code>NoParentRank</code> error.</li>
+            <li>The leaf itself (no bootstrap, RED 1.0) is always a candidate, so a leaf with no other candidate gets the taxon on itself.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ CHECKS -->
+<section id="checks">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Checks · src/error.rs</span>
+      <h2>What stops a run</h2>
+      <p>The rules are enforced in code. Each check below fails the run with a named <code>CuratomaticError</code>
+        before any output is written.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Check</th><th>Where</th><th>When</th><th>Error</th></tr></thead>
+        <tbody>
+          <tr><td>A leaf label is its genome ID, with a RED of 1.0 if any</td><td><code>parse_leaf_label</code></td><td>Reading the tree</td><td><code>TaxonomyOnLeaf</code>, <code>InvalidNodeLabel</code></td></tr>
+          <tr><td>Every taxon is on one node, except <code>&lt;rank&gt;__UNRESOLVABLE</code></td><td><code>Tree::get_taxon_labels</code></td><td>Every load and reload</td><td><code>NonUniqueTaxon</code></td></tr>
+          <tr><td>Every genome on the tree is in <code>--taxonomy</code></td><td><code>read_taxonomy_file</code></td><td>After reading the tree</td><td><code>MissingFromTaxonomyFile</code></td></tr>
+          <tr><td>The tree and the file agree, and no taxon is given twice</td><td><code>Tree::assign_leaf_taxonomy</code></td><td>Leaf assignment</td><td><code>TaxonomyFileConflict</code></td></tr>
+          <tr><td>Leaf assignment only adds taxa</td><td><code>assign_leaf_taxonomy</code> (main.rs)</td><td>Leaf assignment</td><td><code>Invariant</code></td></tr>
+          <tr><td>Every leaf holds its named species</td><td><code>Tree::check_leaves_have_species</code></td><td>After assignment, and before output</td><td><code>LeafWithoutSpecies</code></td></tr>
+          <tr><td>An ancestor inside the window has a bootstrap</td><td><code>required_bootstrap</code></td><td>Moving up</td><td><code>Invariant</code></td></tr>
+          <tr><td>A move leaves the original node with a bootstrap or a taxon</td><td><code>transfer_taxon</code></td><td>Applying a move</td><td><code>Invariant</code></td></tr>
+          <tr><td>A leaf label is never changed</td><td><code>NewickTree::set_internal_label</code>, <code>NodeLabel::to_label</code></td><td>Any label write</td><td><code>Invariant</code></td></tr>
+          <tr><td>Taxa are only moved or created: same nodes count, same text, new names only for novel taxa</td><td><code>check_taxa_unchanged</code></td><td>Before output</td><td><code>TaxaChanged</code></td></tr>
+          <tr><td>Every move and novel taxon has a report row</td><td><code>check_every_change_has_a_row</code></td><td>Building the report</td><td><code>Invariant</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ REPORT -->
+<section id="report">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Report · build_report in src/report.rs</span>
+      <h2>What a curator reviews</h2>
+      <p>One row per taxon that was moved or created, sorted by rank then taxon. A taxon that was left where it was
+        has no row. The action is <code>moved_up</code> when the new node is an ancestor of the old one, otherwise
+        <code>moved_down</code>, or <code>novel</code>. Flags are only set for phylum to genus.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Flag</th><th>Set when</th></tr></thead>
+        <tbody>
+          <tr><td><code>nested_in_same_rank</code></td><td>Another named taxon of the same rank is on an ancestor (named in <code>nested_in</code>).</td></tr>
+          <tr><td><code>novel_low_red</code></td><td>A novel taxon with 2 or more genomes on a node with q &lt; 0.5, where q is 0 at the upper window bound and 1 at the median.</td></tr>
+          <tr><td><code>sister_join_past_child_thresh</code></td><td>The closest sister taxa of the same rank join it below the lower window bound (named in <code>sister_taxa</code>).</td></tr>
+          <tr><td><code>unsupported_label</code></td><td>The node now holding the taxon has a bootstrap below <code>--min-bs</code>.</td></tr>
+          <tr><td><code>large_gain</code></td><td>A move that multiplied the number of genomes by 5 or more.</td></tr>
+          <tr><td><code>displaced_from_prior</code></td><td>A novel taxon whose genomes had a taxon of this rank in the prior taxonomy (named in <code>prior_taxon</code>).</td></tr>
+          <tr><td><code>new_in_decoration</code></td><td>A moved taxon that is not in the prior taxonomy (only when <code>--prior-taxonomy</code> is given).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Columns: <span class="mono">taxon, rank, action, flag, n_genomes_before, n_genomes_after, bootstrap_before,
+      bootstrap_after, red_before, red_after, prior_taxon, nested_in, sister_taxa</span>.</p>
+  </div>
+</section>
+
+<!-- ============================================================ CODE MAP -->
+<section id="code">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Code map</span>
+      <h2>Where to look</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th>Holds</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/main.rs</code></td><td><code>curate</code>: the pipeline, input reading, <code>check_taxa_unchanged</code>, <code>--debug</code> output</td></tr>
+          <tr><td><code>src/cli.rs</code></td><td><code>Cli</code>: the command line</td></tr>
+          <tr><td><code>src/tree.rs</code></td><td><code>Tree</code>, <code>Leaf</code>, leaf assignment, refinement, novel taxa, taxonomy output</td></tr>
+          <tr><td><code>src/newick.rs</code></td><td><code>NewickTree</code>, <code>NodeId</code>: parsing and writing Newick, post-order arena</td></tr>
+          <tr><td><code>src/node_label.rs</code></td><td><code>NodeLabel</code>: reading and writing node labels</td></tr>
+          <tr><td><code>src/taxon.rs</code></td><td><code>Taxon</code>, <code>TaxonCounts</code>, <code>generate_unique_rank</code></td></tr>
+          <tr><td><code>src/taxonomy.rs</code></td><td><code>Taxonomy</code>: the taxa of each rank on one node</td></tr>
+          <tr><td><code>src/taxonomy_file.rs</code></td><td><code>TaxonomyFile</code>: reading and writing the taxonomy TSV</td></tr>
+          <tr><td><code>src/metadata.rs</code></td><td><code>Metadata</code>: novel names and the prior taxonomy</td></tr>
+          <tr><td><code>src/red.rs</code></td><td><code>Red</code>, <code>RedValue</code>: the median RED file</td></tr>
+          <tr><td><code>src/rank.rs</code></td><td><code>Rank</code></td></tr>
+          <tr><td><code>src/bootstrap.rs</code>, <code>src/genome.rs</code></td><td><code>BootstrapValue</code>, <code>GenomeId</code>, <code>gid_to_canonical</code></td></tr>
+          <tr><td><code>src/report.rs</code></td><td><code>build_report</code>, <code>ReportRow</code>, <code>Action</code>, <code>Flag</code></td></tr>
+          <tr><td><code>src/error.rs</code></td><td><code>CuratomaticError</code></td></tr>
+          <tr><td><code>src/log.rs</code></td><td>The logger</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>A snapshot of curatomatic at commit <span class="mono">27f27d5</span> on the <span class="mono">dev</span> branch,
+      23 November 2026, read from the code. Where the code and the docs disagree, this page follows the code.</p>
+    <p>The source of this page is <span class="mono">docs/architecture.html</span>, with the same diagrams in
+      <span class="mono">docs/architecture.md</span>, which also says how to regenerate both.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const f3 = (x) => x.toFixed(3);
+  const f4 = (x) => x.toFixed(4);
+
+  /* ---------- Ranks and medians ---------- */
+  const RANKS = ["d", "p", "c", "o", "f", "g", "s"];
+  const NAMES = { d: "domain", p: "phylum", c: "class", o: "order", f: "family", g: "genus", s: "species" };
+  const MEDIANS = {
+    r237: { d: 0, p: 0.3095, c: 0.4428, o: 0.5962, f: 0.7519, g: 0.9189, s: 1 },
+    r226: { d: 0, p: 0.341, c: 0.461, o: 0.617, f: 0.760, g: 0.920, s: 1 },
+  };
+  const REFINED = ["p", "c", "o", "f", "g"];
+  // The window of a rank, as in Tree::refine_existing_labels: upper = midpoint(parent, rank), lower = midpoint(rank, child).
+  function windowOf(m, r) {
+    const i = RANKS.indexOf(r);
+    const parent = RANKS[i - 1], child = RANKS[i + 1];
+    return { median: m[r], upper: (m[parent] + m[r]) / 2, lower: (m[r] + m[child]) / 2,
+             novelMin: m[parent] + (m[r] - m[parent]) / 2 };
+  }
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  /* ---------- Hero ribbon ---------- */
+  function drawRibbon() {
+    const m = MEDIANS.r237, svg = $("ribbon");
+    const x = (v) => 20 + v * 960;
+    let s = `<defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" style="stop-color:var(--root)"/><stop offset="1" style="stop-color:var(--leaf)"/></linearGradient></defs>`;
+    s += `<rect x="20" y="40" width="960" height="10" rx="5" fill="url(#rg)"/>`;
+    s += `<text x="20" y="80" font-size="13" style="fill:var(--muted);font-family:var(--font-mono)">0 · root</text>`;
+    s += `<text x="980" y="80" font-size="13" text-anchor="end" style="fill:var(--muted);font-family:var(--font-mono)">leaves · 1</text>`;
+    REFINED.forEach((r, k) => {
+      const cx = x(m[r]);
+      s += `<line x1="${cx}" x2="${cx}" y1="32" y2="58" stroke-width="2" style="stroke:var(--ink)"/>`;
+      s += `<text x="${cx}" y="22" font-size="14" text-anchor="middle" font-weight="600" style="fill:var(--ink);font-family:var(--font-body)">${NAMES[r]}</text>`;
+      s += `<text x="${cx}" y="76" font-size="12" text-anchor="middle" style="fill:var(--muted);font-family:var(--font-mono)">${m[r].toFixed(3)}</text>`;
+    });
+    svg.innerHTML = s;
+  }
+
+  /* ---------- Pipeline stepper ---------- */
+  const STEPS = [
+    { t: "Check the output directory", fn: "run", at: "src/main.rs:38",
+      what: "Refuses to run if OUT_DIR already exists, unless --log debug is given. Then creates it and opens curatomatic.log.",
+      fail: "Prints an error and exits with failure." },
+    { t: "Read the tree", fn: "Tree::from_file → NewickTree::parse, NodeLabel::from_node", at: "src/tree.rs:212",
+      what: "Parses the Newick text into a post-order arena, reads every node label into RED, bootstrap and taxa, and collects the genome IDs of the leaves.",
+      fail: "Newick, InvalidNodeLabel, TaxonomyOnLeaf (a leaf label holding taxa), NonUniqueTaxon." },
+    { t: "Read the taxonomy file", fn: "read_taxonomy_file → TaxonomyFile::from_file", at: "src/main.rs:103",
+      what: "Reads --taxonomy, makes the genome IDs canonical, and compares them with the tree. Genomes in the file but not the tree are a warning.",
+      fail: "TaxonomyFile (bad line, duplicate genome), MissingFromTaxonomyFile." },
+    { t: "Assign taxa to the leaves", fn: "Tree::assign_leaf_taxonomy", at: "src/tree.rs:318",
+      what: "Each leaf gets every named taxon of its row that is not on its path. The taxa on the tree are snapshotted before and after: assignment may only add.",
+      fail: "TaxonomyFileConflict, Invariant." },
+    { t: "Check every leaf has its species", fn: "Tree::check_leaves_have_species", at: "src/tree.rs:475",
+      what: "Every leaf must hold a named species on its Leaf.",
+      fail: "LeafWithoutSpecies." },
+    { t: "Write the debug inputs", fn: "write_debug_inputs", at: "src/main.rs:250",
+      what: "Only with --debug. Writes the tree with a dummy node above each leaf (the old format) and the full taxonomy of each genome, for scripts/check_round_trip.py.",
+      fail: "Io." },
+    { t: "Snapshot the taxa", fn: "Tree::taxon_counts", at: "src/tree.rs:594",
+      what: "Counts the nodes holding each named taxon. This is the 'before' for check_taxa_unchanged.",
+      fail: "None expected." },
+    { t: "Read the prior taxonomy and novel names", fn: "read_metadata → Metadata::from_file, TaxonomyFile::from_file", at: "src/main.rs:151",
+      what: "Reads --novel-name-file (WGS names) and --prior-taxonomy into Metadata, subset to the genomes on the tree. The full set of prior taxa is kept for the report. Warns if there is no prior taxonomy, because then nothing can move down.",
+      fail: "MissingColumn, MissingValue, TaxonomyFile, Io." },
+    { t: "Read the median RED", fn: "Red::from_file", at: "src/red.rs:86",
+      what: "Reads the median of each rank by column name. The domain is fixed at 0.0 and the species at 1.0.",
+      fail: "Red (missing column, bad number, unknown or repeated rank)." },
+    { t: "Refine each rank", fn: "Tree::refine_existing_labels, Tree::process_refinement, Tree::reload", at: "src/main.rs:307",
+      what: "For phylum, class, order, family then genus: find candidate nodes up and down for every taxon of the rank, move each to its best node, then reload. Every move is kept for the report.",
+      fail: "Invariant (an ancestor without a bootstrap, or a move that would leave a node with nothing to label it), NonUniqueTaxon." },
+    { t: "Find leaves missing ranks", fn: "Tree::get_leaf_nodes_missing_rank", at: "src/tree.rs:535",
+      what: "For each leaf, the ranks with no taxon anywhere on its path, the leaf included. A placeholder such as g__ on an internal node counts as present (the r237 tree has none).",
+      fail: "None expected." },
+    { t: "Create novel taxa", fn: "fill_in_missing_ranks → generate_unique_rank", at: "src/tree.rs:1009",
+      what: "Places one novel taxon per missing rank on the highest valid node, shared between leaves, unless a valid lower name is below it.",
+      fail: "NoParentRank (a missing domain), NoCandidateNode, MissingRed." },
+    { t: "Check taxa were only moved or created", fn: "check_taxa_unchanged", at: "src/main.rs:195",
+      what: "Compares the snapshot with the tree now: every old taxon is on as many nodes as before with the same text, every new taxon is novel, and no novel taxon reuses an old name.",
+      fail: "TaxaChanged." },
+    { t: "Check every leaf has its species, again", fn: "Tree::check_leaves_have_species", at: "src/tree.rs:475",
+      what: "The same check as after loading, now on the curated tree.",
+      fail: "LeafWithoutSpecies." },
+    { t: "Build the report", fn: "build_report", at: "src/report.rs:329",
+      what: "One row per moved or novel taxon, with before and after stats and the review flags. Every change must have a row.",
+      fail: "Invariant." },
+    { t: "Write the outputs", fn: "taxonomy_file::write, Tree::remove_red_labels, Tree::to_file, write_report", at: "src/main.rs:263",
+      what: "Writes the taxonomy (nearest taxon of each rank on each leaf's path), strips RED from the internal labels and writes the tree, then writes the report.",
+      fail: "Io." },
+  ];
+  let stepIdx = 0;
+  function renderSteps() {
+    $("steps").innerHTML = STEPS.map((s, i) =>
+      `<li><button type="button" data-i="${i}" aria-current="${i === stepIdx}"><span class="i">${String(i + 1).padStart(2, "0")}</span><span>${esc(s.t)}</span></button></li>`).join("");
+    const s = STEPS[stepIdx];
+    $("step-detail").innerHTML = `
+      <span class="eyebrow">Step ${stepIdx + 1} of ${STEPS.length}</span>
+      <h3>${esc(s.t)}</h3>
+      <dl>
+        <dt>Function</dt><dd><code>${esc(s.fn)}</code></dd>
+        <dt>Source</dt><dd><code>${esc(s.at)}</code></dd>
+        <dt>Does</dt><dd>${esc(s.what)}</dd>
+        <dt>Can fail</dt><dd>${esc(s.fail)}</dd>
+      </dl>
+      <div style="display:flex;gap:0.5rem">
+        <button class="btn" type="button" id="step-prev" ${stepIdx === 0 ? "disabled" : ""}>Previous</button>
+        <button class="btn primary" type="button" id="step-next" ${stepIdx === STEPS.length - 1 ? "disabled" : ""}>Next step</button>
+      </div>`;
+  }
+  $("steps").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-i]"); if (!b) return;
+    stepIdx = Number(b.dataset.i); renderSteps();
+  });
+  $("step-detail").addEventListener("click", (e) => {
+    if (e.target.id === "step-prev" && stepIdx > 0) stepIdx--;
+    else if (e.target.id === "step-next" && stepIdx < STEPS.length - 1) stepIdx++;
+    else return;
+    renderSteps();
+  });
+
+  /* ---------- Label reader (copy of src/node_label.rs) ---------- */
+  const PREFIXES = "dpcofgs";
+  function parseFloatStrict(v) {
+    const t = v.trim();
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t) && !/^[+-]?(inf|infinity|nan)$/i.test(t)) return null;
+    return Number(t.replace(/^([+-]?)inf(inity)?$/i, "$1Infinity"));
+  }
+  function splitRed(label) {
+    label = label.trim();
+    const found = [];
+    for (const key of ["RED=", "red="]) {
+      let i = label.indexOf(key);
+      while (i !== -1) { found.push([i, key.length]); i = label.indexOf(key, i + 1); }
+    }
+    if (found.length === 0) return { prefix: label, red: null };
+    if (found.length > 1) throw { kind: "InvalidNodeLabel", msg: "more than one RED in the label" };
+    const [idx, len] = found[0];
+    const before = label.slice(0, idx);
+    const red = parseFloatStrict(label.slice(idx + len));
+    if (red === null) throw { kind: "InvalidNodeLabel", msg: "the RED is not a number" };
+    let prefix;
+    if (before.endsWith("|")) prefix = before.slice(0, -1);
+    else if (before.endsWith(":")) prefix = before;
+    else throw { kind: "InvalidNodeLabel", msg: "the RED must follow '|' or ':'" };
+    return { prefix, red };
+  }
+  function parseTaxonomy(s) {
+    if (s.trim() === "") return null;
+    return s.split(";").map((t) => {
+      t = t.trim();
+      if (t === "") throw { kind: "EmptyTaxon", msg: "an empty taxon between ';'" };
+      if (!PREFIXES.includes(t[0])) throw { kind: "UnknownRank", msg: `unknown rank for taxon ${t}` };
+      return t;
+    });
+  }
+  function readLabel(label, kind) {
+    const { prefix, red } = splitRed(label);
+    if (kind === "leaf") {
+      const r = red === null ? 1.0 : red;
+      if (r !== 1.0 || prefix === "") throw { kind: "InvalidNodeLabel", msg: "a leaf is '<gid>' with an optional RED of 1.0" };
+      if (prefix.includes("|")) throw { kind: "TaxonomyOnLeaf", msg: "a leaf label holds only its genome ID; its taxa come from --taxonomy" };
+      return { red: r, bootstrap: null, taxa: null, gid: prefix };
+    }
+    if (red === null) throw { kind: "InvalidNodeLabel", msg: "an internal node must have a RED" };
+    let bs = null, tax = null;
+    if (prefix.includes(":")) {
+      const parts = prefix.split(":");
+      if (parts.length !== 2) throw { kind: "InvalidNodeLabel", msg: "more than one ':'" };
+      bs = parseFloatStrict(parts[0]);
+      if (bs === null) throw { kind: "InvalidNodeLabel", msg: "the bootstrap is not a number" };
+      tax = parts[1];
+    } else {
+      const b = parseFloatStrict(prefix);
+      if (b !== null) bs = b; else tax = prefix;
+    }
+    const taxa = parseTaxonomy(tax || "");
+    if (bs === null && !taxa) throw { kind: "InvalidNodeLabel", msg: "neither a bootstrap nor a taxonomy" };
+    return { red, bootstrap: bs, taxa, gid: null };
+  }
+  const SAMPLES = [
+    ["100:f__CAYYKD01;g__CAYYKD01|red=0.8386", "internal"],
+    ["100:red=0.8894", "internal"],
+    ["79:red=0.7606", "internal"],
+    ["d__Bacteria|RED=0.000", "internal"],
+    ["G964471825", "leaf"],
+    ["G964471825|g__CAYYKD01", "leaf"],
+    ["100:g__A|RED=0.9|RED=0.8", "internal"],
+  ];
+  $("lbl-samples").innerHTML = SAMPLES.map(([s, k], i) =>
+    `<button class="btn sample" type="button" data-i="${i}" title="${k}">${esc(s)}</button>`).join("");
+  $("lbl-samples").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-i]"); if (!b) return;
+    const [s, k] = SAMPLES[Number(b.dataset.i)];
+    $("lbl-in").value = s; $("lbl-kind").value = k; renderLabel();
+  });
+  function renderLabel() {
+    const out = $("lbl-out");
+    try {
+      const r = readLabel($("lbl-in").value, $("lbl-kind").value);
+      const named = (r.taxa || []).filter((t) => t.length > 3);
+      const kv = [
+        ["RED", String(r.red)],
+        ["Bootstrap", r.bootstrap === null ? "none" : String(r.bootstrap)],
+        ["Taxa", r.taxa ? r.taxa.join("; ") : "none"],
+        ["Genome ID", r.gid || "none"],
+      ];
+      out.innerHTML = `<div class="parsed">${kv.map(([k, v]) => `<div class="kv"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("")}</div>` +
+        `<p class="note" style="margin-top:0.6rem">${r.gid ? "A leaf: its taxa are held on its Leaf, from --taxonomy, and its label is never rewritten." :
+          r.bootstrap === null ? "No bootstrap: refinement never considers this node as an original node, and an ancestor like this inside a window is an error." :
+          named.length ? `Refinement will consider ${named.map(esc).join(", ")}.` : "No taxa: a node that taxa can be moved onto."}</p>`;
+    } catch (e) {
+      out.innerHTML = `<div class="err"><b>${esc(e.kind || "Error")}</b>: ${esc(e.msg || String(e))}</div>`;
+    }
+  }
+  $("lbl-in").addEventListener("input", renderLabel);
+  $("lbl-kind").addEventListener("change", renderLabel);
+
+  /* ---------- RED explorer ---------- */
+  function renderRed() {
+    const m = MEDIANS[$("red-set").value];
+    const v = Number($("red-slider").value);
+    $("red-val").textContent = f3(v);
+    const X0 = 110, W = 860, x = (r) => X0 + r * W;
+    const rowH = 42, top = 30;
+    let s = "";
+    for (let t = 0; t <= 10; t++) {
+      const tx = x(t / 10);
+      s += `<line x1="${tx}" x2="${tx}" y1="${top - 8}" y2="${top + rowH * 5}" stroke-width="1" style="stroke:var(--line)"/>`;
+      s += `<text x="${tx}" y="${top + rowH * 5 + 20}" font-size="13" text-anchor="middle" class="muted">${(t / 10).toFixed(1)}</text>`;
+    }
+    s += `<text x="${X0}" y="${top - 14}" font-size="12" class="muted">root</text>`;
+    s += `<text x="${X0 + W}" y="${top - 14}" font-size="12" class="muted" text-anchor="end">leaves</text>`;
+    REFINED.forEach((r, k) => {
+      const w = windowOf(m, r), y = top + k * rowH;
+      const inside = w.upper <= v && v <= w.lower;
+      s += `<text x="${X0 - 12}" y="${y + 24}" font-size="15" text-anchor="end" font-weight="${inside ? 700 : 500}">${NAMES[r]}</text>`;
+      s += `<rect x="${x(w.upper)}" y="${y + 8}" width="${x(w.lower) - x(w.upper)}" height="24" rx="4" style="fill:var(--accent);opacity:${inside ? 0.55 : 0.2}"/>`;
+      s += `<line x1="${x(w.median)}" x2="${x(w.median)}" y1="${y + 4}" y2="${y + 36}" stroke-width="2" style="stroke:var(--ink)"/>`;
+    });
+    s += `<line x1="${x(v)}" x2="${x(v)}" y1="${top - 4}" y2="${top + rowH * 5 + 4}" stroke-width="3" style="stroke:var(--leaf)"/>`;
+    s += `<circle cx="${x(v)}" cy="${top - 4}" r="5" style="fill:var(--leaf)"/>`;
+    $("red-svg").innerHTML = s;
+
+    $("red-rows").innerHTML = REFINED.map((r) => {
+      const w = windowOf(m, r), d = Math.abs(w.median - v);
+      let chip;
+      if (v < w.upper) chip = `<span class="chip stop">above the window: an upward walk stops here</span>`;
+      else if (v > w.lower) chip = `<span class="chip idle">below the window: skipped going up</span>`;
+      else chip = `<span class="chip ok">inside the window</span>`;
+      const novel = v >= w.novelMin ? `<span class="chip ok">can hold a novel ${NAMES[r]}</span>` : `<span class="chip idle">too high for a novel ${NAMES[r]}</span>`;
+      return `<tr><td>${NAMES[r]}</td><td class="num">${f4(w.median)}</td><td class="num">${f4(w.upper)} – ${f4(w.lower)}</td><td class="num">${f4(d)}</td><td><div class="chips">${chip}${novel}</div></td></tr>`;
+    }).join("");
+  }
+  $("red-set").addEventListener("change", renderRed);
+  $("red-slider").addEventListener("input", renderRed);
+
+  /* ---------- Upward walk explorer (copy of src/tree.rs) ---------- */
+  const PRESETS = {
+    "An unsupported genus climbs": { rank: "g", minBs: 95, ored: 0.97, obs: 80, nested: false, anc: [
+      { red: 0.955, bs: 70, conflict: false, higher: false },
+      { red: 0.93, bs: 98, conflict: false, higher: false },
+      { red: 0.88, bs: 100, conflict: false, higher: false },
+      { red: 0.86, bs: 92, conflict: false, higher: false },
+      { red: 0.82, bs: 100, conflict: false, higher: false } ] },
+    "A supported genus near its median stays": { rank: "g", minBs: 95, ored: 0.92, obs: 99, nested: false, anc: [
+      { red: 0.90, bs: 100, conflict: false, higher: false },
+      { red: 0.86, bs: 100, conflict: false, higher: false },
+      { red: 0.83, bs: 100, conflict: false, higher: false } ] },
+    "Another genus below stops the walk": { rank: "g", minBs: 95, ored: 0.965, obs: 60, nested: false, anc: [
+      { red: 0.94, bs: 99, conflict: false, higher: false },
+      { red: 0.91, bs: 100, conflict: true, higher: false },
+      { red: 0.87, bs: 100, conflict: true, higher: false } ] },
+    "A nested family never moves up": { rank: "f", minBs: 95, ored: 0.80, obs: 70, nested: true, anc: [
+      { red: 0.76, bs: 100, conflict: false, higher: false },
+      { red: 0.72, bs: 100, conflict: false, higher: false } ] },
+  };
+  let sim = null;
+  function loadPreset(name) {
+    sim = JSON.parse(JSON.stringify(PRESETS[name]));
+    $("sim-rank").value = sim.rank; $("sim-minbs").value = sim.minBs;
+    $("sim-ored").value = sim.ored; $("sim-obs").value = sim.obs; $("sim-nested").checked = sim.nested;
+    renderSimRows(); runSim();
+  }
+  $("sim-presets").innerHTML = Object.keys(PRESETS).map((n) => `<button class="btn" type="button" data-p="${esc(n)}">${esc(n)}</button>`).join("");
+  $("sim-presets").addEventListener("click", (e) => { const b = e.target.closest("button[data-p]"); if (b) loadPreset(b.dataset.p); });
+
+  function renderSimRows() {
+    $("sim-rows").innerHTML = sim.anc.map((a, i) => `
+      <tr data-i="${i}">
+        <td class="mono">${i === 0 ? "parent" : "+" + i}</td>
+        <td><input type="number" step="0.001" min="0" max="1" data-k="red" value="${a.red}" aria-label="RED of ancestor ${i + 1}"></td>
+        <td><input type="number" step="1" min="0" max="100" data-k="bs" value="${a.bs === null ? "" : a.bs}" placeholder="none" aria-label="Bootstrap of ancestor ${i + 1}"></td>
+        <td><input type="checkbox" data-k="conflict" ${a.conflict ? "checked" : ""} aria-label="Ancestor ${i + 1} has a different taxon of the rank below"></td>
+        <td><input type="checkbox" data-k="higher" ${a.higher ? "checked" : ""} aria-label="Ancestor ${i + 1} has a higher rank below"></td>
+        <td class="outcome"></td>
+        <td><button class="btn" type="button" data-del="${i}" aria-label="Remove ancestor ${i + 1}">Remove</button></td>
+      </tr>`).join("");
+  }
+  $("sim-rows").addEventListener("input", (e) => {
+    const tr = e.target.closest("tr[data-i]"); if (!tr) return;
+    const a = sim.anc[Number(tr.dataset.i)], k = e.target.dataset.k;
+    if (k === "conflict" || k === "higher") a[k] = e.target.checked;
+    else if (k === "bs") a.bs = e.target.value === "" ? null : Number(e.target.value);
+    else a[k] = Number(e.target.value);
+    runSim();
+  });
+  $("sim-rows").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-del]"); if (!b) return;
+    sim.anc.splice(Number(b.dataset.del), 1); renderSimRows(); runSim();
+  });
+  $("sim-add").addEventListener("click", () => {
+    const last = sim.anc[sim.anc.length - 1];
+    sim.anc.push({ red: last ? Math.max(0, +(last.red - 0.03).toFixed(3)) : 0.9, bs: 100, conflict: false, higher: false });
+    renderSimRows(); runSim();
+  });
+  for (const id of ["sim-rank", "sim-minbs", "sim-ored", "sim-obs", "sim-nested"]) {
+    $(id).addEventListener(id === "sim-rank" || id === "sim-nested" ? "change" : "input", () => {
+      sim.rank = $("sim-rank").value; sim.minBs = Number($("sim-minbs").value);
+      sim.ored = Number($("sim-ored").value); sim.obs = Number($("sim-obs").value); sim.nested = $("sim-nested").checked;
+      runSim();
+    });
+  }
+
+  function runSim() {
+    const m = MEDIANS.r237, w = windowOf(m, sim.rank), med = w.median;
+    const minBs = sim.minBs, oBs = sim.obs, oDelta = Math.abs(med - sim.ored);
+    $("sim-window").textContent = `${NAMES[sim.rank]}: median ${f4(med)}, window ${f4(w.upper)} – ${f4(w.lower)}. Original: RED delta ${f4(oDelta)}, ${oBs >= minBs ? "supported" : "unsupported"}.`;
+    const out = [], cands = [];
+    let stopped = false, error = null;
+    sim.anc.forEach((a, i) => {
+      if (sim.nested) { out.push(["idle", "not visited (U1: nested)"]); return; }
+      if (stopped) { out.push(["idle", "not visited"]); return; }
+      if (a.red < w.upper) { out.push(["stop", "stop: above the window"]); stopped = true; return; }
+      if (a.red > w.lower) { out.push(["idle", "skip: below the window"]); return; }
+      if (a.bs === null) { out.push(["stop", "error: no bootstrap (Invariant)"]); stopped = true; error = "An ancestor inside the window has no bootstrap, so the run fails with an Invariant error."; return; }
+      if (!(a.bs >= minBs || a.bs > oBs)) { out.push(["idle", "skip: not supported, and no better than the original"]); return; }
+      if (a.conflict) { out.push(["stop", "stop: another taxon of the rank below"]); stopped = true; return; }
+      if (a.higher) { out.push(["stop", "stop: a higher rank below"]); stopped = true; return; }
+      const d = Math.abs(med - a.red);
+      if (d < oDelta) { out.push(["ok", "candidate: closer to the median"]); cands.push({ i, d, bs: a.bs, sup: a.bs >= minBs }); return; }
+      if (oBs < minBs) { out.push(["warn", "candidate: trades RED for support"]); cands.push({ i, d, bs: a.bs, sup: a.bs >= minBs }); return; }
+      out.push(["idle", "not recorded: further from the median, and the original is supported"]);
+    });
+    $("sim-rows").querySelectorAll("tr").forEach((tr, i) => {
+      const [cls, txt] = out[i]; tr.querySelector(".outcome").innerHTML = `<span class="chip ${cls}">${esc(txt)}</span>`;
+    });
+
+    const list = $("sim-rank-list");
+    if (error) { list.innerHTML = ""; $("sim-verdict").textContent = "The run stops"; $("sim-why").textContent = error; return; }
+    if (cands.length === 0) {
+      list.innerHTML = `<li><span class="pos">–</span><span>No candidates were recorded</span><span></span></li>`;
+      $("sim-verdict").textContent = "No move";
+      $("sim-why").textContent = "With no candidates the taxon has no entry in the Refinement, so it stays on its original node.";
+      return;
+    }
+    // process_refinement: the first candidate, then the original, then the rest; a stable sort.
+    const orig = { i: -1, d: oDelta, bs: oBs, sup: oBs >= minBs };
+    const ranked = [cands[0], orig, ...cands.slice(1)].sort((a, b) => (b.sup - a.sup) || (a.d - b.d) || (b.bs - a.bs));
+    list.innerHTML = ranked.map((c, k) => `<li class="${k === 0 ? "best" : ""}"><span class="pos">${k + 1}</span><span>${c.i < 0 ? "original node" : (c.i === 0 ? "parent" : "ancestor +" + c.i)} · delta ${f4(c.d)} · bs ${c.bs}</span><span class="chip ${c.sup ? "ok" : "warn"}">${c.sup ? "supported" : "unsupported"}</span></li>`).join("");
+    const best = ranked[0];
+    if (best.i < 0) {
+      $("sim-verdict").textContent = "No move";
+      $("sim-why").textContent = "The original node ranks first, so the taxon stays where it is.";
+    } else {
+      $("sim-verdict").textContent = `Move to ${best.i === 0 ? "the parent" : "ancestor +" + best.i} (RED ${f3(sim.anc[best.i].red)})`;
+      $("sim-why").textContent = best.sup && !orig.sup ? "A supported node beats the unsupported original." :
+        "It is supported and closer to the median than anything ranked below it.";
+    }
+  }
+
+  drawRibbon();
+  renderSteps();
+  renderLabel();
+  renderRed();
+  loadPreset("An unsupported genus climbs");
+})();
+</script>
