@@ -1,3 +1,4 @@
+use std::fmt;
 use std::str::FromStr;
 
 use crate::bootstrap::BootstrapValue;
@@ -16,22 +17,36 @@ const RED_KEYS: [&str; 2] = ["RED=", "red="];
 /// A number read from a node label, with the text it was read from (surrounding whitespace
 /// removed).
 ///
-/// A rewritten label writes the text, never the number, so a RED or bootstrap is written exactly as
-/// it was read: curatomatic never changes them (`AGENTS.md`, "Rules"). Every pass reads the full
-/// value, never a rounded one.
+/// It is displayed as that text, never as the number, so a RED or bootstrap is written (to a
+/// rewritten label, or the report) exactly as it was read: curatomatic never changes them
+/// (`AGENTS.md`, "Rules"). Every pass reads the full value, never a rounded one.
 #[derive(Debug, Clone, PartialEq)]
-struct AsRead<T> {
+pub(crate) struct AsRead<T> {
     value: T,
     text: String,
 }
 
 impl<T: FromStr> AsRead<T> {
-    fn parse(text: &str) -> Result<Self, T::Err> {
+    pub(crate) fn parse(text: &str) -> Result<Self, T::Err> {
         let text = text.trim();
         Ok(AsRead {
             value: text.parse()?,
             text: text.to_owned(),
         })
+    }
+}
+
+impl<T: Copy> AsRead<T> {
+    /// The value, in full.
+    pub(crate) fn value(&self) -> T {
+        self.value
+    }
+}
+
+/// The text the value was read from.
+impl<T> fmt::Display for AsRead<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.text)
     }
 }
 
@@ -62,6 +77,16 @@ impl NodeLabel {
     /// The bootstrap value, exactly as read.
     pub(crate) fn bootstrap(&self) -> Option<BootstrapValue> {
         self.bootstrap.as_ref().map(|bootstrap| bootstrap.value)
+    }
+
+    /// The RED value and the text it was read from.
+    pub(crate) fn red_as_read(&self) -> &AsRead<RedValue> {
+        &self.red
+    }
+
+    /// The bootstrap value and the text it was read from.
+    pub(crate) fn bootstrap_as_read(&self) -> Option<&AsRead<BootstrapValue>> {
+        self.bootstrap.as_ref()
     }
 
     /// Read the label of a node. The `taxonomy` of a leaf is always `None`, its taxa are kept on
@@ -107,15 +132,12 @@ impl NodeLabel {
             )));
         }
         let tax_string = self.taxonomy.as_ref().map_or_default(ToString::to_string);
-        let red = &self.red.text;
+        let red = &self.red;
         match (&self.bootstrap, tax_string.is_empty()) {
             (None, true) => Err(invalid("node has neither a bootstrap nor a taxonomy")),
             (None, false) => Ok(format!("{tax_string}{RED_SEPARATOR}{red}")),
-            (Some(bootstrap), true) => Ok(format!("{}{RED_SEPARATOR}{red}", bootstrap.text)),
-            (Some(bootstrap), false) => Ok(format!(
-                "{}:{tax_string}{RED_SEPARATOR}{red}",
-                bootstrap.text
-            )),
+            (Some(bootstrap), true) => Ok(format!("{bootstrap}{RED_SEPARATOR}{red}")),
+            (Some(bootstrap), false) => Ok(format!("{bootstrap}:{tax_string}{RED_SEPARATOR}{red}")),
         }
     }
 }

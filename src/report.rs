@@ -15,6 +15,7 @@ use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::GenomeId;
 use crate::metadata::Metadata;
 use crate::newick::{NewickTree, NodeId};
+use crate::node_label::AsRead;
 use crate::rank::Rank;
 use crate::red::{Red, RedValue};
 use crate::taxon::Taxon;
@@ -84,12 +85,13 @@ pub(crate) enum Flag {
     NamesakeOutsideTaxon,
 }
 
-/// The node that holds a taxon, as reported.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// The node that holds a taxon, as reported. The bootstrap and RED keep the text they were read
+/// from the tree, and are written to the report with it.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NodeStats {
     pub(crate) n_genomes: usize,
-    pub(crate) bootstrap: Option<BootstrapValue>,
-    pub(crate) red: RedValue,
+    pub(crate) bootstrap: Option<AsRead<BootstrapValue>>,
+    pub(crate) red: AsRead<RedValue>,
 }
 
 /// One row of the report.
@@ -209,8 +211,8 @@ impl<'a> TreeIndex<'a> {
         let label = self.tree.label(node)?;
         Ok(NodeStats {
             n_genomes: self.n_genomes(node),
-            bootstrap: label.bootstrap(),
-            red: label.red(),
+            bootstrap: label.bootstrap_as_read().cloned(),
+            red: label.red_as_read().clone(),
         })
     }
 
@@ -388,14 +390,14 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
         if taxon.is_named()
             && let (Some(&thresh), Some(rank_counts)) = (thresholds.get(&rank), counts.get(&rank))
         {
-            let q = thresh.q(after.red);
+            let q = thresh.q(row.after.red.value());
 
             if let Some(outer) = input.tree.nested_inside(node, rank, taxon) {
                 row.flags.insert(Flag::NestedInSameRank);
                 row.nested_in = Some(outer.clone());
             }
 
-            if is_novel && after.n_genomes >= 2 && q < LOW_Q {
+            if is_novel && row.after.n_genomes >= 2 && q < LOW_Q {
                 row.flags.insert(Flag::NovelLowRed);
             }
 
@@ -404,13 +406,18 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
                 row.flags.insert(Flag::SisterJoinPastChildThresh);
             }
 
-            if after.bootstrap.is_some_and(|bs| bs < input.min_bs) {
+            if row
+                .after
+                .bootstrap
+                .as_ref()
+                .is_some_and(|bs| bs.value() < input.min_bs)
+            {
                 row.flags.insert(Flag::UnsupportedLabel);
             }
 
-            if let Some(before) = before
+            if let Some(before) = &row.before
                 && before.n_genomes > 0
-                && after.n_genomes >= before.n_genomes.saturating_mul(LARGE_GAIN_FACTOR)
+                && row.after.n_genomes >= before.n_genomes.saturating_mul(LARGE_GAIN_FACTOR)
             {
                 row.flags.insert(Flag::LargeGain);
             }
@@ -531,7 +538,7 @@ pub(crate) fn to_tsv(rows: &[ReportRow]) -> String {
     let mut out = HEADER.join("\t");
     out.push('\n');
     for row in rows {
-        let before = row.before;
+        let before = row.before.as_ref();
         let fields = [
             row.taxon.to_string(),
             row.rank.prefix().to_string(),
@@ -539,10 +546,13 @@ pub(crate) fn to_tsv(rows: &[ReportRow]) -> String {
             join(&row.flags),
             optional(before, |b| b.n_genomes.to_string()),
             row.after.n_genomes.to_string(),
-            optional(before.and_then(|b| b.bootstrap), |bs| format!("{bs:.1}")),
-            optional(row.after.bootstrap, |bs| format!("{bs:.1}")),
-            optional(before, |b| format!("{:.3}", b.red)),
-            format!("{:.3}", row.after.red),
+            optional(
+                before.and_then(|b| b.bootstrap.as_ref()),
+                ToString::to_string,
+            ),
+            optional(row.after.bootstrap.as_ref(), ToString::to_string),
+            optional(before, |b| b.red.to_string()),
+            row.after.red.to_string(),
             join(&row.prior_taxa),
             optional(row.nested_in.as_ref(), ToString::to_string),
             join(&row.sister_taxa),

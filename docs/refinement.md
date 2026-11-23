@@ -237,7 +237,8 @@ These are checked during or after the refinement, and break the run if violated:
 - The RED and bootstrap of a node are never changed. A label that is rewritten (a taxon moved to or
   from it, or a novel taxon added) keeps the text they were read with (`NodeLabel::to_label`,
   `src/node_label.rs`): `100:red=0.8894` with `g__A` added is `100:g__A|RED=0.8894`, never
-  `100.0:g__A|RED=0.889`. So every pass, and the report, reads the full values, never rounded ones.
+  `100.0:g__A|RED=0.889`. So every pass, and the report, reads the full values, never rounded ones,
+  and the report's `bootstrap_*` and `red_*` columns write them as they were read.
 
 ## Input preparation
 

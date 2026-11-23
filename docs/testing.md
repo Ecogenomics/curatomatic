@@ -441,7 +441,7 @@ Each run takes a few seconds. The output directory must not exist (unless `--log
 - `<stem>.curatomatic.report.tsv`: one row per taxon that was moved or created, one per novel taxon
   that could not be named, and nothing else (`taxon, rank, action, flag, n_genomes_before/after,
   bootstrap_before/after, red_before/after, prior_taxon, nested_in, sister_taxa, namesakes`).
-  `action` is `moved_up`, `moved_down`, `novel` or `unresolvable`.
+  The bootstrap and RED are written exactly as they were read from the tree. `action` is `moved_up`, `moved_down`, `novel` or `unresolvable`.
 - `curatomatic.log`.
 
 ## Running the Python version

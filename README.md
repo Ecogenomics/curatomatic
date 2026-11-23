@@ -115,7 +115,7 @@ Report columns (several values are joined by `,`):
 | `taxon`, `rank` | The taxon and its rank prefix. An unresolvable novel taxon is `<rank>__UNRESOLVABLE`. |
 | `action` | `moved_up`, `moved_down`, `novel`, or `unresolvable` (not created: every name it could have is taken). |
 | `flag` | To review: `nested_in_same_rank`, `novel_low_red`, `sister_join_past_child_thresh`, `unsupported_label`, `large_gain`, `displaced_from_prior`, `new_in_decoration`, `namesake_outside_taxon`. |
-| `n_genomes_*`, `bootstrap_*`, `red_*` | The taxon's node `_before` (input tree, empty if novel) and `_after` (curated tree, or where an unresolvable taxon would go). |
+| `n_genomes_*`, `bootstrap_*`, `red_*` | The taxon's node `_before` (input tree, empty if novel) and `_after` (curated tree, or where an unresolvable taxon would go). The bootstrap and RED are written exactly as read from the tree. |
 | `prior_taxon` | The taxa of this rank that a novel taxon's genomes had in `--prior-taxonomy`. |
 | `nested_in`, `sister_taxa` | The closest taxon of the same rank it is nested in, and those joining it past the child threshold. |
 | `namesakes` | For an unresolvable taxon, the taxa named after its genomes that took each name. |

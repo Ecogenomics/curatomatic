@@ -227,7 +227,7 @@ their output.
 | Leaf taxonomy | Not written: the taxa of a leaf are on its dummy node in the tree | `<stem>.curatomatic.leaf-taxonomy.tsv`: the taxa held by each leaf, which the tree can't hold (`Tree::leaf_own_taxonomies`) |
 | Moves | `process_refinement` returns nothing | Returns each `Move`, which feeds the report |
 | Log | — | Also logs how many tree genomes have a prior taxonomy, and warns when downward refinement is disabled |
-| Rewritten labels | The bootstrap is rounded to `.1f` and the RED to `.3f` (`100` becomes `100.0`, `0.8894` becomes `0.889`), and the later passes read the rounded RED back | The bootstrap and RED are written exactly as read, so every pass (and the report) uses the full value. Only the RED key is written `\|RED=` |
+| Rewritten labels | The bootstrap is rounded to `.1f` and the RED to `.3f` (`100` becomes `100.0`, `0.8894` becomes `0.889`), and the later passes read the rounded RED back | The bootstrap and RED are written exactly as read, so every pass (and the report) uses the full value, and the report's columns write them as read. Only the RED key is written `\|RED=` |
 
 The Rust Newick writer quotes labels that contain `_` or protected characters, and turns spaces
 into `_` in unquoted labels, to match dendropy with `preserve_underscores=True`. Branch lengths are

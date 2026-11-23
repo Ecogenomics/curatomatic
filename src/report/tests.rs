@@ -104,12 +104,19 @@ fn a_move_up_that_gains_five_times_the_genomes_is_a_large_gain() {
     let b = row(&rows, "g__B");
     assert_eq!(b.action, Action::MovedUp);
     assert_eq!(flags(&rows, "g__B"), vec![Flag::LargeGain]);
-    let before = b.before.unwrap();
+    let before = b.before.as_ref().unwrap();
     assert_eq!(
-        (before.n_genomes, before.bootstrap, before.red),
+        (
+            before.n_genomes,
+            before.bootstrap.as_ref().map(AsRead::value),
+            before.red.value()
+        ),
         (1, Some(BootstrapValue::new(50.0)), RedValue::new(0.93))
     );
-    assert_eq!((b.after.n_genomes, b.after.red), (5, RedValue::new(0.88)));
+    assert_eq!(
+        (b.after.n_genomes, b.after.red.value()),
+        (5, RedValue::new(0.88))
+    );
     assert_eq!(rows.len(), 1, "only g__B was changed");
 }
 
@@ -207,7 +214,7 @@ fn every_unresolvable_novel_taxon_has_a_row_with_its_namesakes() {
         assert_eq!(row.namesakes, taxa(&[namesake]));
         assert_eq!(row.before, None);
         assert_eq!(
-            (row.after.n_genomes, row.after.red),
+            (row.after.n_genomes, row.after.red.value()),
             (1, RedValue::new(0.9))
         );
     }
@@ -344,8 +351,8 @@ fn the_tsv_has_a_header_and_leaves_unset_values_empty() {
         before: None,
         after: NodeStats {
             n_genomes: 2,
-            bootstrap: Some(BootstrapValue::new(100.0)),
-            red: RedValue::new(0.84),
+            bootstrap: Some(AsRead::parse("100.0").unwrap()),
+            red: AsRead::parse("0.840").unwrap(),
         },
         prior_taxa: taxa(&["g__Old", "g__Older"]),
         nested_in: None,
@@ -360,6 +367,24 @@ fn the_tsv_has_a_header_and_leaves_unset_values_empty() {
          g__ABC01\tg\tnovel\tnovel_low_red,displaced_from_prior\t\t2\t\t100.0\t\t0.840\t\
          g__Old,g__Older\t\t\t\n"
     );
+}
+
+#[test]
+fn the_tsv_writes_the_bootstrap_and_red_exactly_as_read() {
+    let newick = LARGE_GAIN_TREE
+        .replace("'50.0:g__B|RED=0.930'", "'50:g__B|red=0.93012345'")
+        .replace("'100.0|RED=0.880'", "'100|RED=0.8801'");
+    let rows = report(&format!("({newick}){ROOT};"), &Metadata::default());
+    let b = row(&rows, "g__B");
+    assert_eq!(
+        b.after.red.value(),
+        RedValue::new(0.8801),
+        "the flags use the full RED"
+    );
+    let tsv = to_tsv(std::slice::from_ref(b));
+    let fields: Vec<&str> = tsv.lines().nth(1).unwrap().split('\t').collect();
+    // bootstrap_before, bootstrap_after, red_before, red_after.
+    assert_eq!(fields[6..10], ["50", "100", "0.93012345", "0.8801"]);
 }
 
 #[test]
