@@ -4,32 +4,64 @@ Finished jobs are removed from this file: their rules are in `docs/refinement.md
 their measurements in `docs/testing.md`. Jobs that need the user's approval say so: don't start them before it is
 given.
 
-## Job 14: Report a namesake genome outside its taxon
+## Job 14: Report an unresolvable novel taxon, and never write it
 
-**Status: approved.**
+**Status: approved** (re-worded by the user on 2026-11-23: an `UNRESOLVABLE` taxon is no longer written).
 
 ### Problem
 
 `generate_unique_rank` (`src/taxon.rs`) names a novel taxon without a WGS name after its lowest genome ID whose name
-isn't already a taxon. If every genome's name is taken, the taxon is `<rank>__UNRESOLVABLE`. This happens when the
-input tree already has a taxon named after one of the genomes, but that genome isn't inside it. For example,
-`G020350785` in r226_bac120 gets `g__UNRESOLVABLE`, because `g__G020350785` is already on the tree elsewhere (the
-curators put the genome into `g__G020350785`). In r237 bac120, G965247515 gets `g__UNRESOLVABLE` the same way. Refusing
-the name is right, but the report doesn't say why.
+isn't already a taxon. If every genome's name is taken, the taxon is the sentinel `<rank>__UNRESOLVABLE`, which
+`fill_in_missing_ranks` (`src/tree.rs`) places on the tree like any other novel taxon. This happens when the input
+tree already has a taxon named after one of the genomes, but that genome isn't inside it. For example, `G020350785`
+in r226_bac120 gets `g__UNRESOLVABLE`, because `g__G020350785` is already on the tree elsewhere (the curators put the
+genome into `g__G020350785`). In r237 bac120, G965247515 gets `g__UNRESOLVABLE` the same way.
+
+Refusing the name is right, but:
+
+- the sentinel is written to the curated tree and the taxonomy output files, as if it were a taxon. The user no
+  longer wants it there.
+- the report doesn't say why the name was refused.
 
 ### Rule
 
-When a novel taxon is `UNRESOLVABLE`, its report row gets a new flag, `namesake_outside_taxon`, and names the
-existing taxa that are named after its genomes (e.g. `g__G020350785`). Nothing else changes.
+1. **Never written.** When `generate_unique_rank` finds no name, no taxon is placed on the candidate node. The
+   genomes keep the placeholder for that rank (e.g. `g__`) in `<stem>.curatomatic.taxonomy.tsv`, exactly as for a
+   novel taxon skipped because a valid name is below it, and nothing is added to the curated tree or the leaf
+   taxonomy file. Only that rank is affected: the candidates and the `lowest_valid_rank_below` check of
+   every rank are worked out before any novel taxon is created, so the other novel taxa are placed as before.
+2. **Still reported.** Each such case is a row of the report: taxon `<rank>__UNRESOLVABLE`, a new action
+   `unresolvable` (nothing was created, so not `novel`), the `*_after` columns those of the candidate node it would
+   have been placed on, and a new flag `namesake_outside_taxon`. A new column, `namesakes`, lists the existing taxa
+   named after its genomes (e.g. `g__G020350785`), which also says which genomes it is. The run logs the number of
+   unresolvable taxa for each rank, beside the number skipped.
+3. **The sentinel is no longer a taxon.** As it is never on the tree, it loses its exception to "every taxon is on
+   exactly one node": remove the `is_unresolvable` exceptions in `Tree::get_taxon_labels` and
+   `check_taxa_unchanged`, and the comments on `TaxonCounts`. An input tree with `g__UNRESOLVABLE` on two nodes is
+   then a `NonUniqueTaxon` error like any other. `new_taxa_created` never holds it, so the taxa check and
+   `check_every_change_has_a_row` need no special case; the unresolvable cases reach the report separately.
 
 ### Tasks
 
-1. Make `generate_unique_rank` (or its caller in `fill_in_missing_ranks`) return the taxa that blocked each name, and
-   pass them to the report (`src/report.rs`, new `Flag` variant with a doc comment).
-2. Tests in `src/taxon/tests.rs` and `src/report/tests.rs`.
-3. Docs: `docs/refinement.md` "Novel taxa", the report columns in `README.md`.
-4. Check the r226_bac120 cases (`G020350785`, `G030406045`), the r232_bac120 case (`G020350445`) and the r237 bac120
-   case (`G965247515`).
+1. Make `generate_unique_rank` return either a name or the unresolvable case with the taxa that blocked each name
+   (a new enum, not the sentinel `Taxon`), and make `fill_in_missing_ranks` return the unresolvable cases (rank,
+   candidate node, blocking taxa) beside the taxa it created, without placing anything for them.
+2. Report (`src/report.rs`): new `Action` and `Flag` variants with doc comments, the `namesakes` column, and the
+   rows for the unresolvable cases. Every unresolvable case must have a row (extend
+   `check_every_change_has_a_row`).
+3. Remove the one-node exception (rule 3) and update its tests (`an_unresolvable_taxon_may_be_on_more_than_one_node`
+   in `src/tree/tests.rs`, `taxa_check_accepts_an_unresolvable_novel_taxon_on_more_than_one_node` and the
+   `g__UNRESOLVABLE` cases in `src/main/tests.rs`, the counts in `src/taxon/tests.rs`).
+4. Tests: in `src/tree/tests.rs`, an unresolvable genus leaves its genomes with `g__` in the taxonomy output and
+   nothing on the tree, and the other ranks of those genomes are still filled; in `src/taxon/tests.rs`, the blocking
+   taxa are returned; in `src/report/tests.rs`, replace `every_node_given_the_unresolvable_sentinel_has_a_row` with
+   one row per unresolvable case, with its action, flag and namesakes.
+5. Docs: `docs/refinement.md` ("Novel taxa" and "Invariants"), `README.md` (the novel name section and the report
+   columns), `docs/differences.md` (L4 and the "Every genome ID already taken" row: Python writes
+   `<rank>__NOVEL-<gid>`, Rust now writes nothing and reports it). `docs/architecture.*` are snapshots: leave them.
+6. Check the r226_bac120 cases (`G020350785`, `G030406045`), the r232_bac120 case (`G020350445`) and the r237 bac120
+   case (`G965247515`): no `UNRESOLVABLE` in the tree or taxonomy outputs, one report row each with the right
+   namesakes. Measure the curator workload on the four datasets (see `docs/testing.md`).
 
 ## Job 16: Don't create a novel taxon that breaks rank order
 
