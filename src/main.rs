@@ -260,11 +260,33 @@ fn write_debug_inputs(tree: &Tree, out_dir: &Path, stem: &str) -> CuratomaticRes
     )
 }
 
+/// Write the taxonomy of each genome (`<stem>.curatomatic.taxonomy.tsv`, one taxon per rank), and
+/// the taxa held by each leaf (`<stem>.curatomatic.leaf-taxonomy.tsv`): the taxa that the Newick
+/// tree can't hold, which with the tree give back the full taxonomy of every genome.
+fn write_taxonomies(tree: &Tree, out_dir: &Path, stem: &str) -> CuratomaticResult<()> {
+    info!("Writing taxonomy to disk.");
+    let collapsed_taxonomies = tree.collapsed_taxonomies()?;
+    taxonomy_file::write(
+        &out_dir.join(format!("{stem}.curatomatic.taxonomy.tsv")),
+        collapsed_taxonomies
+            .iter()
+            .map(|(gid, taxa)| (gid, taxa.as_slice())),
+    )?;
+
+    info!("Writing the taxa held by each leaf to disk.");
+    let leaf_own_taxonomies = tree.leaf_own_taxonomies();
+    taxonomy_file::write(
+        &out_dir.join(format!("{stem}.curatomatic.leaf-taxonomy.tsv")),
+        leaf_own_taxonomies
+            .iter()
+            .map(|(gid, taxa)| (gid, taxa.as_slice())),
+    )
+}
+
 fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let stem = cli.tree.file_stem().unwrap_or_default().to_string_lossy();
     let path_tree_out = cli.out_dir.join(format!("{stem}.curatomatic.tree"));
     let path_report_out = cli.out_dir.join(format!("{stem}.curatomatic.report.tsv"));
-    let path_taxonomy_out = cli.out_dir.join(format!("{stem}.curatomatic.taxonomy.tsv"));
 
     info!("Reading tree");
     let mut tree = Tree::from_file(&cli.tree)?;
@@ -358,14 +380,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
         red_dict: &red_dict,
     })?;
 
-    info!("Writing taxonomy to disk.");
-    let leaf_taxonomies = tree.leaf_taxonomies()?;
-    taxonomy_file::write(
-        &path_taxonomy_out,
-        leaf_taxonomies
-            .iter()
-            .map(|(gid, taxa)| (gid, taxa.as_slice())),
-    )?;
+    write_taxonomies(&tree, &cli.out_dir, &stem)?;
 
     info!("Removing RED labels");
     tree.remove_red_labels()?;

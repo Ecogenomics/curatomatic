@@ -60,12 +60,17 @@ in a `Taxonomy`: `Taxonomy::add_taxon` (`src/taxonomy.rs`) refuses one with `Cur
   (`g__CAG-698;s__CAG-698 sp000123`). A placeholder, a missing rank, two taxa of a rank, an unresolved species
   (`s__{unresolved} NAME`) and a species of another genus are `CuratomaticError::TaxonomyFile` errors on that line.
   `--taxonomy` keeps the lenient rules above.
-- The output taxonomy files write a placeholder for a rank with no named taxon, so every row has all 7 ranks. This
-  is decided and intended: the placeholder is only formatting, made by the writers (`Tree::leaf_taxonomies` and
-  `Tree::full_taxonomies`, `src/tree.rs`), and is never held on the tree or in a `Taxonomy`. After loading, the only
-  ranks left empty are those of a novel taxon that `fill_in_missing_ranks` skipped because a valid name of a lower
-  rank is at or below its node (`docs/refinement.md` "Novel taxa"); a curator fills them. Don't propose removing
-  these placeholders or always creating the novel taxon.
+- The two output taxonomy files (`<stem>.curatomatic.taxonomy.tsv` and `<stem>.debug.taxonomy.tsv`) write a
+  placeholder for a rank with no named taxon, so every row has all 7 ranks. This is decided and intended: the
+  placeholder is only formatting, made by the writers (`Tree::collapsed_taxonomies` and `Tree::full_taxonomies`,
+  `src/tree.rs`), and is never held on the tree or in a `Taxonomy`. After loading, the only ranks left empty are those
+  of a novel taxon that `fill_in_missing_ranks` skipped because a valid name of a lower rank is at or below its node
+  (`docs/refinement.md` "Novel taxa"); a curator fills them. Don't propose removing these placeholders or always
+  creating the novel taxon.
+- The leaf taxonomy file (`<stem>.curatomatic.leaf-taxonomy.tsv`, written from `Tree::leaf_own_taxonomies`) is
+  different: it has **no placeholders**. Each row holds only the taxa of the leaf itself (never a taxon on its path),
+  which are the taxa the Newick tree can't hold. The curated tree plus this file give back the full taxonomy of every
+  genome.
 
 The domain and species never have a placeholder: every genome always has a named domain (`d__`), and its species
 (`s__`) is always given in the taxonomy file.
@@ -148,7 +153,7 @@ Test data are available here:
   `--prior-taxonomy` rows are not checked here: the reader requires every rank of them to be named (see "Taxonomy").
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
-  file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.
+  file and the leaf taxonomy file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.
 - Species names can be given in the format `s__{unresolved} NAME`. These are not to be changed by curatomatic.
 - An internal node within the tree can have multiple taxa in the same rank. These cases can still be refined by
   curatomatic, but deciding which of them should be kept must be done manually.

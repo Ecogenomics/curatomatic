@@ -252,7 +252,13 @@ Each run takes a few seconds. The output directory must not exist (unless `--log
   placeholders for empty ranks (`f__;g__`). Each rank is the taxon nearest the leaf. **Use this
   file** for the comparison with the truth.
 - `<stem>.curatomatic.tree`: leaves are bare IDs. Taxa held by leaves (e.g. species) are only in
-  the taxonomy file, not on the tree.
+  the taxonomy and leaf taxonomy files, not on the tree.
+- `<stem>.curatomatic.leaf-taxonomy.tsv`: one row per genome, the taxa held by its leaf only (no
+  placeholders, no taxa of its path). With the tree, it gives back the full taxonomy of every genome
+  (see the README). On r237 (the README command, with Job 24) all 229,307 genomes have a row,
+  G053840885's is `g__Neosphaerochaeta;s__Neosphaerochaeta fermentans`, the tree plus this file give
+  back `<stem>.curatomatic.taxonomy.tsv` for every genome, and the taxa they hold are the input taxa
+  plus the 5,447 novel taxa of the report. The tree, report and taxonomy files were unchanged by Job 24.
 - `<stem>.curatomatic.report.tsv`: one row per taxon that was moved or created, and nothing else
   (`taxon, rank, action, flag, n_genomes_before/after, bootstrap_before/after, red_before/after,
   prior_taxon, nested_in, sister_taxa`). `action` is `moved_up`, `moved_down` or `novel`.

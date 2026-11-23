@@ -428,7 +428,7 @@ fn a_single_genome_genus_nested_in_a_tree_genus_is_restored() {
     assert_eq!(leaf_taxa_by_gid(&tree)[1].1, "s__JAAYFO01 sp2");
     // The tree's genus is unchanged, and the nested genus is the genome's genus.
     assert!(tree.taxon_labels.contains(&Taxon::new("g__JAAYFO01")));
-    let taxonomies = tree.leaf_taxonomies().unwrap();
+    let taxonomies = tree.collapsed_taxonomies().unwrap();
     assert_eq!(taxonomies[0].1[5], Taxon::new("g__Neosphaerochaeta"));
     assert_eq!(taxonomies[1].1[5], Taxon::new("g__JAAYFO01"));
 }
@@ -561,7 +561,7 @@ fn a_placeholder_in_the_taxonomy_file_is_never_assigned() {
 fn an_unresolved_species_reaches_the_leaf_unchanged() {
     let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
     assert_eq!(leaf_taxa(&tree, 1), "s__{unresolved} sp2");
-    let taxonomies = tree.leaf_taxonomies().unwrap();
+    let taxonomies = tree.collapsed_taxonomies().unwrap();
     assert_eq!(
         taxonomies[1].1.last(),
         Some(&Taxon::new("s__{unresolved} sp2"))
@@ -1355,9 +1355,9 @@ fn full_taxonomies_fill_a_missing_rank_with_its_placeholder() {
 }
 
 #[test]
-fn leaf_taxonomies_read_the_ranks_in_order_from_the_leaf_and_its_ancestors() {
+fn collapsed_taxonomies_read_the_ranks_in_order_from_the_leaf_and_its_ancestors() {
     let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
-    let taxonomies = tree.leaf_taxonomies().unwrap();
+    let taxonomies = tree.collapsed_taxonomies().unwrap();
     let rows: Vec<(&str, String)> = taxonomies
         .iter()
         .map(|(gid, taxa)| {
@@ -1381,24 +1381,27 @@ fn leaf_taxonomies_read_the_ranks_in_order_from_the_leaf_and_its_ancestors() {
 }
 
 #[test]
-fn leaf_taxonomies_use_the_nearest_of_two_nested_taxa() {
+fn collapsed_taxonomies_use_the_nearest_of_two_nested_taxa() {
     let tree = tree_with_leaf_taxa(
         "(((G1:0.1,G2:0.1)'100:g__Inner|red=0.95':0.1,G3:0.1)'100:g__Outer|red=0.9':0.1)\
          'd__D|red=0.0';",
         &[(0, "s__A one"), (1, "s__A two"), (3, "s__B three")],
     )
     .unwrap();
-    let taxonomies = tree.leaf_taxonomies().unwrap();
+    let taxonomies = tree.collapsed_taxonomies().unwrap();
     let genus = |idx: usize| taxonomies[idx].1[5].as_str();
     assert_eq!(genus(0), "g__Inner");
     assert_eq!(genus(2), "g__Outer");
 }
 
-#[test]
-fn a_genus_is_moved_down_onto_a_leaf() {
-    // `g__A` (bootstrap 50) is on a node above G1 and G2, but only G1 is in it.
-    let mut tree =
-        tree("((G1:0.1,G2:0.1)'50:g__A|red=0.95':0.1,G3:0.1)'100:f__F|red=0.70';").unwrap();
+/// `g__A` (bootstrap 50) is on a node above G1 and G2, but only G1 is in it, so refinement moves
+/// it down onto G1. Every leaf holds its species. Returns the tree and the moves.
+fn genus_moved_down_onto_a_leaf() -> (Tree, Vec<Move>) {
+    let mut tree = tree_with_leaf_taxa(
+        "((G1:0.1,G2:0.1)'50:g__A|red=0.95':0.1,G3:0.1)'100:d__D;f__F|red=0.70';",
+        &[(0, "s__A one"), (1, "s__B two"), (3, "s__C three")],
+    )
+    .unwrap();
     let mut metadata = Metadata::default();
     for (gid, taxonomy) in [
         ("G1", "f__F;g__A"),
@@ -1415,14 +1418,20 @@ fn a_genus_is_moved_down_onto_a_leaf() {
         .process_refinement(&refinement, Rank::Genus, min_bs, &red_dict())
         .unwrap();
     tree.reload().unwrap();
-    assert_eq!(moves.len(), 1);
-    assert_eq!(leaf_taxa(&tree, 0), "g__A");
-    assert_eq!(label(&tree, 2), "50.0|RED=0.950");
+    (tree, moves)
 }
 
 #[test]
-fn a_novel_taxon_can_be_placed_on_a_leaf() {
-    // Neither node above G1 is supported, so the novel genus can only go on the leaf.
+fn a_genus_is_moved_down_onto_a_leaf() {
+    let (tree, moves) = genus_moved_down_onto_a_leaf();
+    assert_eq!(moves.len(), 1);
+    assert_eq!(leaf_taxa(&tree, 0), "g__A; s__A one");
+    assert_eq!(label(&tree, 2), "50.0|RED=0.950");
+}
+
+/// Neither node above G1 is supported, so the novel genus `g__G1` can only go on the leaf (as
+/// do `g__G2` and `g__G3`). Returns the tree and the novel taxa.
+fn novel_genus_on_a_leaf() -> (Tree, BTreeSet<Taxon>) {
     let mut tree = tree(
         "(((G1:0.1,G2:0.1)'50:red=0.97':0.1,G3:0.1)'50:f__F|red=0.70':0.1,\
          (G4:0.1)'100:f__X;g__X|red=0.5')'d__D;p__P;c__C;o__O|red=0.0';",
@@ -1446,6 +1455,13 @@ fn a_novel_taxon_can_be_placed_on_a_leaf() {
         known,
     )
     .unwrap();
+    tree.reload().unwrap();
+    (tree, novel)
+}
+
+#[test]
+fn a_novel_taxon_can_be_placed_on_a_leaf() {
+    let (tree, novel) = novel_genus_on_a_leaf();
     assert_eq!(
         novel,
         BTreeSet::from([
@@ -1455,6 +1471,182 @@ fn a_novel_taxon_can_be_placed_on_a_leaf() {
         ])
     );
     assert_eq!(leaf_taxa(&tree, 0), "g__G1; s__{unresolved} G1");
+}
+
+// ---- The taxa held by each leaf (`<stem>.curatomatic.leaf-taxonomy.tsv`) ----
+
+/// The row of each genome in the leaf taxonomy file, joined by `;`, in tree order.
+fn own_rows(tree: &Tree) -> Vec<String> {
+    tree.leaf_own_taxonomies()
+        .iter()
+        .map(|(gid, taxa)| {
+            let taxa: Vec<&str> = taxa.iter().map(Taxon::as_str).collect();
+            format!("{gid}\t{}", taxa.join(";"))
+        })
+        .collect()
+}
+
+/// A leaf with two genera, in an order that is not alphabetical, below a family on the tree.
+const TWO_GENERA_ON_A_LEAF: (&str, &str) = (
+    "((G1:0.1,G2:0.1)'100:f__F|red=0.7':0.1)'d__D|red=0.0';",
+    "\
+G1\td__D;f__F;g__Z;g__Y;s__Y one
+G2\td__D;f__F;s__{unresolved} sp2
+",
+);
+
+/// Every tree of these tests whose leaves were given their taxa by the taxonomy file.
+fn assigned_trees() -> Vec<Tree> {
+    [
+        (NEW_STYLE, NEW_STYLE_TAXONOMY),
+        NESTED_GENUS,
+        NESTED_FAMILY,
+        NESTED_ORDER,
+        OUT_OF_RANK_ORDER,
+        SEVERAL_TAXA,
+        TWO_GENERA_ON_A_LEAF,
+    ]
+    .into_iter()
+    .map(|(newick, taxonomy)| assigned(newick, taxonomy).0)
+    .collect()
+}
+
+/// Every tree of [`assigned_trees`], and the trees after a taxon was moved down onto a leaf and
+/// after a novel taxon was placed on one.
+fn trees_with_leaf_taxa() -> Vec<Tree> {
+    let mut trees = assigned_trees();
+    trees.push(genus_moved_down_onto_a_leaf().0);
+    trees.push(novel_genus_on_a_leaf().0);
+    trees
+}
+
+/// The named taxa on the internal nodes of the path of each leaf of the Newick tree as it would
+/// be written (the leaf excluded), in rank order and in path order (root first) within a rank.
+fn newick_path_taxa(tree: &Tree) -> Vec<(GenomeId, Vec<Taxon>)> {
+    let newick = NewickTree::parse(&tree.newick.to_newick()).unwrap();
+    newick
+        .leaves()
+        .map(|leaf| {
+            let gid = NodeLabel::from_node(&newick, leaf).unwrap().gid.unwrap();
+            let mut path: Vec<Taxon> = Vec::new();
+            let mut current = newick.parent(leaf);
+            while let Some(node) = current {
+                if let Some(taxonomy) = NodeLabel::from_node(&newick, node).unwrap().taxonomy {
+                    let mut taxa: Vec<Taxon> = taxonomy.iter_ranks().cloned().collect();
+                    taxa.append(&mut path);
+                    path = taxa;
+                }
+                current = newick.parent(node);
+            }
+            path.sort_by_key(|taxon| taxon.rank().unwrap());
+            (gid, path)
+        })
+        .collect()
+}
+
+#[test]
+fn the_leaf_taxonomy_of_a_leaf_with_only_its_species_is_its_species() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    assert_eq!(
+        own_rows(&tree),
+        [
+            "G1\ts__A one",
+            "G2\ts__{unresolved} sp2",
+            "G3\ts__B three",
+            "G4\to__O2;f__F2;g__G;s__G four"
+        ]
+    );
+}
+
+#[test]
+fn the_leaf_taxonomy_of_a_genus_nested_in_a_tree_genus_is_its_genus_and_species() {
+    // r237 G053840885: below `g__JAAYFO01` on the tree, and in its own genus.
+    let (newick, taxonomy) = NESTED_GENUS;
+    let (tree, _) = assigned(newick, taxonomy);
+    assert_eq!(
+        own_rows(&tree)[0],
+        "G1\tg__Neosphaerochaeta;s__Neosphaerochaeta fermentans"
+    );
+}
+
+#[test]
+fn the_leaf_taxonomy_keeps_two_taxa_of_one_rank_in_row_order() {
+    let (newick, taxonomy) = TWO_GENERA_ON_A_LEAF;
+    let (tree, _) = assigned(newick, taxonomy);
+    assert_eq!(
+        own_rows(&tree),
+        ["G1\tg__Z;g__Y;s__Y one", "G2\ts__{unresolved} sp2"]
+    );
+}
+
+#[test]
+fn the_leaf_taxonomy_has_a_taxon_moved_down_onto_the_leaf() {
+    let (tree, _) = genus_moved_down_onto_a_leaf();
+    assert_eq!(
+        own_rows(&tree),
+        ["G1\tg__A;s__A one", "G2\ts__B two", "G3\ts__C three"]
+    );
+}
+
+#[test]
+fn the_leaf_taxonomy_has_a_novel_taxon_placed_on_the_leaf() {
+    let (tree, _) = novel_genus_on_a_leaf();
+    assert_eq!(own_rows(&tree)[0], "G1\tg__G1;s__{unresolved} G1");
+}
+
+#[test]
+fn no_leaf_taxonomy_holds_a_placeholder_or_a_taxon_on_the_leafs_path() {
+    for tree in trees_with_leaf_taxa() {
+        let paths = newick_path_taxa(&tree);
+        for ((gid, own), (path_gid, path)) in tree.leaf_own_taxonomies().iter().zip(&paths) {
+            assert_eq!(gid, path_gid);
+            assert!(!own.is_empty(), "{gid}");
+            for taxon in own {
+                assert!(taxon.is_named(), "{gid}: {taxon}");
+                assert!(!path.contains(taxon), "{gid}: {taxon} is on its path");
+            }
+        }
+    }
+}
+
+#[test]
+fn every_leaf_taxonomy_reads_back_as_a_taxonomy_file() {
+    for tree in trees_with_leaf_taxa() {
+        let rows = tree.leaf_own_taxonomies();
+        let text =
+            crate::taxonomy_file::to_tsv(rows.iter().map(|(gid, taxa)| (gid, taxa.as_slice())));
+        let file = taxonomy_file(&text);
+        for (gid, taxa) in &rows {
+            let read: Vec<&Taxon> = file.get(gid).unwrap().iter_ranks().collect();
+            assert_eq!(read, taxa.iter().collect::<Vec<_>>(), "{gid}");
+        }
+    }
+}
+
+#[test]
+fn the_newick_tree_and_the_leaf_taxonomies_give_back_the_full_taxonomies() {
+    // The named taxa on each path in the written tree, then the leaf's own taxa, ordered by rank
+    // (path order kept within a rank, the leaf last), are the named taxa of `full_taxonomies`.
+    for tree in trees_with_leaf_taxa() {
+        let own = tree.leaf_own_taxonomies();
+        let rebuilt: Vec<(GenomeId, Vec<Taxon>)> = newick_path_taxa(&tree)
+            .into_iter()
+            .zip(own)
+            .map(|((gid, mut taxa), (own_gid, own))| {
+                assert_eq!(gid, own_gid);
+                taxa.extend(own);
+                taxa.sort_by_key(|taxon| taxon.rank().unwrap());
+                (gid, taxa)
+            })
+            .collect();
+        let full: Vec<(GenomeId, Vec<Taxon>)> = tree
+            .full_taxonomies()
+            .unwrap()
+            .into_iter()
+            .map(|(gid, taxa)| (gid, taxa.into_iter().filter(Taxon::is_named).collect()))
+            .collect();
+        assert_eq!(rebuilt, full);
+    }
 }
 
 #[test]
@@ -1507,7 +1699,7 @@ fn fill_novel(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, BTreeSet<Taxo
 
 /// The taxonomy written for each genome, joined by `;`.
 fn written_taxonomies(tree: &Tree) -> Vec<String> {
-    tree.leaf_taxonomies()
+    tree.collapsed_taxonomies()
         .unwrap()
         .iter()
         .map(|(gid, taxa)| {

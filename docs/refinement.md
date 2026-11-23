@@ -214,7 +214,8 @@ These are checked during or after the refinement, and break the run if violated:
   error that lists each taxon that was removed, copied, reused or gained.
 - The label of a leaf is never changed (`NewickTree::set_internal_label` refuses a leaf): the
   output tree labels each leaf exactly as it was read. The taxa held by a leaf are kept on its
-  `Leaf`, and are written to the taxonomy file only. The RED is removed from every internal node
+  `Leaf`, and are written to the taxonomy file and the leaf taxonomy file only
+  (`<stem>.curatomatic.leaf-taxonomy.tsv`, `Tree::leaf_own_taxonomies`). The RED is removed from every internal node
   (`Tree::remove_red_labels`).
 
 ## Input preparation

@@ -166,10 +166,33 @@ GB_GCA_123456789.1	FOO
 
 The following files are written to `OUT_DIR`:
 
-- `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`). Leaf labels are written exactly as they were read (the genome ID): the taxa a leaf holds are only in the taxonomy file below.
+- `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`). Leaf labels are written exactly as they were read (the genome ID): the taxa a leaf holds are only in the taxonomy and leaf taxonomy files below.
 - `<tree stem>.curatomatic.report.tsv` = One row per taxon that curatomatic moved or created, with flags for the changes to review.
 - `<tree stem>.curatomatic.taxonomy.tsv` = The curated taxonomy of each genome, in the format of the [taxonomy file](#taxonomy-file---taxonomy), one row per genome in tree order. Each rank is the taxon nearest the leaf on its path in the curated tree. A rank with no named taxon is written as a placeholder (`p__`), so every row has all 7 ranks: this happens when a novel taxon was not created because a valid name of a lower rank is below it (see [docs/refinement.md](docs/refinement.md), "Novel taxa"), and the rank is left for a curator to fill.
+- `<tree stem>.curatomatic.leaf-taxonomy.tsv` = The taxa held by each leaf, which the Newick tree can't hold, one row per genome in tree order (see below).
 - `curatomatic.log` = The log of the run.
+
+The leaf taxonomy file has no header and two columns, the genome ID (as the leaf is labelled) and the taxa that the
+leaf itself holds, joined by `;`:
+
+```
+G003697165	s__Escherichia coli
+G053840885	g__Neosphaerochaeta;s__Neosphaerochaeta fermentans
+```
+
+- A row holds only the leaf's own taxa, in rank order: the taxa its row of `--taxonomy` gave it that are not on its
+  path in the tree (e.g. a single genome genus inside a genus on the tree), plus any taxon that curation moved down
+  onto it or created on it. It never holds a taxon of the leaf's path, and has **no placeholders**, unlike
+  `<tree stem>.curatomatic.taxonomy.tsv`.
+- Every leaf holds its species, so every genome has a row, and most rows are the species alone.
+- Several taxa of one rank are all written, in the order the leaf holds them (that of its `--taxonomy` row for the taxa
+  the row gave it).
+- To rebuild the full taxonomy of a genome, every nested taxon included: take the named taxa of the internal nodes on
+  its path in the curated tree, then add its row of this file, and order them by rank (keeping the path order, root
+  first, within a rank, and the leaf's taxa last). Together, the tree and this file hold every taxon that curatomatic
+  holds.
+- It can be read as a [taxonomy file](#taxonomy-file---taxonomy), but it is not a valid `--taxonomy` for the curated
+  tree, as each `--taxonomy` row must be the genome's full taxonomy.
 
 With `--debug`, the inputs as they were loaded (before any curation) are also written:
 

@@ -97,7 +97,9 @@ genome, they get the same name.
   were on its dummy node: every taxon of its row that is not on its path, before refinement (see
   [refinement.md](refinement.md#input-preparation)). Taxa can be moved down onto a leaf, and
   novel taxa placed on one. The curated taxonomy of every genome is written to
-  `<stem>.curatomatic.taxonomy.tsv`. Leaf labels are never changed, so the output tree labels
+  `<stem>.curatomatic.taxonomy.tsv`, and the taxa held by each leaf to
+  `<stem>.curatomatic.leaf-taxonomy.tsv` (Python has no such file: its leaf taxa were on the dummy
+  nodes of its tree). Leaf labels are never changed, so the output tree labels
   each leaf with its genome ID, as in Python.
 
 ### L7. Novel taxa are not created above named taxa
@@ -214,6 +216,7 @@ their output.
 | --- | --- | --- |
 | Tree | `<stem>.curatomatic.tree`, written by dendropy | Same name, written by `NewickTree::to_file` (`src/newick.rs`) |
 | Report | Not written (the code is commented out) | `<stem>.curatomatic.report.tsv`: one row per moved or novel taxon, with flags (`src/report.rs`) |
+| Leaf taxonomy | Not written: the taxa of a leaf are on its dummy node in the tree | `<stem>.curatomatic.leaf-taxonomy.tsv`: the taxa held by each leaf, which the tree can't hold (`Tree::leaf_own_taxonomies`) |
 | Moves | `process_refinement` returns nothing | Returns each `Move`, which feeds the report |
 | Log | — | Also logs how many tree genomes have a prior taxonomy, and warns when downward refinement is disabled |
 

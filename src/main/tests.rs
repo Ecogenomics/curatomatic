@@ -278,6 +278,26 @@ fn curate_keeps_a_single_genome_genus_nested_in_a_tree_genus() {
 }
 
 #[test]
+fn curate_writes_the_taxa_held_by_each_leaf_to_the_leaf_taxonomy_file() {
+    // Only the taxa that the Newick tree can't hold: no placeholders and no taxa on the path.
+    let (out_dir, result) = run_curate(
+        "leaf-taxonomy",
+        "G1\td__D;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;g__N;s__N two\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n",
+    );
+    result.unwrap();
+    let leaf_taxonomy =
+        std::fs::read_to_string(out_dir.join("tree.curatomatic.leaf-taxonomy.tsv")).unwrap();
+    assert_eq!(
+        leaf_taxonomy,
+        "G1\ts__A one\n\
+         G2\tg__N;s__N two\n\
+         G3\tg__B;s__B three\n"
+    );
+}
+
+#[test]
 fn curate_fails_when_the_taxonomy_file_disagrees_with_the_tree() {
     let (_, result) = run_curate(
         "disagrees",

@@ -60,7 +60,8 @@ pub(crate) struct Move {
 /// A leaf of the tree, which is a genome.
 ///
 /// The label of a leaf on the Newick tree is its genome ID, and is never changed: the taxa that the
-/// leaf holds are kept here, and are written to the taxonomy file (see [`Tree::leaf_taxonomies`]).
+/// leaf holds are kept here, and are written to the taxonomy file (see
+/// [`Tree::collapsed_taxonomies`]) and the leaf taxonomy file (see [`Tree::leaf_own_taxonomies`]).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Leaf {
     pub(crate) gid: GenomeId,
@@ -455,7 +456,7 @@ impl Tree {
     /// The full taxonomy of each leaf, in tree order: every named taxon on the leaf and its
     /// ancestors, in rank order, and in path order (nearest the root first) within a rank, with
     /// the placeholder of each rank that has none (e.g. `g__`). Unlike
-    /// [`Tree::leaf_taxonomies`], nested taxa are all kept, so this is the format of the taxonomy
+    /// [`Tree::collapsed_taxonomies`], nested taxa are all kept, so this is the format of the taxonomy
     /// file (`--taxonomy`). Call [`Tree::reload`] first if the tree was changed.
     pub(crate) fn full_taxonomies(&self) -> CuratomaticResult<Vec<(GenomeId, Vec<Taxon>)>> {
         let mut out = Vec::new();
@@ -578,14 +579,34 @@ impl Tree {
         })
     }
 
-    /// The taxonomy of each leaf, in tree order.
+    /// The taxa held by each leaf itself, in tree order: the taxa of its [`Leaf::taxonomy`], in
+    /// rank order and in the order the [`Taxonomy`] keeps them within a rank. Nothing else is
+    /// included: no taxon of an ancestor, and no placeholder. These are the taxa that the Newick
+    /// tree can't hold, so the named taxa on each genome's path in the tree, followed by these,
+    /// are its [`Tree::full_taxonomies`] (see `<stem>.curatomatic.leaf-taxonomy.tsv` in the
+    /// README). Every leaf holds its species, so no row is empty.
+    pub(crate) fn leaf_own_taxonomies(&self) -> Vec<(GenomeId, Vec<Taxon>)> {
+        self.newick
+            .leaves()
+            .filter_map(|node| self.leaves.get(&node))
+            .map(|leaf| {
+                // A `Taxonomy` never holds a placeholder (`Taxonomy::add_taxon`).
+                (
+                    leaf.gid.clone(),
+                    leaf.taxonomy.iter_ranks().cloned().collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// The collapsed taxonomy of each leaf, in tree order, with one taxon for each rank.
     ///
     /// The taxonomy is read from the taxa on the leaf and every ancestor, one taxon for each rank
     /// from the domain to the species. When a rank is on more than one node of the path (nested
     /// taxa) the one nearest the leaf is used, and when one node holds more than one, the first.
     /// Placeholders are ignored, a rank without a named taxon is given as its placeholder (e.g.
     /// `g__`). Call [`Tree::reload`] first if the tree was changed.
-    pub(crate) fn leaf_taxonomies(&self) -> CuratomaticResult<Vec<(GenomeId, Vec<Taxon>)>> {
+    pub(crate) fn collapsed_taxonomies(&self) -> CuratomaticResult<Vec<(GenomeId, Vec<Taxon>)>> {
         let mut out = Vec::new();
         for leaf in self.newick.leaves() {
             let Some(gid) = self.leaf_gid(leaf) else {
