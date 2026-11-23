@@ -10,6 +10,8 @@ pub(crate) enum CuratomaticError {
     EmptyTaxon,
     /// The first character of the taxon is not a known rank prefix.
     UnknownRank(String),
+    /// The taxon is not in the `<prefix>__<name>` format (see [`crate::rank::Rank::split_taxon`]).
+    InvalidTaxon(String),
     /// The taxon to remove is not present in the taxonomy.
     TaxonNotFound(String),
     /// A file could not be read.
@@ -60,6 +62,12 @@ impl fmt::Display for CuratomaticError {
                 write!(f, "Empty taxon, unable to determine its rank")
             }
             CuratomaticError::UnknownRank(taxon) => write!(f, "Unknown rank for taxon: {taxon}"),
+            CuratomaticError::InvalidTaxon(taxon) => write!(
+                f,
+                "Invalid taxon {taxon:?}: expected a rank prefix, then `__`, then a name that \
+                 does not start with `_` or whitespace and does not end with whitespace (e.g. \
+                 g__Escherichia)"
+            ),
             CuratomaticError::TaxonNotFound(taxon) => write!(f, "Taxon not found: {taxon}"),
             CuratomaticError::Io(message) => write!(f, "I/O error: {message}"),
             CuratomaticError::MissingColumn { path, column } => {

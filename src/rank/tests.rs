@@ -87,3 +87,62 @@ fn from_name_rejects_prefixes_and_other_names() {
         );
     }
 }
+
+#[test]
+fn a_taxon_without_a_double_underscore_after_its_prefix_is_invalid() {
+    for taxon in ["gFoo", "g_Foo", "g", "g_"] {
+        assert_eq!(
+            Rank::of_taxon(taxon),
+            Err(CuratomaticError::InvalidTaxon(taxon.to_owned())),
+            "{taxon}"
+        );
+    }
+}
+
+#[test]
+fn a_name_starting_with_an_underscore_or_space_is_invalid() {
+    // A trailing space is invalid too: a name is never trimmed or otherwise edited.
+    for taxon in [
+        "g___Foo",
+        "g__ Foo",
+        "g__Foo ",
+        "g__\tFoo",
+        "s__Escherichia coli\t",
+    ] {
+        assert_eq!(
+            Rank::of_taxon(taxon),
+            Err(CuratomaticError::InvalidTaxon(taxon.to_owned())),
+            "{taxon:?}"
+        );
+    }
+}
+
+#[test]
+fn every_prefix_followed_by_a_double_underscore_has_its_rank() {
+    for rank in Rank::iter() {
+        let prefix = rank.prefix();
+        for name in [
+            "Name",
+            "Name_A",
+            "CAG-698",
+            "Name two",
+            "{unresolved} sp1",
+            "",
+        ] {
+            let taxon = format!("{prefix}__{name}");
+            assert_eq!(Rank::of_taxon(&taxon), Ok(rank), "{taxon}");
+            assert_eq!(Rank::split_taxon(&taxon), Ok((rank, name)), "{taxon}");
+        }
+    }
+}
+
+#[test]
+fn an_unknown_prefix_with_a_double_underscore_is_an_unknown_rank() {
+    for taxon in ["x__Foo", "G__Foo"] {
+        assert_eq!(
+            Rank::of_taxon(taxon),
+            Err(CuratomaticError::UnknownRank(taxon.to_owned())),
+            "{taxon}"
+        );
+    }
+}

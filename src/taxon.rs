@@ -28,7 +28,8 @@ impl Taxon {
         &self.0
     }
 
-    /// The rank of this taxon, determined by the first character of its name.
+    /// The rank of this taxon, determined by its prefix. A malformed taxon is an error, see
+    /// [`Rank::split_taxon`].
     pub(crate) fn rank(&self) -> CuratomaticResult<Rank> {
         Rank::of_taxon(self.as_str())
     }
@@ -45,9 +46,10 @@ impl Taxon {
             .is_ok_and(|rank| self == &Taxon::unresolvable(rank))
     }
 
-    /// True if this is a name, rather than a placeholder that is only the rank prefix (e.g. `g__`).
+    /// True if this is a name: a valid taxon with text after its `<prefix>__` (see
+    /// [`Rank::split_taxon`]), rather than a placeholder that is only the prefix (e.g. `g__`).
     pub(crate) fn is_named(&self) -> bool {
-        self.as_str().chars().count() > 3
+        Rank::split_taxon(self.as_str()).is_ok_and(|(_rank, name)| !name.is_empty())
     }
 
     /// True if this is a species of the form `s__{unresolved} NAME`.

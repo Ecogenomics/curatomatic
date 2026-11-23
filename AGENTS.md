@@ -34,6 +34,12 @@ should be found in the tree.
 
 The taxonomy follows a seven rank taxonomic structure: Domain, Phylum, Class, Order, Family, Genus, Species.
 
+A taxon is always `<prefix>__<name>`: one of the rank prefixes `d`, `p`, `c`, `o`, `f`, `g`, `s`, then `__`, then its
+name (`g__Escherichia`, `s__Escherichia coli`, `g__CAG-698`, `s__{unresolved} sp1`). The name must not start with `_`
+or whitespace, and must not end with whitespace. Anything else stops the run (`CuratomaticError::InvalidTaxon`, or
+`UnknownRank` for an unknown prefix such as `x__Foo`). This is checked by `Rank::split_taxon` (`src/rank.rs`), which
+every taxon passes through on its way into a `Taxonomy`, from the tree, the taxonomy files and novel naming.
+
 Some taxa within the tree may have no name assigned to them, they are given in the placeholder format (prefix only, i.e.
 `p__`, `c__`, `o__`, `f__`, `g__`).
 These can be refined by curatomatic at will.

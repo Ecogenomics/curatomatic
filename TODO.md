@@ -99,55 +99,9 @@ the unrounded RED? Either answer changes some outputs, so measure it on the four
    `docs/testing.md`.
 3. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload".
 
-## Job 19: A taxon is always `<prefix>__<name>`
-
-**Status: approved** (decided with the user on 2026-11-23). Do this before Jobs 20 and 21.
-
-### Problem
-
-`Rank::of_taxon` (`src/rank.rs`) reads a taxon's rank from its first character only, so `gFoo` and `g_Foo` are
-accepted as genera. `Taxon::is_named` (`src/taxon.rs`) counts any taxon longer than 3 characters as a name. Every
-taxon, from the tree, `--taxonomy`, `--prior-taxonomy` and novel naming, reaches a `Taxonomy` through
-`Taxonomy::add_taxon`, which calls `Taxon::rank`, so this is where the format is checked.
-
-### Rule
-
-- A taxon is a known rank prefix, then `__`, then its name: `g__Escherichia`, `s__Escherichia coli`,
-  `g__Luteimonas_D`, `g__CAG-698`, `s__{unresolved} sp1`.
-- The name must not start with `_` or whitespace, and must not end with whitespace (`g___Foo`, `g__ Foo` and
-  `g__Foo ` are invalid). Anything else is kept exactly as read: curatomatic never edits a taxon's text.
-- A bare `<prefix>__` is a placeholder, not a name. Where placeholders are allowed is Job 20.
-- `x__Foo` and `G__Foo` stay `UnknownRank`. Any other malformed taxon fails with a new error,
-  `CuratomaticError::InvalidTaxon`, naming the taxon and the expected format, and stops the run.
-- `Taxon::is_named` becomes "has a name after `<prefix>__`", instead of a length check.
-
-The r237 taxonomy file, the r232 prior taxonomy and the r237 novel names have no taxon that breaks this rule
-(checked 2026-11-23).
-
-### Tasks
-
-1. `src/rank.rs` (`Rank::of_taxon`), `src/taxon.rs` (`is_named`), `src/error.rs` (`InvalidTaxon`).
-2. Tests:
-   - `src/rank/tests.rs`:
-     - `a_taxon_without_a_double_underscore_after_its_prefix_is_invalid`: `gFoo`, `g_Foo`, `g`, `g_`.
-     - `a_name_starting_with_an_underscore_or_space_is_invalid`: `g___Foo`, `g__ Foo`, `g__Foo `.
-     - `every_prefix_followed_by_a_double_underscore_has_its_rank`: `<prefix>__Name` and `<prefix>__` for all 7
-       ranks, built from `Rank::prefix`.
-     - `an_unknown_prefix_with_a_double_underscore_is_an_unknown_rank`: `x__Foo`, `G__Foo`.
-   - `src/taxon/tests.rs`: `only_text_after_the_prefix_makes_a_taxon_named` (`g__` no; `g__A`,
-     `s__{unresolved} sp1` yes).
-   - `src/taxonomy/tests.rs`: `a_taxonomy_with_a_taxon_without_a_double_underscore_is_an_error`
-     (`d__Bacteria;pFoo`).
-   - `src/node_label/tests.rs`: `a_node_label_with_a_malformed_taxon_is_an_error` (`100:gFoo|RED=0.9`).
-   - `src/taxonomy_file/tests.rs`: `a_row_with_a_malformed_taxon_is_an_error_on_its_line` (`G1\td__B;gFoo;s__X y`
-     gives `TaxonomyFile { line: 1, .. }`).
-3. Docs: the taxonomy file format in `README.md`, "Input preparation" in `docs/refinement.md`, and the Taxonomy
-   section of `AGENTS.md`.
-4. Run r237 with `--prior-taxonomy` (the README example) and check that the output is unchanged.
-
 ## Job 20: No placeholders on the tree, and placeholders stripped from the input files
 
-**Status: approved** (decided with the user on 2026-11-23). Needs Job 19.
+**Status: approved** (decided with the user on 2026-11-23). Job 19, which it needed, is done.
 
 ### Problem
 

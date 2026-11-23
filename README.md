@@ -81,6 +81,11 @@ A tab separated file with no header and two columns, the genome ID and its taxon
 G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobacterales;f__Enterobacteriaceae;g__Escherichia;s__Escherichia coli
 ```
 
+- Each taxon is a rank prefix (`d`, `p`, `c`, `o`, `f`, `g` or `s`), then `__`, then its name: `g__Escherichia`,
+  `s__Escherichia coli`, `g__Luteimonas_D`, `g__CAG-698`, `s__{unresolved} sp1`. The name must not start with `_` or
+  whitespace, and must not end with whitespace (`gFoo`, `g_Foo`, `g___Foo` and `g__ Foo` are errors). Spaces around a
+  `;` are ignored. A bare prefix (`g__`) is a placeholder, not a name. The same format applies to the taxa in the
+  tree's labels and in `--prior-taxonomy`; a malformed taxon stops the run.
 - Genome IDs are matched to the tree the same way as the novel name file (`GB_GCA_003697165.1` is `G003697165`).
 - The file holds what the dummy nodes of the old trees held. Each row is the full taxonomy of the genome: the taxa on
   its path in the tree, plus its own. Each leaf is given every named taxon of its row that is **not on its path** in

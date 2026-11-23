@@ -2,6 +2,9 @@ use strum::{EnumIter, IntoEnumIterator};
 
 use crate::error::{CuratomaticError, CuratomaticResult};
 
+/// Separates the rank prefix of a taxon from its name (e.g. `g__Escherichia`).
+pub(crate) const PREFIX_SEPARATOR: &str = "__";
+
 /// A taxonomic rank, in order from highest (domain) to lowest (species).
 ///
 /// Iterate over every rank, highest to lowest, with [`Rank::iter`] (from [`strum::IntoEnumIterator`]).
@@ -63,11 +66,42 @@ impl Rank {
         Rank::iter().skip_while(|&rank| rank != self).nth(1)
     }
 
-    /// The rank of a taxon, determined by the first character of its name (e.g. `g__Escherichia`).
+    /// The rank of a taxon, determined by its prefix (e.g. `g__Escherichia`). See
+    /// [`Rank::split_taxon`] for the format of a taxon.
     pub(crate) fn of_taxon(taxon: &str) -> CuratomaticResult<Rank> {
-        let prefix = taxon.chars().next().ok_or(CuratomaticError::EmptyTaxon)?;
-        Rank::try_from(prefix)
-            .map_err(|_unknown_prefix| CuratomaticError::UnknownRank(taxon.to_owned()))
+        Rank::split_taxon(taxon).map(|(rank, _name)| rank)
+    }
+
+    /// Split a taxon into its rank and its name: `g__Escherichia` is the genus `Escherichia`, and
+    /// a placeholder (`g__`) is a genus with an empty name.
+    ///
+    /// A taxon is a rank prefix, then [`PREFIX_SEPARATOR`], then its name. The name must not start
+    /// with `_` or whitespace, and must not end with whitespace. Anything else in the name is
+    /// allowed, and is never edited.
+    ///
+    /// An empty taxon is [`CuratomaticError::EmptyTaxon`]. A well formed taxon with a prefix that
+    /// is not a rank (`x__Foo`, `G__Foo`) is [`CuratomaticError::UnknownRank`]. Any other
+    /// malformed taxon (`gFoo`, `g_Foo`, `g___Foo`, `g__ Foo`, `g__Foo `) is
+    /// [`CuratomaticError::InvalidTaxon`].
+    pub(crate) fn split_taxon(taxon: &str) -> CuratomaticResult<(Rank, &str)> {
+        let invalid = || CuratomaticError::InvalidTaxon(taxon.to_owned());
+        let mut chars = taxon.chars();
+        let prefix = chars.next().ok_or(CuratomaticError::EmptyTaxon)?;
+        let name = chars
+            .as_str()
+            .strip_prefix(PREFIX_SEPARATOR)
+            .ok_or_else(invalid)?;
+        let rank = Rank::try_from(prefix)
+            .map_err(|_unknown_prefix| CuratomaticError::UnknownRank(taxon.to_owned()))?;
+        let bad_start = name
+            .chars()
+            .next()
+            .is_some_and(|c| c == '_' || c.is_whitespace());
+        let bad_end = name.chars().next_back().is_some_and(char::is_whitespace);
+        if bad_start || bad_end {
+            return Err(invalid());
+        }
+        Ok((rank, name))
     }
 }
 

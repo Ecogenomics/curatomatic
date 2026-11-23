@@ -128,3 +128,11 @@ fn spaces_around_taxa_are_trimmed_but_inner_spaces_are_kept() {
     let tax = Taxonomy::from_string("  s__Escherichia coli  ;  g__Escherichia ").unwrap();
     assert_eq!(tax.to_string(), "g__Escherichia; s__Escherichia coli");
 }
+
+#[test]
+fn a_taxonomy_with_a_taxon_without_a_double_underscore_is_an_error() {
+    assert_eq!(
+        Taxonomy::from_string("d__Bacteria;pFoo"),
+        Err(CuratomaticError::InvalidTaxon("pFoo".to_owned()))
+    );
+}

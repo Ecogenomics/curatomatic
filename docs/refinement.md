@@ -223,6 +223,13 @@ Before refinement, when the tree is read:
   (`TaxonomyOnLeaf`): the taxa of a leaf come only from `--taxonomy`. An internal node is labelled
   `[<bootstrap>][:][<taxonomy>]|RED=<red>`. The RED key may be written `RED=` or `red=`, after a
   `|`, or after the `:` of a bootstrap with no taxonomy (`100:red=0.889`).
+- Every taxon, in a tree label, `--taxonomy`, `--prior-taxonomy` or a novel name, is a rank
+  prefix, then `__`, then its name (`g__Escherichia`, `s__{unresolved} sp1`). The name must not
+  start with `_` or whitespace, nor end with whitespace, and is otherwise kept exactly as read. A
+  taxon with an unknown prefix (`x__Foo`, `G__Foo`) is `UnknownRank`; any other malformed taxon
+  (`gFoo`, `g_Foo`, `g___Foo`, `g__ Foo`) is `InvalidTaxon`. Both stop the run. This is checked by
+  `Rank::split_taxon` (`src/rank.rs`), which every taxon passes through on its way into a
+  `Taxonomy`. A bare prefix (`g__`) is a placeholder: `Taxon::is_named` is false for it.
 - If `--taxonomy` is given, every leaf is given the taxa the tree can't hold, before anything else
   runs (`Tree::assign_leaf_taxonomy`). The file holds what the dummy nodes of the old trees held:
   each row is the genome's full taxonomy, the taxa on its path plus its own.

@@ -107,3 +107,13 @@ fn from_file_reads_a_missing_file_as_an_io_error() {
         Err(CuratomaticError::Io(_))
     ));
 }
+
+#[test]
+fn a_row_with_a_malformed_taxon_is_an_error_on_its_line() {
+    let error = read("G1\td__B;gFoo;s__X y\n").unwrap_err();
+    assert!(
+        matches!(&error, CuratomaticError::TaxonomyFile { line: 1, message, .. }
+            if message.contains("gFoo")),
+        "{error}"
+    );
+}

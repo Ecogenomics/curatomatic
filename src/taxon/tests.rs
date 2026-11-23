@@ -353,3 +353,17 @@ fn a_latin_name_is_a_capital_then_lower_case_letters_with_an_optional_suffix() {
         assert!(!Taxon::new(taxon).is_latin_name(), "{taxon}");
     }
 }
+
+#[test]
+fn only_text_after_the_prefix_makes_a_taxon_named() {
+    for taxon in ["g__", "s__", "d__"] {
+        assert!(!Taxon::new(taxon).is_named(), "{taxon}");
+    }
+    for taxon in ["g__A", "s__{unresolved} sp1", "d__Bacteria"] {
+        assert!(Taxon::new(taxon).is_named(), "{taxon}");
+    }
+    // Long enough to have passed the old length check, but not in the `<prefix>__<name>` format.
+    for taxon in ["gFoo", "g_Foo", "g___Foo"] {
+        assert!(!Taxon::new(taxon).is_named(), "{taxon}");
+    }
+}

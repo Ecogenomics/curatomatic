@@ -290,3 +290,11 @@ fn an_internal_node_without_a_red_is_an_error() {
         );
     }
 }
+
+#[test]
+fn a_node_label_with_a_malformed_taxon_is_an_error() {
+    assert_eq!(
+        internal("100:gFoo|RED=0.9"),
+        Err(CuratomaticError::InvalidTaxon("gFoo".to_owned()))
+    );
+}
