@@ -329,3 +329,24 @@ rank above existing names:
 - The genomes of a skipped taxon keep the placeholder (e.g. `p__`) for that rank only. Each lower
   missing rank is decided on its own highest candidate node, by the same check. No report row is
   added; the run logs the number skipped for each rank.
+
+A novel taxon is never **out of rank order** with the named taxa around it. For a missing rank `R`
+on its highest candidate node `N`, the taxon is skipped, as above, if:
+
+- a node strictly above `N` holds a named taxon of a rank below `R` (a novel order inside a genus,
+  e.g. 10 novel orders inside `g__MED-G20` in r232 bac120, which the truth puts in
+  `o__Flavobacteriales_D`), or
+- a node strictly below `N` (leaves included) holds a named taxon of a rank above `R` (a novel
+  genus above a family, e.g. `g__CAZDDW01` above `f__DNKR01` and `f__CAYZPO01` in r232 bac120).
+
+A taxon on `N` itself is in order (a novel genus goes on the node of `f__F` with it). Any named
+taxon counts, including WGS-style names and, below `N`, the novel taxa of higher ranks made earlier
+in the run (the ranks are filled from highest to lowest). The run logs the number skipped this way
+for each rank, after the number skipped for a valid name below. `Tree::lowest_named_rank_above` and
+`Tree::highest_named_rank_below` (`src/tree.rs`) find these taxa; the tests are under "Novel taxa
+are never out of rank order" in `src/tree/tests.rs`.
+
+With the usual medians (each rank's median RED above the one before it), a novel taxon of a higher
+rank below `N` always comes with a named taxon of that rank below `N`: that taxon is what stopped
+the novel one going higher. So the novel taxa only matter for unusual medians, as in the test
+`a_novel_taxon_of_a_higher_rank_made_first_blocks_a_lower_one_above_it`.

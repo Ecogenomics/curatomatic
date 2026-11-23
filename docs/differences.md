@@ -19,6 +19,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | L7 | Novel taxa above names | A novel taxon is created for every missing rank, even above named taxa | Only created where no valid name of a lower rank is below it | **Yes** |
 | L8 | Refining up | A taxon can be moved up above a taxon of a higher rank | The upward walk stops at a node with a higher rank below it | **Yes** |
 | L9 | Refining down | Genomes without a prior taxonomy are in no genus | A new genome is in the genus its binomial species names, so a genus inside the RED window (and, if its name is not Latin, on a supported node) is not moved down away from it | **Yes**, if a prior taxonomy was given |
+| L10 | Novel taxa out of rank order | A novel taxon can be created below a named taxon of a lower rank, or above one of a higher rank | Not created | **Yes** |
 
 All other refinement and novel-rank rules are the same; see
 [Unchanged logic](#unchanged-logic).
@@ -147,6 +148,20 @@ genome, they get the same name.
 
   See
   [refinement.md](refinement.md#rule-d2-follow-the-genomes-of-the-taxon), rule D2a.
+
+### L10. Novel taxa are not created out of rank order
+
+- **Python** (`fill_in_missing_ranks`, `util/tree.py`): the only checks on the highest candidate
+  node are the RED, the bootstrap and that no taxon of the same rank is below it, so a novel taxon
+  can be created inside a named taxon of a lower rank, or above one of a higher rank.
+- **Rust** (`fill_in_missing_ranks`, `src/tree.rs`): the novel taxon is skipped if a named taxon of
+  a lower rank is on a node above its candidate node, or a named taxon of a higher rank (a novel
+  one made earlier in the run included) is on a node below it. As for L7, only that rank is
+  skipped. With the r220 / r226 priors this skips 12 novel taxa in r226 bac120 and 13 in r232
+  bac120 (none in ar53), such as 10 novel orders inside `g__MED-G20` (r232 bac120) and 7 novel
+  orders inside families or `g__Karelsulcia` (r237 bac120). See
+  [refinement.md](refinement.md#novel-taxa) and
+  [testing.md](testing.md#job-16-novel-taxa-out-of-rank-order).
 
 ## Failures that are now reported errors
 

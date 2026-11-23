@@ -1703,6 +1703,11 @@ fn any_other_taxon_on_more_than_one_node_is_an_error() {
 /// Fill in the missing ranks of a tree whose leaves hold the given taxa, as `main` does after
 /// refinement. Returns the tree and the novel taxa, created and unresolvable.
 fn fill_novel_taxa(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, NovelTaxa) {
+    fill_novel_taxa_with(newick, leaf_taxa, &red_dict())
+}
+
+/// As [`fill_novel_taxa`], with the median RED of each rank given.
+fn fill_novel_taxa_with(newick: &str, leaf_taxa: &[(usize, &str)], red: &Red) -> (Tree, NovelTaxa) {
     let mut tree = tree_with_leaf_taxa(newick, leaf_taxa).unwrap();
     let missing = tree.get_leaf_nodes_missing_rank().unwrap();
     let known = tree.taxon_labels.clone();
@@ -1710,7 +1715,7 @@ fn fill_novel_taxa(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, NovelTax
         &mut tree,
         &missing,
         BootstrapValue::new(95.0),
-        &red_dict(),
+        red,
         &Metadata::default(),
         known,
     )
@@ -1892,6 +1897,174 @@ fn a_genome_that_is_not_skipped_still_gets_its_lower_ranks() {
     );
     assert!(novel.contains(&Taxon::new("p__G1")));
     assert!(novel.contains(&Taxon::new("f__G1")));
+}
+
+// ---- Novel taxa are never out of rank order ----
+
+/// Every novel taxon is in rank order with the named taxa above and below its node: none above it
+/// is of a lower rank, and none below it is of a higher rank.
+fn assert_novel_taxa_in_rank_order(tree: &Tree, novel: &BTreeSet<Taxon>) {
+    let named_ranks = |node: NodeId| -> Vec<Rank> {
+        tree.label(node)
+            .unwrap()
+            .taxonomy
+            .iter()
+            .flat_map(Taxonomy::iter_ranks)
+            .filter(|taxon| taxon.is_named())
+            .map(|taxon| taxon.rank().unwrap())
+            .collect()
+    };
+    for (taxon, node) in tree.taxon_nodes() {
+        if !novel.contains(&taxon) {
+            continue;
+        }
+        let rank = taxon.rank().unwrap();
+        let mut current = tree.newick.parent(node);
+        while let Some(above) = current {
+            assert!(
+                named_ranks(above).iter().all(|&r| r <= rank),
+                "{taxon} is below a taxon of a lower rank"
+            );
+            current = tree.newick.parent(above);
+        }
+        for below in tree.newick.descendants(node) {
+            assert!(
+                named_ranks(below).iter().all(|&r| r >= rank),
+                "{taxon} is above a taxon of a higher rank"
+            );
+        }
+    }
+}
+
+/// G1 (0) and G2 (1) below X (2, RED 0.5), below `g__G` (3, RED 0.3), whose RED is that of an
+/// order, as for `g__MED-G20` in r237 bac120.
+const GENUS_AT_ORDER_RED: &str =
+    "(((G1:0.1,G2:0.1)'100|red=0.5':0.1)'100:g__G|red=0.3':0.1)'d__D;p__P;c__C|red=0.0';";
+
+const UNRESOLVED_G1_G2: [(usize, &str); 2] = [(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")];
+
+#[test]
+fn a_missing_order_below_a_named_genus_is_not_created() {
+    // The highest order candidate is X, and the family candidates are the leaves: all are below
+    // `g__G`, so neither rank is filled. Nothing named is at or below X.
+    let (tree, novel) = fill_novel(GENUS_AT_ORDER_RED, &UNRESOLVED_G1_G2);
+    assert!(novel.is_empty());
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__P;c__C;o__;f__;g__G;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__;f__;g__G;s__{unresolved} G2"
+        ]
+    );
+}
+
+#[test]
+fn a_missing_order_is_created_where_no_genus_is_above_it() {
+    // The same tree without `g__G` gets its order and families.
+    let (tree, novel) = fill_novel(
+        "(((G1:0.1,G2:0.1)'100|red=0.5':0.1)'100|red=0.3':0.1)'d__D;p__P;c__C|red=0.0';",
+        &UNRESOLVED_G1_G2,
+    );
+    assert!(novel.contains(&Taxon::new("o__G1")));
+    assert!(novel.contains(&Taxon::new("f__G1")));
+    assert_novel_taxa_in_rank_order(&tree, &novel);
+}
+
+#[test]
+fn a_missing_genus_above_a_named_family_is_not_created() {
+    // As `g__CAZDDW01` above `f__DNKR01` in r237 bac120. Post-order: G1 (0), G2 (1), `f__F` (2),
+    // G3 (3), Y (4), the root (5). The highest genus candidate of all three genomes is Y, which
+    // has `f__F` below it (and the novel `f__G3` on G3), so no genus is created. G3's family is
+    // filled on G3, as `f__F` stops it from reaching Y.
+    let (tree, novel) = fill_novel(
+        "(((G1:0.1,G2:0.1)'100:f__F|red=0.97':0.1,G3:0.1)'100|red=0.95':0.1)\
+         'd__D;p__P;c__C;o__O|red=0.0';",
+        &[
+            (0, "s__{unresolved} G1"),
+            (1, "s__{unresolved} G2"),
+            (3, "s__{unresolved} G3"),
+        ],
+    );
+    assert_eq!(novel, BTreeSet::from([Taxon::new("f__G3")]));
+    assert_eq!(label(&tree, 4), "100|red=0.95");
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__P;c__C;o__O;f__F;g__;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__O;f__F;g__;s__{unresolved} G2",
+            "G3\td__D;p__P;c__C;o__O;f__G3;g__;s__{unresolved} G3"
+        ]
+    );
+}
+
+#[test]
+fn a_novel_taxon_of_a_higher_rank_made_first_blocks_a_lower_one_above_it() {
+    // With the usual medians, a novel family below the genus candidate always has a named family
+    // below that candidate too (it is what stopped the family going higher). A genus median below
+    // the order median puts the genus midpoint (0.75) below the family midpoint (0.85), so the
+    // novel families go on X (RED 0.9) and G3, and the genus candidate is Y (RED 0.8) above them.
+    let red = Red::from_tsv(
+        "rank\tmedian\nPhylum\t0.3\nClass\t0.4\nOrder\t0.8\nFamily\t0.9\nGenus\t0.6\n",
+    )
+    .unwrap();
+    let (tree, novel) = fill_novel_taxa_with(
+        "(((G1:0.1,G2:0.1)'100|red=0.9':0.1,G3:0.1)'100|red=0.8':0.1)\
+         'd__D;p__P;c__C;o__O|red=0.0';",
+        &[
+            (0, "s__{unresolved} G1"),
+            (1, "s__{unresolved} G2"),
+            (3, "s__{unresolved} G3"),
+        ],
+        &red,
+    );
+    assert_eq!(novel.unresolvable, []);
+    assert_eq!(
+        novel.created,
+        BTreeSet::from([Taxon::new("f__G1"), Taxon::new("f__G3")])
+    );
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__P;c__C;o__O;f__G1;g__;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__O;f__G1;g__;s__{unresolved} G2",
+            "G3\td__D;p__P;c__C;o__O;f__G3;g__;s__{unresolved} G3"
+        ]
+    );
+}
+
+#[test]
+fn a_higher_rank_on_the_novel_taxons_own_node_is_in_rank_order() {
+    // `f__F` is on X, the highest genus candidate, so the genus goes on X with it.
+    let (tree, novel) = fill_novel(
+        "((G1:0.1,G2:0.1)'100:f__F|red=0.95':0.1)'d__D;p__P;c__C;o__O|red=0.0';",
+        &UNRESOLVED_G1_G2,
+    );
+    assert_eq!(novel, BTreeSet::from([Taxon::new("g__G1")]));
+    assert_eq!(label(&tree, 2), "100:f__F; g__G1|RED=0.95");
+}
+
+#[test]
+fn every_novel_taxon_of_these_tests_is_in_rank_order() {
+    let namesakes = namesake_tree("f__X;g__G1", "f__Y;g__G2");
+    let trees = [
+        (MISSING_GENUS, UNRESOLVED_G1_G2.as_slice()),
+        (
+            "((((G1:0.1,G2:0.1)'100|red=0.75':0.1)'100:c__C;o__O|red=0.45':0.1)'100|red=0.2':0.1)\
+             'd__D|red=0.0';",
+            UNRESOLVED_G1_G2.as_slice(),
+        ),
+        (
+            "((((G1:0.1,G2:0.1)'100|red=0.75':0.1)'100|red=0.45':0.1)'100|red=0.2':0.1)\
+             'd__D|red=0.0';",
+            UNRESOLVED_G1_G2.as_slice(),
+        ),
+        (namesakes.as_str(), NAMESAKE_SPECIES.as_slice()),
+    ];
+    for (newick, leaf_taxa) in trees {
+        let (tree, novel) = fill_novel_taxa(newick, leaf_taxa);
+        assert!(!novel.created.is_empty(), "{newick}");
+        assert_novel_taxa_in_rank_order(&tree, &novel.created);
+    }
 }
 
 // ---- A novel taxon that can't be named is reported, never placed ----

@@ -306,7 +306,7 @@ Totals over the four datasets, by action:
 - `825c317` (before Job 14) is the same apart from r226_bac120 2,758 (1,094 / 733 / 931) and
   r232_bac120 5,128 (1,880 / 1,248 / 2,000): 8,547 in total.
 - [Job 26](#job-26-rule-d2a-for-non-latin-genera-on-a-supported-node) raises Rust to 8,827, 492
-  more than Python.
+  more than Python. [Job 16](#job-16-novel-taxa-out-of-rank-order) lowers it to 8,806, 471 more.
 - Python runtime: 14 s / 209 s / 22 s / 2,315 s (r226_ar53 / r226_bac120 / r232_ar53 /
   r232_bac120). Rust: 11 to 23 s each.
 
@@ -336,6 +336,44 @@ r232_ar53 172 / 88 / 220, r232_bac120 1,995 / 1,512 / 1,859.
 - The user accepted the +284 (2026-11-23) to keep genera such as `g__JAHELV01` (r237) whole. In
   r237 bac120 with the r232 prior, G057028815 stays in `g__JAHELV01` (no novel `g__JBXLYT01`),
   genera moved down go from 802 to 597, and novel genera from 4,677 to 4,456.
+
+#### Job 16: Novel taxa out of rank order
+
+Job 16 skips a novel taxon that would be below a named taxon of a lower rank, or above one of a
+higher rank ([refinement.md](refinement.md#novel-taxa), [differences.md](differences.md) L10). Rust
+only, same inputs and priors (`wip/jahelv01/priors/<d>.tsv`, links to the `wip/bench_v3/priors`
+files), run with `wip/scripts/run_variant.sh`. Before is `bea2984` (`wip/runs/job16_before`), whose
+taxonomy, tree and workload equal the Job 26 run (`wip/runs/job26`); its report differs only in the
+bootstrap and RED columns (`bea2984`). After is `wip/runs/job16_v2`.
+
+| Version | r226_ar53 | r226_bac120 | r232_ar53 | r232_bac120 | Total | Move | Create | Delete | Added |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `bea2984` (Job 26) | 181 | 2,800 | 480 | 5,366 | 8,827 | 3,362 | 2,523 | 2,942 | 1,355 |
+| Job 16 | 181 | 2,791 | 480 | 5,354 | 8,806 (−21) | 3,360 | 2,526 | 2,920 | 1,332 |
+
+- The ar53 outputs are unchanged. It skips 12 novel taxa in r226_bac120 (4 orders, 7 families, 1
+  genus) and 13 in r232_bac120 (12 orders, 1 genus), changing 15 and 20 genome-ranks.
+- For 31 of the 35 genome-ranks the truth has a named taxon instead: `o__Enterobacterales_A` and
+  `f__Enterobacteriaceae_A` (the novel taxa inside `g__Sodalis_A` and `f__Enterobacteriaceae_A`),
+  `f__2011-GWC2-44-17` (inside `g__2011-GWC2-44-17`), `o__Flavobacteriales_D` (the 10 orders inside
+  `g__MED-G20`, and one inside `f__Parvicellaceae`) and `o__Bacillales`. These were deletes (−22).
+- The other 4 are the two skipped genera, `g__JBAZCA01` (r226_bac120, 3 genomes, above
+  `f__JBAZUF01` and `f__UM-FILTER-48-10`) and `g__CAZDDW01` (r232_bac120, 4 genomes, above
+  `f__DNKR01`, `f__CAYZPO01` and the novel `f__G965231015`). The truth keeps the name for 3
+  genomes each, but as a family of the same name that replaces the families below it
+  (`f__JBAZCA01;g__JBAZCA01`, `f__CAZDDW01;g__CAZDDW01`), so the curator fixes the families either
+  way. Leaving the genus empty turns a correct genus (`g__JBAZCA01`) and a genus to shrink
+  (`g__CAZDDW01`, a move) into two creates.
+- The third extra create is `f__2011-GWC2-44-17` (5 genomes): before, they were split over 4 novel
+  families (a rename, which isn't counted, a move and 3 deletes); now it is one create.
+- New rank inversions (`wip/scripts/check_output.py`, pairs of a taxon and a taxon of a higher
+  rank below it that the input didn't have): 13 / 15 before, 0 after (r226_bac120 / r232_bac120).
+  In r237 bac120 (the README command, `wip/runs/job16_r237`), 7 before (5 novel orders inside
+  families, 2 inside `g__Karelsulcia`), 0 after, with 5,219 novel taxa instead of 5,226. The
+  inversions left in the outputs (6 / 22, and 3 in r237) are all in the input.
+- Runtime is unchanged: the novel taxa of higher ranks are added to the ranks below each node as
+  they are placed. A first version that reloaded the tree for each rank took 3 s longer on
+  r232_bac120.
 
 #### Effect of each rule (ablation at `825c317`)
 

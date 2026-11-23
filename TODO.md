@@ -4,39 +4,6 @@ Finished jobs are removed from this file: their rules are in `docs/refinement.md
 their measurements in `docs/testing.md`. Jobs that need the user's approval say so: don't start them before it is
 given.
 
-## Job 16: Don't create a novel taxon that breaks rank order
-
-**Status: needs the user's approval** (proposed as P6 on 2026-11-20).
-
-### Problem
-
-`fill_in_missing_ranks` (`src/tree.rs`) can create a novel taxon that is out of rank order with the named taxa around
-it. There are two forms:
-
-- A novel taxon **below** a named taxon of a lower rank on its path. In r237 bac120, 10 novel orders are created
-  inside `g__MED-G20`, and `o__G000829155` inside `g__Karelsulcia` (RED 0.891).
-- A novel taxon **above** a named taxon of a higher rank. In r237 bac120, `g__CAZDDW01` is created above
-  `f__DNKR01` and the novel `f__G965231015`.
-
-With Jobs 10 to 13 there are 7 such taxa in r237 bac120 (Job 15 left that unchanged), and 13 / 15 in r226_bac120 /
-r232_bac120 (6 / 10 at `32d3350`, before Jobs 11 and 12; not measured after Job 15). Every one checked is placed
-elsewhere by the truth (`o__Flavobacteriales_D`, `o__Bacillales`, `f__CAZDDW01;g__G965231015`).
-
-### Rule (proposed)
-
-A novel taxon of rank `R` is skipped if its candidate node is below a named taxon of a rank lower than `R` on its
-path, or has a named taxon of a rank higher than `R` below it. Novel taxa of higher ranks made earlier in the same
-run count. Skipping only skips that rank (as for the existing check, `docs/refinement.md` "Novel taxa").
-
-### Tasks
-
-1. Add the check to `fill_in_missing_ranks`, next to the `lowest_valid_rank_below` check.
-2. Tests in `src/tree/tests.rs`, one for each form, and one where a novel taxon of a higher rank made earlier in the
-   run blocks a lower one.
-3. Docs: `docs/refinement.md` "Novel taxa", `docs/differences.md` (new entry: Python has no such check).
-4. Measure the curator workload on the four datasets (see `docs/testing.md`), and count the rank inversions left in
-   r237 bac120.
-
 ## Job 18: Benchmark with a prior taxonomy and score the curator workload
 
 **Status: not started. Confirm with the user before starting.**

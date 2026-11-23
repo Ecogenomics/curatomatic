@@ -294,6 +294,35 @@ impl Tree {
         Ok(out)
     }
 
+    /// The lowest rank of any named taxon (see [`Taxon::is_named`]) on a node strictly above each
+    /// node (the node itself excluded), indexed by node. `None` if there is none.
+    fn lowest_named_rank_above(&self) -> CuratomaticResult<Vec<Option<Rank>>> {
+        // The lowest named rank on each node or above it.
+        let mut at_or_above: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
+        let mut out: Vec<Option<Rank>> = vec![None; self.node_labels.len()];
+        let nodes: Vec<NodeId> = self.newick.ids().collect();
+        // Reversed post-order puts every parent before its children.
+        for &node in nodes.iter().rev() {
+            let above = self
+                .newick
+                .parent(node)
+                .and_then(|parent| at_or_above.get(parent.index()).copied().flatten());
+            let mut lowest = above;
+            if let Some(taxonomy) = &self.label(node)?.taxonomy {
+                for taxon in taxonomy.iter_ranks().filter(|taxon| taxon.is_named()) {
+                    lowest = lowest.max(Some(taxon.rank()?));
+                }
+            }
+            if let (Some(slot), Some(out_slot)) =
+                (at_or_above.get_mut(node.index()), out.get_mut(node.index()))
+            {
+                *slot = lowest;
+                *out_slot = above;
+            }
+        }
+        Ok(out)
+    }
+
     /// Give each leaf the taxa that the tree can't hold, from the taxonomy file.
     ///
     /// The file restores the labels of the dummy nodes of an old style tree: each row is the full
@@ -1132,6 +1161,9 @@ pub(crate) struct NovelTaxa {
 /// A novel taxon is only created when no valid name (see [`Taxon::is_valid_name`]) of a lower
 /// rank, other than a species, is on the highest node or below it. Otherwise its leaves keep the
 /// placeholder for that rank only: each lower missing rank is decided on its own candidate node.
+/// The same goes for a novel taxon that would be out of rank order: one whose highest node is
+/// below a named taxon of a lower rank, or has a named taxon of a higher rank below it (the novel
+/// taxa of higher ranks, made first, included). A taxon on the highest node itself is in order.
 ///
 /// A novel taxon that can't be given a name that is not already a taxon (see
 /// [`generate_unique_rank`]) is not created either: its leaves keep the placeholder for that rank,
@@ -1183,41 +1215,38 @@ pub(crate) fn fill_in_missing_ranks(
 
     // Read before any novel taxon is created, so only the names already on the tree count.
     let lowest_valid_below = tree.lowest_valid_rank_below()?;
+    // Only a taxon of a lower rank above a candidate puts it out of rank order. The novel taxa made
+    // before a rank is filled are all of higher ranks, so this is read once.
+    let lowest_named_above = tree.lowest_named_rank_above()?;
+    // Kept up to date as novel taxa are placed, so those of the higher ranks count.
+    let mut highest_named_below = tree.highest_named_rank_below()?;
 
     // Process higher to lower ranks.
     let mut novel = NovelTaxa::default();
     for (rank, leaf_candidates) in &rank_to_leaf_candidates {
-        // Leaves share a taxon if they share the highest candidate node.
-        let mut candidate_to_leaves: Vec<(NodeId, BTreeSet<NodeId>)> = Vec::new();
-        let mut index: HashMap<NodeId, usize> = HashMap::new();
-        for (leaf, candidates) in leaf_candidates {
-            let &candidate =
-                candidates
-                    .last()
-                    .ok_or_else(|| CuratomaticError::NoCandidateNode {
-                        rank: rank.prefix(),
-                        gid: tree
-                            .leaf_gid(*leaf)
-                            .cloned()
-                            .unwrap_or_else(|| GenomeId::new(leaf.to_string())),
-                    })?;
-            let idx = *index.entry(candidate).or_insert_with(|| {
-                candidate_to_leaves.push((candidate, BTreeSet::new()));
-                candidate_to_leaves.len().saturating_sub(1)
-            });
-            if let Some((_, leaves)) = candidate_to_leaves.get_mut(idx) {
-                leaves.insert(*leaf);
-            }
-        }
+        let candidate_to_leaves = group_by_highest_candidate(tree, *rank, leaf_candidates)?;
 
         // Create a novel group for the highest candidate node that covers the descendant taxa.
-        let (mut n_skipped, mut n_unresolvable): (usize, usize) = (0, 0);
+        let (mut n_skipped, mut n_out_of_order, mut n_unresolvable): (usize, usize, usize) =
+            (0, 0, 0);
         for (candidate, leaves) in &candidate_to_leaves {
             // A curator never places a novel taxon above a valid name of a lower rank. Only this
             // rank is skipped: each lower rank is decided on its own candidate node.
             let lowest = lowest_valid_below.get(candidate.index()).copied().flatten();
             if lowest.is_some_and(|lowest| lowest > *rank) {
                 n_skipped = n_skipped.saturating_add(1);
+                continue;
+            }
+            // Nor out of rank order: below a named taxon of a lower rank, or above one of a
+            // higher rank (a novel one included). Again, only this rank is skipped.
+            let above = lowest_named_above.get(candidate.index()).copied().flatten();
+            let below = highest_named_below
+                .get(candidate.index())
+                .copied()
+                .flatten();
+            if above.is_some_and(|above| above > *rank) || below.is_some_and(|below| below < *rank)
+            {
+                n_out_of_order = n_out_of_order.saturating_add(1);
                 continue;
             }
 
@@ -1231,6 +1260,8 @@ pub(crate) fn fill_in_missing_ranks(
                     novel.created.insert(new_taxon.clone());
                     // Add the taxon to the node (the leaf itself may be the candidate).
                     tree.add_node_taxon(*candidate, new_taxon)?;
+                    // Only the lower ranks still to be filled can be put out of order by it.
+                    record_taxon_below(tree, &mut highest_named_below, *candidate, *rank);
                 }
                 NovelName::Unresolvable(namesakes) => {
                     n_unresolvable = n_unresolvable.saturating_add(1);
@@ -1247,6 +1278,11 @@ pub(crate) fn fill_in_missing_ranks(
             rank.prefix()
         );
         info!(
+            "Skipped {n_out_of_order} novel {} taxa that would be out of rank order: below a named \
+             taxon of a lower rank, or above one of a higher rank.",
+            rank.prefix()
+        );
+        info!(
             "Did not create {n_unresolvable} novel {} taxa that are unresolvable: every name they \
              could have is already a taxon (see the report).",
             rank.prefix()
@@ -1254,6 +1290,54 @@ pub(crate) fn fill_in_missing_ranks(
     }
 
     Ok(novel)
+}
+
+/// The leaves missing `rank`, grouped by their highest candidate node (the last of their
+/// candidates, lowest to highest), in the order the nodes are first seen. Leaves share a novel
+/// taxon if they share the node. A leaf without a candidate is an error.
+fn group_by_highest_candidate(
+    tree: &Tree,
+    rank: Rank,
+    leaf_candidates: &[(NodeId, Vec<NodeId>)],
+) -> CuratomaticResult<Vec<(NodeId, BTreeSet<NodeId>)>> {
+    let mut candidate_to_leaves: Vec<(NodeId, BTreeSet<NodeId>)> = Vec::new();
+    let mut index: HashMap<NodeId, usize> = HashMap::new();
+    for (leaf, candidates) in leaf_candidates {
+        let &candidate = candidates
+            .last()
+            .ok_or_else(|| CuratomaticError::NoCandidateNode {
+                rank: rank.prefix(),
+                gid: tree
+                    .leaf_gid(*leaf)
+                    .cloned()
+                    .unwrap_or_else(|| GenomeId::new(leaf.to_string())),
+            })?;
+        let idx = *index.entry(candidate).or_insert_with(|| {
+            candidate_to_leaves.push((candidate, BTreeSet::new()));
+            candidate_to_leaves.len().saturating_sub(1)
+        });
+        if let Some((_, leaves)) = candidate_to_leaves.get_mut(idx) {
+            leaves.insert(*leaf);
+        }
+    }
+    Ok(candidate_to_leaves)
+}
+
+/// Record a taxon of `rank` placed on `node` in `highest_below` (see
+/// [`Tree::highest_named_rank_below`]), as it is below every node above `node`. Stops at the first
+/// node that already has a taxon of `rank` or higher below it, as every node above it does too.
+fn record_taxon_below(tree: &Tree, highest_below: &mut [Option<Rank>], node: NodeId, rank: Rank) {
+    let mut current = tree.newick.parent(node);
+    while let Some(above) = current {
+        let Some(slot) = highest_below.get_mut(above.index()) else {
+            break;
+        };
+        if slot.is_some_and(|highest| highest <= rank) {
+            break;
+        }
+        *slot = Some(rank);
+        current = tree.newick.parent(above);
+    }
 }
 
 /// The rank above `rank`, which every rank but the domain has.
