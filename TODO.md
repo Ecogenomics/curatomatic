@@ -165,60 +165,61 @@ species allowed.
 ### Problem
 
 A Newick tree can't hold taxa on a leaf: its label is the genome accession, and is never changed. The taxa a leaf
-holds (those that were on the dummy node of the old trees, plus any taxon curation moved down onto it,
-`docs/refinement.md`) are kept on its `Leaf` (`src/tree.rs`). They only reach the output merged into
-`<stem>.curatomatic.taxonomy.tsv`, together with the taxa on the leaf's path, and that file keeps only one taxon per
-rank. So the curated tree plus the outputs can't give back the taxa each leaf holds, as `--taxonomy` gave them for the
-input tree.
+holds are kept on its `Leaf` (`src/tree.rs`). They are the taxa that `Tree::assign_leaf_taxonomy` gave it from
+`--taxonomy` (the row's taxa that are not on the leaf's path), plus any taxon that curation moved down onto it
+(`docs/refinement.md`). They reach the output only inside `<stem>.curatomatic.taxonomy.tsv`, merged with the taxa on
+the leaf's path, and that file keeps only one taxon per rank. So the full taxonomy that curatomatic holds can't be
+rebuilt from the curated tree and the outputs.
 
 ### Rule
 
-Each run writes one more file to `OUT_DIR`, `<stem>.curatomatic.leaf-taxonomy.tsv`. It holds only what the Newick file
-can't hold: the taxa of each leaf's `Leaf::taxonomy` after curation, and never a taxon from the leaf's path.
+Each run writes one more file to `OUT_DIR`, `<stem>.curatomatic.leaf-taxonomy.tsv`. It holds only the taxa that the
+Newick file can't hold: the taxa in each leaf's `Leaf::taxonomy` after curation, and nothing else. The curated Newick
+tree plus this file give back the full taxonomy of every genome, exactly as it was held in the `Tree`.
 
-- The format is that of `<stem>.curatomatic.taxonomy.tsv`: no header, two columns (the genome ID exactly as the leaf
-  is labelled, then the taxa joined by `;`), one row per genome in tree order. It is written with
-  `taxonomy_file::write`.
-- Every rank is written in rank order. A rank the leaf doesn't hold is written as its placeholder, so every row has all
-  7 ranks. This includes `d__` when the domain is on the tree, which is the usual case. As in the other output files,
-  the placeholder is only formatting.
-- If the leaf holds several taxa of one rank, all of them are written in the order its `Taxonomy` keeps them (the
-  order of the `--taxonomy` row for the taxa it gave). For example, in r237, G053840885 sits under `g__JAAYFO01` on
-  the tree and holds `g__Neosphaerochaeta`, while the curated taxonomy file has only one genus.
-- Every leaf holds its named species (`Tree::check_leaves_have_species`), so every genome has a row. Most rows are
-  `d__;p__;c__;o__;f__;g__;s__<species>`. For G053840885, the row is
-  `d__;p__;c__;o__;f__;g__Neosphaerochaeta;s__Neosphaerochaeta fermentans`.
-- For every genome, the named taxa on its path in the curated tree plus its row here equal the named taxa of
-  `Tree::full_taxonomies` as sets. This is the output version of the round trip that `Tree::check_leaves_match_rows`
-  checks on the input.
+- No header, and two columns: the genome ID exactly as the leaf is labelled, then the leaf's taxa joined by `;`. There
+  is one row per genome, in tree order. It is written with `taxonomy_file::write`.
+- A row holds only the leaf's own taxa, in rank order. It has **no placeholders** and never a taxon from the leaf's
+  path, so a rank whose taxon is on the tree is not in the row. If a leaf holds `g__A` and `s__X y`, its row is
+  `g__A;s__X y`.
+- Every leaf holds its named species (`Tree::check_leaves_have_species`), so every genome has a row, and most rows are
+  the species alone (`s__Escherichia coli`). In r237, G053840885 sits under `g__JAAYFO01` on the tree and holds
+  `g__Neosphaerochaeta`, so its row is `g__Neosphaerochaeta;s__Neosphaerochaeta fermentans`.
+- If a leaf holds several taxa of one rank, all of them are written, in the order its `Taxonomy` keeps them (the order
+  of its `--taxonomy` row for the taxa that the row gave it).
+- Rebuild: for each genome, take the named taxa of the internal nodes on its path in the curated tree, then add its row
+  from this file. Ordered by rank, with the path order kept inside a rank and the leaf last, this must be exactly the
+  named taxa of `Tree::full_taxonomies` for that genome. This is the output version of the round trip that
+  `Tree::check_leaves_match_rows` checks on the input.
 - The file can be read back by `TaxonomyFile::from_reader`. It is not a valid `--taxonomy` for the curated tree,
   because a `--taxonomy` row must be the genome's full taxonomy.
 
 ### Tasks
 
-1. Add a `Tree` method that returns each leaf's own taxa, in tree order, with a placeholder for each rank it doesn't
-   hold. Name it so it can't be confused with `Tree::leaf_taxonomies`, which despite its name returns the collapsed
-   taxonomy of the whole path. For example `Tree::leaf_own_taxonomies`, or rename `leaf_taxonomies` as part of this
-   job. Write it in `curate` (`src/main.rs`) next to `<stem>.curatomatic.taxonomy.tsv`, after
+1. Add a `Tree` method that returns each leaf's own named taxa, in tree order, with no placeholders. Name it so it
+   can't be confused with `Tree::leaf_taxonomies`, which despite its name returns the collapsed taxonomy of the whole
+   path. For example, call it `Tree::leaf_own_taxonomies`, or rename `leaf_taxonomies` as part of this job. Call it in
+   `curate` (`src/main.rs`) and write the file next to `<stem>.curatomatic.taxonomy.tsv`, after
    `check_taxa_unchanged` and the final leaf checks, as for the other outputs.
 2. Tests in `src/tree/tests.rs`:
    - a leaf with only its species;
    - a leaf with a genus and species (the G053840885 case);
    - a leaf with two taxa of one rank, in row order;
    - a leaf that a taxon was moved down onto by refinement;
+   - no row holds a placeholder or a taxon on the leaf's path;
    - every row reads back with `TaxonomyFile::from_reader`;
-   - the path plus the leaf row equals `full_taxonomies` as sets on a small tree;
-   - an end-to-end test of the output file name and contents if the existing output tests cover the other files.
+   - the rebuild in the rule gives exactly `full_taxonomies` on a small tree;
+   - an end-to-end test of the output file name and contents, if the existing output tests cover the other files.
 3. Docs:
-   - `README.md` "Output": add the file.
-   - `AGENTS.md` "Taxonomy": the writers that make placeholders (`Tree::leaf_taxonomies` and
-     `Tree::full_taxonomies`) now include the new one. The note that the domain never has a placeholder is about a
-     genome's taxonomy, not this file: say so.
-   - `docs/refinement.md` around "are written to the taxonomy file only": the leaf taxonomy file too.
-   - `docs/differences.md`: Python has no such file, because its leaf taxa were on the dummy nodes of the tree.
+   - `README.md` "Output": add the file and say how to rebuild the full taxonomy from it and the tree.
+   - `AGENTS.md` "Taxonomy": say that this output file has no placeholders, unlike the two output taxonomy files that
+     have all 7 ranks.
+   - `docs/refinement.md`: where it says the taxa of a leaf "are written to the taxonomy file only", add the leaf
+     taxonomy file.
+   - `docs/differences.md`: Python has no such file, because its leaf taxa were on the dummy nodes of its tree.
    - Leave `docs/architecture.md` alone: it is a snapshot.
 4. Run on r237 (the README command) and check that every genome has a row, that G053840885's row is as above, and
-   that the round trip in the rule holds for every genome. Check that the files `scripts/benchmark.sh` reads are
+   that the rebuild in the rule holds for every genome. Check that the files `scripts/benchmark.sh` reads are
    unchanged.
 
 ## Open questions (ask the user before starting)
