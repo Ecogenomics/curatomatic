@@ -101,7 +101,7 @@ the unrounded RED? Either answer changes some outputs, so measure it on the four
 
 ## Job 25: Release a Linux binary on every push to main
 
-**Status: approved. Settle the questions below with the user before starting.**
+**Status: approved** (decisions from the user on 2026-11-23 are in "Decisions").
 
 ### Problem
 
@@ -114,21 +114,27 @@ changed. There is no `.github/` directory.
 On a push to `main`, a GitHub Actions workflow (`.github/workflows/release.yml`) releases a new version if the
 Conventional Commits since the last tag call for one, and does nothing otherwise. The steps, in order:
 
-1. **Work out the version.** semantic-release, in a dry run, reads the commits since the last `v*` tag:
+1. **Check `main`.** Run `cargo fmt --check`, `cargo clippy --all-targets` and `cargo nextest run` (the same
+   checks as "Development" in `AGENTS.md`). If any fails, the workflow stops and nothing is released.
+2. **Work out the version.** semantic-release, in a dry run, reads the commits since the last `v*` tag:
    `fix`/`perf` give a patch, `feat` a minor, and `!` or a `BREAKING CHANGE:` footer a major. Other types (`docs`,
    `chore`, `refactor`, `test`, `ci`, ...) give no release, and the workflow stops. With no tag yet, the first
-   release is `v1.0.0`.
-2. **Set the version and tag it.** semantic-release writes the version to `Cargo.toml` and `Cargo.lock`
-   (`@semantic-release/exec`), commits them to `main` as `chore(release): <version> [skip ci]`
+   release is `v1.0.0` (semantic-release's default, so no tag is made by hand first).
+3. **Set the version, write the changelog and tag it.** semantic-release writes the version to `Cargo.toml` and
+   `Cargo.lock` (`@semantic-release/exec`), adds the release notes to the top of `CHANGELOG.md`
+   (`@semantic-release/changelog`), commits the three files to `main` as `chore(release): <version> [skip ci]`
    (`@semantic-release/git`), and tags that commit `v<version>`. The binary must be built after this, from the tag, so
    that the version it logs is the released one.
-3. **Create the GitHub release** `v<version>` (`@semantic-release/github`), its description the release notes made
+4. **Create the GitHub release** `v<version>` (`@semantic-release/github`), its description the release notes made
    from the commits (`conventional-changelog-conventionalcommits` preset: features, bug fixes, performance, breaking
-   changes).
-4. **Build the Linux binary and attach it.** Check out the tag, build a static `x86_64-unknown-linux-musl` release
+   changes), the same notes as in `CHANGELOG.md`.
+5. **Build the Linux binary and attach it.** Check out the tag, build a static `x86_64-unknown-linux-musl` release
    binary (no glibc dependency, so it runs on old cluster nodes), package it as
-   `curatomatic-v<version>-x86_64-unknown-linux-musl.tar.gz` (binary, `README.md`, licence) with a `.sha256` beside
-   it, and upload both with `gh release upload`.
+   `curatomatic-v<version>-x86_64-unknown-linux-musl.tar.gz` (binary, `README.md`, `CHANGELOG.md`, licence) with a
+   `.sha256` beside it, and upload both with `gh release upload`. Only the musl binary is built.
+6. **Bring `dev` up to date.** Merge the tag into `dev` as `chore(release): Merge v<version> into dev` and push, so
+   `dev` has the version commit and the changelog. A conflict fails this job and pushes nothing. It runs beside the
+   build (both after the release), so a failed build still leaves `dev` in sync.
 
 The build runs in the same workflow (a `needs:` job after the release), because a release created with
 `GITHUB_TOKEN` does not start other workflows.
@@ -138,14 +144,17 @@ repository):
 
 - `on: push: branches: [main]` and `workflow_dispatch`; `concurrency: {group: release, cancel-in-progress: false}`;
   `permissions: contents: read` at the top, `contents: write` only on the jobs that need it.
-- semantic-release run with `npx --yes -p semantic-release@25 -p @semantic-release/git@11 -p
-  @semantic-release/exec@7 -p conventional-changelog-conventionalcommits@9 semantic-release` (pinned majors), on
-  Node 24 (`actions/setup-node`), with `actions/checkout` at `fetch-depth: 0` so it sees the tags.
-- Jobs: `plan` (`--dry-run`, outputs the next version, empty if none) → `release` (if a version: tags, commits,
-  creates the release, outputs the version) → `build` (checks out the tag, builds, uploads with
-  `GH_TOKEN: ${{ github.token }}`).
-- Its `sync-dev` job merges the release tag into `dev` (`chore(release): Merge v<version> into dev`), so `dev` keeps
-  the version commit; a conflict fails that job and pushes nothing. See question 2.
+- semantic-release run with `npx --yes -p semantic-release@25 -p @semantic-release/changelog@7 -p
+  @semantic-release/git@11 -p @semantic-release/exec@7 -p conventional-changelog-conventionalcommits@9
+  semantic-release` (pinned majors), on Node 24 (`actions/setup-node`), with `actions/checkout` at `fetch-depth: 0`
+  so it sees the tags.
+- Jobs: `plan` (runs the checks of step 1, then `--dry-run`, outputs the next version, empty if none) → `release`
+  (if a version: writes the changelog, commits, tags, creates the release, outputs the version) → `build` (checks out
+  the tag, builds, uploads with `GH_TOKEN: ${{ github.token }}`) and `sync-dev` (the merge of step 6), both after
+  `release`.
+- cargo-nextest is installed from its prebuilt binary
+  (`curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"`), not built from
+  source.
 
 The semantic-release config goes in `.releaserc.json` (`branches: ["main"]`, `tagFormat: "v${version}"`). Setting the
 version needs no new crate or cargo tool: `sed` the `version` line of the `[package]` table, then
@@ -160,26 +169,21 @@ approval in "Rules", but no other new tool should be added without asking.
    run (`cargo build --release --locked --target x86_64-unknown-linux-musl`, then run the binary on the `example/`
    data).
 3. Docs: `README.md` (a new "Installation" section: download the binary from the releases page, check the
-   `.sha256`; keep "Building"), and `AGENTS.md` "Development" (pushes to `main` are released; the commit type decides
-   the version, so a breaking change to the CLI or the output files must be marked with `!`).
+   `.sha256`; keep "Building"), and `AGENTS.md` "Development" (pushes to `main` are checked and released; the commit
+   type decides the version, so a breaking change to the CLI or the output files must be marked with `!`;
+   `CHANGELOG.md` is written by the release workflow and never edited by hand).
+4. Tell the user to check that `GITHUB_TOKEN` (`github-actions[bot]`) may push to `main` and `dev`, and create tags,
+   if either branch is protected.
 
-### Questions for the user
+### Decisions
 
-1. **Checks before releasing.** The reference has no CI gate (`AGENTS.md` has `cargo fmt`, `cargo clippy` and
-   `cargo nextest run` run locally). Should the workflow run `cargo fmt --check`, `cargo clippy --all-targets` and
-   `cargo nextest run` before step 2, so a failing `main` is not released? Recommended: yes, in the `plan` job.
-2. **The version commit.** Committing the version to `main` needs `GITHUB_TOKEN` to be allowed to push there (branch
-   protection), and leaves `dev` behind until it is merged back. Either keep the reference's `sync-dev` job, or don't
-   commit the version at all and only write it into `Cargo.toml` in the build job (the tag is then the only record
-   of the version, and a local build logs `0.1.0`). Recommended: commit it, with `sync-dev`.
-3. **musl or glibc.** musl gives a binary that runs anywhere, but its allocator can be slower. Measure the run time of
-   the musl and the glibc (`x86_64-unknown-linux-gnu`) binaries on the r237 example. If musl is clearly slower, build
-   for glibc on the oldest Ubuntu runner instead (the oldest glibc it is built on is the oldest it runs on), or ask
-   about an allocator crate.
-4. **Starting version.** The first release will be `v1.0.0` (semantic-release's default with no tag). Is that right,
-   or should it start below 1.0 (e.g. a `v0.1.0` tag made by hand first)?
-5. **Changelog file.** Should releases also write a `CHANGELOG.md` (`@semantic-release/changelog`, committed with the
-   version), or are the GitHub release notes enough? Recommended: the notes are enough.
+Made by the user on 2026-11-23:
+
+1. **Checks before releasing:** yes. `main` is checked (step 1) before anything is released.
+2. **The version commit:** yes. The version is committed to `main` and merged into `dev` (`sync-dev`, step 6).
+3. **musl or glibc:** musl only.
+4. **Starting version:** `v1.0.0`.
+5. **Changelog file:** yes. `CHANGELOG.md` is written and committed with the version.
 
 ## Open questions (ask the user before starting)
 
