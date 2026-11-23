@@ -296,6 +296,45 @@ fn curate_fails_when_the_taxonomy_file_disagrees_with_the_tree() {
 }
 
 #[test]
+fn curate_fails_without_writing_anything_when_the_file_disagrees_above_the_anchor() {
+    // G1's nearest taxon on the tree (g__A) is in its row, but the tree puts it in p__P.
+    let (out_dir, result) = run_curate(
+        "disagrees-above-anchor",
+        "G1\td__D;p__Q;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__D;p__P;c__C;o__O;f__F;g__A;s__A two\n\
+         G3\td__D;p__P;c__C;o__O;f__F;g__B;s__B three\n",
+    );
+    assert_eq!(
+        result,
+        Err(CuratomaticError::TaxonomyFileConflict {
+            gid: GenomeId::new("G1"),
+            message: "the tree places it in p__P, which is not in its row of the taxonomy file"
+                .to_owned()
+        })
+    );
+    assert_eq!(std::fs::read_dir(out_dir).unwrap().count(), 0);
+}
+
+#[test]
+fn curate_fails_without_writing_anything_when_a_leaf_has_no_domain() {
+    let (out_dir, result) = run_curate_on(
+        "no-domain",
+        "((G1:0.1,G2:0.1)'100:g__A|red=0.95':0.1,G3:0.1)'p__P;c__C;o__O;f__F|red=0.0000';\n",
+        "G1\td__;p__P;c__C;o__O;f__F;g__A;s__A one\n\
+         G2\td__;p__P;c__C;o__O;f__F;g__A;s__A two\n\
+         G3\td__;p__P;c__C;o__O;f__F;g__B;s__B three\n",
+    );
+    assert_eq!(
+        result,
+        Err(CuratomaticError::LeafWithoutDomain {
+            n: 3,
+            first: GenomeId::new("G1"),
+        })
+    );
+    assert_eq!(std::fs::read_dir(out_dir).unwrap().count(), 0);
+}
+
+#[test]
 fn curate_fails_without_writing_anything_when_a_leaf_has_no_species() {
     let (out_dir, result) = run_curate(
         "no-species",

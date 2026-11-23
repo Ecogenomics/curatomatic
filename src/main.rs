@@ -278,8 +278,10 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     // This runs first, before anything reads the taxa on the tree.
     let taxonomy = read_taxonomy_file(&cli.taxonomy, &tree)?;
     assign_leaf_taxonomy(&mut tree, &taxonomy)?;
-    // The inputs are gospel: a leaf without its species is an error, not something to curate.
+    // The inputs are gospel: a leaf without its species or domain is an error, not something to
+    // curate.
     tree.check_leaves_have_species()?;
+    tree.check_leaves_have_domain()?;
 
     if cli.debug {
         write_debug_inputs(&tree, &cli.out_dir, &stem)?;
@@ -340,8 +342,9 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     // before anything is written: a run that breaks the rule fails without any output.
     info!("Checking that taxa were only moved or created");
     check_taxa_unchanged(&tree_taxa_before, &tree.taxon_counts()?, &new_taxa_created)?;
-    info!("Checking that every leaf holds its species");
+    info!("Checking that every leaf holds its species and has a domain");
     tree.check_leaves_have_species()?;
+    tree.check_leaves_have_domain()?;
 
     info!("Building report");
     tree.reload()?;

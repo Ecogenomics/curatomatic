@@ -55,6 +55,9 @@ pub(crate) enum CuratomaticError {
     TaxonomyFileConflict { gid: GenomeId, message: String },
     /// Leaves that do not hold a named species: how many, and the first of them.
     LeafWithoutSpecies { n: usize, first: GenomeId },
+    /// Leaves that do not have a named domain on their path or themselves: how many, and the first
+    /// of them.
+    LeafWithoutDomain { n: usize, first: GenomeId },
     /// The run changed the taxa on the tree by more than moving them and creating novel taxa.
     TaxaChanged(String),
     /// An internal expectation was violated.
@@ -131,6 +134,11 @@ impl fmt::Display for CuratomaticError {
                 f,
                 "{n} leaf node(s) do not hold a species, but every leaf must have its species \
                  assigned to it, e.g. {first}"
+            ),
+            CuratomaticError::LeafWithoutDomain { n, first } => write!(
+                f,
+                "{n} leaf node(s) do not have a domain, but every genome must have a named domain \
+                 on the tree or in its row of the taxonomy file, e.g. {first}"
             ),
             CuratomaticError::TaxaChanged(message) => write!(
                 f,

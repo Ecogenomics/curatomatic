@@ -201,7 +201,10 @@ These are checked during or after the refinement, and break the run if violated:
 
 - Every taxon is on **exactly one** node (checked whenever the labels are loaded). The only
   exception is the sentinel `<rank>__UNRESOLVABLE` (see [Novel taxa](#novel-taxa)).
-- Assigning the taxonomy file to the leaves only adds taxa, it never removes one.
+- Assigning the taxonomy file to the leaves only adds taxa, it never removes one, and afterwards
+  each genome's taxa on the tree are exactly those of its row (`TaxonomyFileConflict`).
+- Every leaf holds its named species and has a named domain, after the leaf assignment and again
+  before any output is written (`LeafWithoutSpecies`, `LeafWithoutDomain`).
 - Curatomatic only moves taxa or creates novel taxa, it never removes a taxon or edits its text
   (`check_taxa_unchanged`). After the novel taxa are created, and before anything is written, the
   named taxa on the tree are compared with those after the leaf assignment, counting the nodes
@@ -254,6 +257,17 @@ Before refinement, when the tree is read:
     is an error (`TaxonomyFileConflict`). Nothing is skipped silently.
   - A leaf whose genome is not in the file is an error. A genome in the file that is not on the
     tree is a warning.
+  - Once every leaf is assigned, the named taxa on each leaf and its path must **equal** the taxa
+    of its row, matched by taxon as sets (never by rank, in any order). A taxon on the path above
+    the nearest one that is not in the row (the tree puts the genome in `p__A`, its row says
+    `p__B`), or a name on the tree where the row has a placeholder, is a `TaxonomyFileConflict`
+    naming the genome and the taxa. This makes the round trip of the old trees (removing the
+    dummy nodes and assigning the file gives back exactly the taxa they held) a check on every
+    run.
+- Every leaf must then hold its own named species (`Tree::check_leaves_have_species`,
+  `LeafWithoutSpecies`), and have a named domain on itself or a node above it
+  (`Tree::check_leaves_have_domain`, `LeafWithoutDomain`). Both are checked again before any
+  output is written. `--prior-taxonomy` rows are not checked for a domain.
 
 ## Novel taxa
 

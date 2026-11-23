@@ -97,13 +97,17 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
   `...;f__Sphaerochaetaceae;g__JAAYFO01;g__Neosphaerochaeta;s__Neosphaerochaeta fermentans`, where the tree has
   `g__JAAYFO01` above the genome, the leaf gets `g__Neosphaerochaeta` and its species. The taxa already on the tree are
   never changed.
-- The nearest taxon above each leaf on the tree must be in its row, otherwise the tree and the file disagree and the
-  run fails.
+- Once the file is assigned, the named taxa on each genome's path and leaf must be exactly the taxa of its row,
+  matched by taxon in any order. A taxon on the tree that is not in the row (the tree puts the genome in `p__A` and
+  its row says `p__B`, or its row has `f__` where the tree has `f__F`) means the tree and the file disagree, and the
+  run fails naming the genome and the taxa.
 - A species such as `s__{unresolved} sp053939565` is a name, and is kept exactly as read.
 - A taxon to assign that is already elsewhere on the tree, or that more than one leaf would get, is an error.
 - Every leaf must hold its own named species once the file is assigned: a row whose species is a placeholder
   (`s__`, stripped, so the row has no species), or a species on an internal node of the tree, is an error. This is checked again at the end of the run,
   before any output is written.
+- Every genome must have a named domain, on the tree above it or in its row: a genome with neither (`d__` in its row
+  and no domain on the tree) is an error, checked at the same two points as the species.
 - A genome on the tree that is not in the file is an error. A genome in the file that is not on the tree is a warning.
 - A line without two columns, an invalid taxonomy, or a genome given twice is an error.
 

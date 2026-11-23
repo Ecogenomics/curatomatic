@@ -400,18 +400,23 @@ fn a_leaf_gets_every_taxon_of_its_row_that_is_not_on_its_path() {
     );
 }
 
-#[test]
-fn a_single_genome_genus_nested_in_a_tree_genus_is_restored() {
-    // r237 G053840885: the tree has `g__JAAYFO01` above five genomes, and one of them is in its
-    // own genus, which was on its dummy node. A node with only a bootstrap is between them.
-    let newick = "(((G1:0.1,G2:0.1)'90:red=0.97':0.1,G3:0.1)'100:g__JAAYFO01|red=0.93':0.1,\
-                  G4:0.1)'d__D;p__P;c__C;o__O;f__F|red=0.0';";
-    let taxonomy = "\
+/// A single genome genus nested in a genus on the tree (r237 G053840885).
+const NESTED_GENUS: (&str, &str) = (
+    "(((G1:0.1,G2:0.1)'90:red=0.97':0.1,G3:0.1)'100:g__JAAYFO01|red=0.93':0.1,\
+     G4:0.1)'d__D;p__P;c__C;o__O;f__F|red=0.0';",
+    "\
 G1\td__D;p__P;c__C;o__O;f__F;g__JAAYFO01;g__Neosphaerochaeta;s__Neosphaerochaeta fermentans
 G2\td__D;p__P;c__C;o__O;f__F;g__JAAYFO01;s__JAAYFO01 sp2
 G3\td__D;p__P;c__C;o__O;f__F;g__JAAYFO01;s__JAAYFO01 sp3
 G4\td__D;p__P;c__C;o__O;f__F;g__B;s__B four
-";
+",
+);
+
+#[test]
+fn a_single_genome_genus_nested_in_a_tree_genus_is_restored() {
+    // r237 G053840885: the tree has `g__JAAYFO01` above five genomes, and one of them is in its
+    // own genus, which was on its dummy node. A node with only a bootstrap is between them.
+    let (newick, taxonomy) = NESTED_GENUS;
     let (tree, _) = assigned(newick, taxonomy);
     assert_eq!(
         leaf_taxa_by_gid(&tree)[0],
@@ -428,16 +433,20 @@ G4\td__D;p__P;c__C;o__O;f__F;g__B;s__B four
     assert_eq!(taxonomies[1].1[5], Taxon::new("g__JAAYFO01"));
 }
 
-#[test]
-fn a_single_genome_family_nested_in_a_tree_family_is_restored() {
-    // r226 ar53 G018920245: `f__JAHLMS01; g__JAHLMS01; s__…` was its dummy node.
-    let newick =
-        "((G1:0.1,G2:0.1)'100:f__JACQIB01|red=0.75':0.1,G3:0.1)'d__D;p__P;c__C;o__O|red=0.0';";
-    let taxonomy = "\
+/// A single genome family nested in a family on the tree (r226 ar53 G018920245).
+const NESTED_FAMILY: (&str, &str) = (
+    "((G1:0.1,G2:0.1)'100:f__JACQIB01|red=0.75':0.1,G3:0.1)'d__D;p__P;c__C;o__O|red=0.0';",
+    "\
 G1\td__D;p__P;c__C;o__O;f__JACQIB01;f__JAHLMS01;g__JAHLMS01;s__JAHLMS01 sp1
 G2\td__D;p__P;c__C;o__O;f__JACQIB01;g__JACQIB01;s__JACQIB01 sp2
 G3\td__D;p__P;c__C;o__O;f__X;g__X;s__X three
-";
+",
+);
+
+#[test]
+fn a_single_genome_family_nested_in_a_tree_family_is_restored() {
+    // r226 ar53 G018920245: `f__JAHLMS01; g__JAHLMS01; s__…` was its dummy node.
+    let (newick, taxonomy) = NESTED_FAMILY;
     let (tree, _) = assigned(newick, taxonomy);
     assert_eq!(
         leaf_taxa_by_gid(&tree),
@@ -452,18 +461,22 @@ G3\td__D;p__P;c__C;o__O;f__X;g__X;s__X three
     );
 }
 
+/// A single genome order nested in a family on the tree (r226 bac120 G017303975).
+const NESTED_ORDER: (&str, &str) = (
+    "((G1:0.1,G2:0.1)'100:f__JABDFU01|red=0.75':0.1,G3:0.1)'100:d__D;o__JABDFU01|red=0.6':0.1;",
+    "\
+G1\td__D;p__;c__;o__JABDFU01;o__JAFLBG01;f__JABDFU01;f__JAFLBG01;g__JAFLBG01;s__JAFLBG01 sp1
+G2\td__D;p__;c__;o__JABDFU01;f__JABDFU01;g__JABDFU01;s__JABDFU01 sp2
+G3\td__D;p__;c__;o__JABDFU01;f__Y;g__Y;s__Y three
+",
+);
+
 #[test]
 fn a_single_genome_order_nested_in_a_tree_family_is_restored() {
     // r226 bac120 G017303975: the dummy node held an order, which is above the tree's nearest
     // taxon (a family) in rank, so the row has it before that family. Its place in the row does
     // not matter, only that it is not on the path.
-    let newick =
-        "((G1:0.1,G2:0.1)'100:f__JABDFU01|red=0.75':0.1,G3:0.1)'100:o__JABDFU01|red=0.6':0.1;";
-    let taxonomy = "\
-G1\td__;p__;c__;o__JABDFU01;o__JAFLBG01;f__JABDFU01;f__JAFLBG01;g__JAFLBG01;s__JAFLBG01 sp1
-G2\td__;p__;c__;o__JABDFU01;f__JABDFU01;g__JABDFU01;s__JABDFU01 sp2
-G3\td__;p__;c__;o__JABDFU01;f__Y;g__Y;s__Y three
-";
+    let (newick, taxonomy) = NESTED_ORDER;
     let (tree, _) = assigned(newick, taxonomy);
     assert_eq!(
         leaf_taxa_by_gid(&tree)[0].1,
@@ -471,18 +484,23 @@ G3\td__;p__;c__;o__JABDFU01;f__Y;g__Y;s__Y three
     );
 }
 
-#[test]
-fn a_taxon_nested_out_of_rank_order_on_the_path_is_not_given_to_the_leaf() {
-    // r226 bac120 G028712565: the tree has a family inside a genus. The row is in rank order, so
-    // the tree's genus is after the family that is nearest the leaf, but it is on the path.
-    let newick = "(((G1:0.1,G2:0.1)'100:f__JAQTPW01|red=0.85':0.1,G3:0.1)'100:g__JAQTPY01|red=0.81':0.1,\
-                  G4:0.1)'d__D;p__P;c__C;o__O;f__RBG|red=0.0';";
-    let taxonomy = "\
+/// A family nested in a genus on the tree, out of rank order (r226 bac120 G028712565).
+const OUT_OF_RANK_ORDER: (&str, &str) = (
+    "(((G1:0.1,G2:0.1)'100:f__JAQTPW01|red=0.85':0.1,G3:0.1)'100:g__JAQTPY01|red=0.81':0.1,\
+     G4:0.1)'d__D;p__P;c__C;o__O;f__RBG|red=0.0';",
+    "\
 G1\td__D;p__P;c__C;o__O;f__RBG;f__JAQTPW01;g__JAQTPY01;g__JAQTPW01;s__JAQTPW01 sp1
 G2\td__D;p__P;c__C;o__O;f__RBG;f__JAQTPW01;g__JAQTPY01;s__JAQTPY01 sp2
 G3\td__D;p__P;c__C;o__O;f__RBG;g__JAQTPY01;s__JAQTPY01 sp3
 G4\td__D;p__P;c__C;o__O;f__RBG;g__Z;s__Z four
-";
+",
+);
+
+#[test]
+fn a_taxon_nested_out_of_rank_order_on_the_path_is_not_given_to_the_leaf() {
+    // r226 bac120 G028712565: the tree has a family inside a genus. The row is in rank order, so
+    // the tree's genus is after the family that is nearest the leaf, but it is on the path.
+    let (newick, taxonomy) = OUT_OF_RANK_ORDER;
     let (tree, _) = assigned(newick, taxonomy);
     assert_eq!(
         leaf_taxa_by_gid(&tree)
@@ -498,15 +516,20 @@ G4\td__D;p__P;c__C;o__O;f__RBG;g__Z;s__Z four
     );
 }
 
+/// The nearest node of G1 and G2 holds two ranks, and the root two taxa of one rank.
+const SEVERAL_TAXA: (&str, &str) = (
+    "((G1:0.1,G2:0.1)'100:f__X;g__X|red=0.9':0.1,G3:0.1)'d__D;p__A;p__B|red=0.2':0.1;",
+    "\
+G1\td__D;p__A;p__B;c__;o__;f__X;g__X;s__X one
+G2\td__D;p__A;p__B;c__;o__;f__X;g__X;g__Y;s__Y two
+G3\td__D;p__A;p__B;c__C3;o__;f__;g__;s__{unresolved} sp3
+",
+);
+
 #[test]
 fn every_taxon_of_a_nearest_node_with_several_taxa_is_on_the_path() {
     // The nearest node holds two ranks, and two taxa of one rank (a shared name).
-    let newick = "((G1:0.1,G2:0.1)'100:f__X;g__X|red=0.9':0.1,G3:0.1)'p__A;p__B|red=0.2':0.1;";
-    let taxonomy = "\
-G1\td__;p__A;p__B;c__;o__;f__X;g__X;s__X one
-G2\td__;p__A;p__B;c__;o__;f__X;g__X;g__Y;s__Y two
-G3\td__;p__A;p__B;c__C3;o__;f__;g__;s__{unresolved} sp3
-";
+    let (newick, taxonomy) = SEVERAL_TAXA;
     let (tree, _) = assigned(newick, taxonomy);
     assert_eq!(
         leaf_taxa_by_gid(&tree)
@@ -608,6 +631,86 @@ fn a_row_missing_one_of_the_nearest_nodes_taxa_is_an_error() {
                 .to_owned()
         }
     );
+}
+
+#[test]
+fn a_tree_taxon_above_the_anchor_that_is_not_in_the_row_is_an_error() {
+    // The tree puts G1 in p__A, its row says p__B. The anchor (g__X) agrees, so only a check of
+    // the whole path catches it. Before this check G1 silently got p__B on its leaf.
+    let newick = "((G1:0.1,G2:0.1)'100:g__X|red=0.9':0.1,G3:0.1)'d__D;p__A|red=0.0';";
+    let taxonomy = "\
+G1\td__D;p__B;c__;o__;f__;g__X;s__X one
+G2\td__D;p__A;c__;o__;f__;g__X;s__X two
+G3\td__D;p__A;c__;o__;f__;g__;s__Y three
+";
+    assert_eq!(
+        conflict(newick, taxonomy),
+        CuratomaticError::TaxonomyFileConflict {
+            gid: GenomeId::new("G1"),
+            message: "the tree places it in p__A, which is not in its row of the taxonomy file"
+                .to_owned()
+        }
+    );
+}
+
+#[test]
+fn a_row_placeholder_where_the_tree_has_a_name_is_an_error() {
+    // The tree puts G3 in f__F, its row has no family.
+    let newick = "(((G1:0.1,G2:0.1)'100:g__X|red=0.9':0.1,G3:0.1)'100:f__F|red=0.7':0.1,G4:0.1)\
+                  'd__D|red=0.0';";
+    let taxonomy = "\
+G1\td__D;p__;c__;o__;f__F;g__X;s__X one
+G2\td__D;p__;c__;o__;f__F;g__X;s__X two
+G3\td__D;p__;c__;o__;f__;g__;s__Y three
+G4\td__D;p__;c__;o__;f__;g__;s__Z four
+";
+    assert!(matches!(
+        conflict(newick, taxonomy),
+        CuratomaticError::TaxonomyFileConflict { gid, message }
+            if gid.as_str() == "G3" && message.contains("f__F")
+    ));
+}
+
+#[test]
+fn every_tree_taxon_that_is_not_in_the_row_is_named() {
+    // Both the phylum and the class on the tree are missing from G1's row.
+    let newick = "((G1:0.1,G2:0.1)'100:g__X|red=0.9':0.1,G3:0.1)'d__D;p__A;c__C|red=0.0';";
+    let taxonomy = "\
+G1\td__D;p__B;c__;o__;f__;g__X;s__X one
+G2\td__D;p__A;c__C;o__;f__;g__X;s__X two
+G3\td__D;p__A;c__C;o__;f__;g__;s__Y three
+";
+    assert_eq!(
+        conflict(newick, taxonomy),
+        CuratomaticError::TaxonomyFileConflict {
+            gid: GenomeId::new("G1"),
+            message: "the tree places it in p__A and c__C, which are not in its row of the \
+                      taxonomy file"
+                .to_owned()
+        }
+    );
+}
+
+#[test]
+fn every_genomes_full_taxonomy_matches_its_row_after_assignment() {
+    // The named taxa on each genome's path and leaf are exactly those of its row, including the
+    // nested and out of rank order cases.
+    for (newick, taxonomy) in [
+        (NEW_STYLE, NEW_STYLE_TAXONOMY),
+        NESTED_GENUS,
+        NESTED_FAMILY,
+        NESTED_ORDER,
+        OUT_OF_RANK_ORDER,
+        SEVERAL_TAXA,
+    ] {
+        let file = taxonomy_file(taxonomy);
+        let (tree, _) = assigned(newick, taxonomy);
+        for (gid, taxa) in tree.full_taxonomies().unwrap() {
+            let on_tree: BTreeSet<Taxon> = taxa.into_iter().filter(Taxon::is_named).collect();
+            let in_row: BTreeSet<Taxon> = file.get(&gid).unwrap().iter_ranks().cloned().collect();
+            assert_eq!(on_tree, in_row, "{gid} of {newick}");
+        }
+    }
 }
 
 #[test]
@@ -1205,6 +1308,53 @@ fn a_species_on_an_internal_node_is_not_the_leafs() {
         Err(CuratomaticError::LeafWithoutSpecies {
             n: 1,
             first: GenomeId::new("G4"),
+        })
+    );
+}
+
+// ---- Every leaf has a named domain ----
+
+#[test]
+fn every_leaf_has_a_domain_once_the_taxonomy_file_is_assigned() {
+    let (tree, _) = assigned(NEW_STYLE, NEW_STYLE_TAXONOMY);
+    assert_eq!(tree.check_leaves_have_domain(), Ok(()));
+}
+
+#[test]
+fn a_leaf_without_a_named_domain_is_an_error() {
+    // No domain on the tree, and G1 and G2 have a placeholder in their rows. G3 holds its own.
+    let newick = "((G1:0.1,G2:0.1)'100:g__A|red=0.9':0.1,G3:0.1)'100:p__P|red=0.0';";
+    let taxonomy = "\
+G1\td__;p__P;c__;o__;f__;g__A;s__A one
+G2\td__;p__P;c__;o__;f__;g__A;s__A two
+G3\td__D;p__P;c__;o__;f__;g__B;s__B three
+";
+    let (tree, _) = assigned(newick, taxonomy);
+    assert_eq!(leaf_taxa(&tree, 3), "d__D; g__B; s__B three");
+    assert_eq!(
+        tree.check_leaves_have_domain(),
+        Err(CuratomaticError::LeafWithoutDomain {
+            n: 2,
+            first: GenomeId::new("G1"),
+        })
+    );
+}
+
+#[test]
+fn a_domain_on_an_internal_node_counts_for_the_leaves_below_it() {
+    let newick = "(((G1:0.1,G2:0.1)'100:d__D;g__A|red=0.9':0.1,G3:0.1)'100:p__P|red=0.2':0.1)\
+                  '100|red=0.0';";
+    let taxonomy = "\
+G1\td__D;p__P;c__;o__;f__;g__A;s__A one
+G2\td__D;p__P;c__;o__;f__;g__A;s__A two
+G3\td__;p__P;c__;o__;f__;g__B;s__B three
+";
+    let (tree, _) = assigned(newick, taxonomy);
+    assert_eq!(
+        tree.check_leaves_have_domain(),
+        Err(CuratomaticError::LeafWithoutDomain {
+            n: 1,
+            first: GenomeId::new("G3"),
         })
     );
 }

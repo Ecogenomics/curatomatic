@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::Path;
 
 use ::log::info;
@@ -304,6 +304,9 @@ impl Tree {
     ///    taxa must be in the genome's row, which checks that the tree and the file agree.
     /// 2. Every named taxon of the row that is not on the leaf's path is given to the leaf, e.g. a
     ///    single genome genus (and its species) nested inside a genus on the tree.
+    /// 3. The named taxa on each leaf and its path must then equal its row, as sets (see
+    ///    [`Tree::check_leaves_match_rows`]): a taxon on the tree above the anchor that is not in
+    ///    the row is an error.
     ///
     /// The row is in rank order, not path order, so its position in the row says nothing: a
     /// single genome order nested inside a family on the tree is written before that family.
@@ -400,7 +403,53 @@ impl Tree {
         }
 
         self.reload()?;
+        self.check_leaves_match_rows(file)?;
         Ok(out)
+    }
+
+    /// Check that the named taxa on each leaf and its path are exactly those of its row in
+    /// `file`, matched by taxon as sets (never by rank, and in any order). This makes the round
+    /// trip of the old trees a check that runs every time: removing the dummy nodes and assigning
+    /// the file gives back exactly the taxa they held. The tree must be up to date.
+    fn check_leaves_match_rows(&self, file: &TaxonomyFile) -> CuratomaticResult<()> {
+        for (gid, taxa) in self.full_taxonomies()? {
+            let row = file
+                .get(&gid)
+                .ok_or_else(|| CuratomaticError::MissingFromTaxonomyFile {
+                    n: 1,
+                    first: gid.clone(),
+                })?;
+            let in_row: BTreeSet<&Taxon> = row.iter_ranks().collect();
+            let on_tree: BTreeSet<&Taxon> = taxa.iter().filter(|t| t.is_named()).collect();
+            let not_in_row: Vec<&Taxon> = taxa
+                .iter()
+                .filter(|t| t.is_named() && !in_row.contains(t))
+                .collect();
+            let not_on_tree: Vec<&Taxon> =
+                row.iter_ranks().filter(|t| !on_tree.contains(t)).collect();
+            let mut problems = Vec::new();
+            if !not_in_row.is_empty() {
+                problems.push(format!(
+                    "the tree places it in {}, which {} not in its row of the taxonomy file",
+                    join_taxa(&not_in_row),
+                    is_or_are(&not_in_row),
+                ));
+            }
+            if !not_on_tree.is_empty() {
+                problems.push(format!(
+                    "its row of the taxonomy file has {}, which {} not on the tree for it",
+                    join_taxa(&not_on_tree),
+                    is_or_are(&not_on_tree),
+                ));
+            }
+            if !problems.is_empty() {
+                return Err(CuratomaticError::TaxonomyFileConflict {
+                    gid,
+                    message: problems.join("; "),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// The full taxonomy of each leaf, in tree order: every named taxon on the leaf and its
@@ -488,6 +537,42 @@ impl Tree {
             return Ok(());
         };
         Err(CuratomaticError::LeafWithoutSpecies {
+            n: missing.count().saturating_add(1),
+            first: first.clone(),
+        })
+    }
+
+    /// Check that every leaf has a named domain, on itself or on a node above it (see the rules
+    /// in `AGENTS.md`). Reads the tree as it is now, so [`Tree::reload`] is not needed.
+    pub(crate) fn check_leaves_have_domain(&self) -> CuratomaticResult<()> {
+        // The nodes that hold a named domain or are below one. Post-order puts every node after
+        // its descendants, so in reverse each parent is seen before its children.
+        let ids: Vec<NodeId> = self.newick.ids().collect();
+        let mut with_domain: HashSet<NodeId> = HashSet::new();
+        for &node in ids.iter().rev() {
+            let above = self
+                .newick
+                .parent(node)
+                .is_some_and(|parent| with_domain.contains(&parent));
+            if above
+                || self
+                    .node_taxonomy(node)?
+                    .get_rank(Rank::Domain)
+                    .iter()
+                    .any(Taxon::is_named)
+            {
+                with_domain.insert(node);
+            }
+        }
+        let mut missing = self
+            .leaves
+            .iter()
+            .filter(|(node, _)| !with_domain.contains(node))
+            .map(|(_, leaf)| &leaf.gid);
+        let Some(first) = missing.next() else {
+            return Ok(());
+        };
+        Err(CuratomaticError::LeafWithoutDomain {
             n: missing.count().saturating_add(1),
             first: first.clone(),
         })
@@ -1135,6 +1220,20 @@ fn containing<'a>(
 /// True if more than one child contains `taxon`.
 fn polyphyly(child_taxa: &BTreeMap<NodeId, BTreeSet<&Taxon>>, taxon: &Taxon) -> bool {
     containing(child_taxa, taxon).nth(1).is_some()
+}
+
+/// Taxa as a list for a message: `a`, `a and b`, or `a, b and c`.
+fn join_taxa(taxa: &[&Taxon]) -> String {
+    let names: Vec<&str> = taxa.iter().map(|taxon| taxon.as_str()).collect();
+    match names.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => names.join(""),
+    }
+}
+
+/// `is` for one taxon, `are` for more.
+fn is_or_are(taxa: &[&Taxon]) -> &'static str {
+    if taxa.len() == 1 { "is" } else { "are" }
 }
 
 #[cfg(test)]

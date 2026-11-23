@@ -116,7 +116,9 @@ Test data are available here:
   order, not path order, so a taxon's position or rank in the row says nothing about whether it is the leaf's: a
   single-genome genus inside a tree-labelled genus (r237 G053840885, `g__Neosphaerochaeta` inside `g__JAAYFO01`), or a
   single-genome order inside a tree-labelled family (r226 bac120 G017303975), are the leaf's own. Removing the dummy
-  nodes and assigning the file must give back exactly the taxa they held; this is tested by
+  nodes and assigning the file must give back exactly the taxa they held. This is checked on every run: once the
+  leaves are assigned, the named taxa on each genome's path and leaf must equal its row as sets
+  (`Tree::check_leaves_match_rows`, `TaxonomyFileConflict`), and it is tested by
   `removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa` (`src/tree/tests.rs`).
   `scripts/convert_python_inputs.py` converts the Python inputs to this format. On real data, check it with
   `--debug` and `scripts/check_round_trip.py` (see the README): the r226 and r232 Python trees and the r237 inputs all
@@ -125,6 +127,9 @@ Test data are available here:
   internal node). This is checked by `Tree::check_leaves_have_species` (`src/tree.rs`) once the taxonomy file is
   assigned and again before any output is written, failing the run with `CuratomaticError::LeafWithoutSpecies`. This
   is why `--taxonomy` is required.
+- Every leaf has a named domain, on itself or on a node above it. This is checked by `Tree::check_leaves_have_domain`
+  (`src/tree.rs`) at the same two points as the species, failing the run with `CuratomaticError::LeafWithoutDomain`.
+  `--prior-taxonomy` rows are not checked.
 - Leaf node labels are immutable: a leaf is always labelled with its genome accession, exactly as it was read. The
   taxa that a leaf holds are stored in the `Taxonomy` of its `Leaf` (`src/tree.rs`) and are written to the taxonomy
   file, never to the tree. `NewickTree::set_internal_label` refuses to change a leaf.
