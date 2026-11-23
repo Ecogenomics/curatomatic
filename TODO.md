@@ -65,6 +65,56 @@ it"). This job scripts it.
    `docs/testing.md`.
 4. Check that `benchmark.sh` gives the numbers in `docs/testing.md`, "Curator workload at `3dc483a`".
 
+## Job 27: Read gzipped input files
+
+**Status: not started. The user approved the `flate2` crate on 2026-11-23** (v1.1.11, 883M downloads, 247M
+recent; its default backend, `miniz_oxide`, is pure Rust, so the static `x86_64-unknown-linux-musl` build is
+unaffected).
+
+### Problem
+
+Every input must be plain text, but GTDB files (the metadata file especially) are often shipped gzipped, so a
+curator has to decompress them first.
+
+### Rule
+
+An input whose file name ends in `.gz` (any `.gz`, not only `.tsv.gz`) is decompressed as it is read. Any other
+name is read as plain text, exactly as now. This is decided by the name only, never by the content. It applies to
+every input:
+
+| Input | Read by |
+| --- | --- |
+| `TREE` | `src/newick.rs:61` (`fs::read_to_string`) |
+| `MEDIAN_RED` | `Red::from_file` (`src/red.rs:87`, `fs::read_to_string`) |
+| `--taxonomy` | `TaxonomyFile::from_file` (`src/taxonomy_file.rs:41`) |
+| `--prior-taxonomy` | `PriorTaxonomyFile::from_file` (`src/taxonomy_file.rs:135`) |
+| `--novel-name-file` | `src/metadata.rs:47` |
+
+- Use `flate2::read::MultiGzDecoder`, so that bgzip and concatenated gzip files are read in full (`GzDecoder` stops
+  after the first member and silently drops the rest).
+- A `.gz` file that is not valid gzip, or is cut short, is a `CuratomaticError::Io` naming the path, never a partly
+  read input.
+- Line numbers in errors (`CuratomaticError::TaxonomyFile`, ...) count the decompressed lines, as for a plain file.
+- `<stem>` drops a trailing `.gz` before the last extension: `x.nwk.gz` and `x.nwk` both give `x`, so the outputs
+  are named `x.curatomatic.tree`, ... as now.
+- Outputs stay uncompressed.
+
+### Tasks
+
+1. Add `flate2` to `Cargo.toml` (default features).
+2. One function that opens an input path and returns a `BufRead`, decompressing when the name ends in `.gz` (e.g.
+   `open_input` in a new `src/input.rs`, tests in `src/input/tests.rs`). Every reader in the table above goes
+   through it; no input is opened with `File::open` or `fs::read_to_string` directly.
+3. Work out `<stem>` in one function (`src/main.rs:300`) that removes `.gz` and then the last extension.
+4. Tests: for each input, the same content read plain and gzipped gives the same result. Write the gzipped file
+   with `flate2::write::GzEncoder` in `std::env::temp_dir()`, as `src/red/tests.rs` does (CI has no `test_data/`).
+   Also test: a multi-member gzip is read in full, a `.gz` that is not gzip is an `Io` error naming the path, an
+   error line number in a gzipped `--taxonomy` matches the plain file's, and `<stem>` of `x.nwk.gz`, `x.nwk` and
+   `x.tree.gz`.
+5. An end-to-end test in `src/main/tests.rs` that gzips the `example/` inputs and checks the outputs are identical
+   to a run on the plain files.
+6. Docs: `README.md` "Input" (any input may be gzipped if its name ends in `.gz`), the CLI help in `src/cli.rs`.
+
 ## Open questions (ask the user before starting)
 
 - Moving down (Job 13) adds work as well as saving it: the operations added against the input went from 764 at
