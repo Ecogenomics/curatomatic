@@ -104,7 +104,26 @@ writes:
 | `<d>.median_red.tsv` | `rank` and `median` columns, Phylum to Genus, from the `.dict`. |
 | `<d>.metadata.tsv` | `--novel-name-file`: the `accession` and `ncbi_wgs_formatted` columns. |
 
-These inputs round trip with 0 differences (see the README and `scripts/check_round_trip.py`).
+These inputs round trip with 0 differences (see "Round trip" below).
+
+### Round trip
+
+`--debug` also writes the inputs as curatomatic loaded them, before any curation:
+`<stem>.debug.zombie.tree` (the tree with a dummy node above each leaf, as in the old trees: leaf
+`G` is written as `('G|RED=1.0':0.0,'D-G|RED=1.0':0.0)'<the leaf's taxa>|RED=1.0':<its branch length>`)
+and `<stem>.debug.taxonomy.tsv` (the full taxonomy of each genome, every nested taxon included).
+These check that nothing is lost when the inputs are loaded. For an old style tree with dummy nodes:
+
+```shell
+python scripts/convert_python_inputs.py test_data/python/input /tmp/converted   # remove the dummy nodes
+./target/release/curatomatic --debug --taxonomy /tmp/converted/r226_ar53.taxonomy.tsv \
+    /tmp/converted/r226_ar53.decorated.scaled.red.tree /tmp/converted/r226_ar53.median_red.tsv /tmp/output
+python scripts/check_round_trip.py test_data/python/input/r226_ar53.decorated.scaled.red.tree \
+    /tmp/output/r226_ar53.decorated.scaled.red.debug.zombie.tree \
+    /tmp/converted/r226_ar53.taxonomy.tsv /tmp/output/r226_ar53.decorated.scaled.red.debug.taxonomy.tsv
+```
+
+The zombie tree must match the original node for node, and the taxonomy must match the input file.
 
 ### Prior taxonomy (`--prior-taxonomy`)
 

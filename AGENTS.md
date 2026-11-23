@@ -13,7 +13,7 @@ Curatomatic is written in Rust. It replaces an earlier Python implementation, wh
 
 ## Documentation
 
-- `README.md` = how to build and run curatomatic, and the format of its input files.
+- `README.md` = how to install and run curatomatic, and a summary of its input and output files.
 - `docs/refinement.md` = the rules curatomatic follows when refining the taxa already on the tree.
 - `docs/differences.md` = the differences in behaviour between the Python and Rust implementations.
 - `docs/testing.md` = the test datasets, and how to benchmark against the Python version and the curated releases
@@ -163,8 +163,8 @@ Test data are available here:
   (`Tree::check_leaves_match_rows`, `TaxonomyFileConflict`), and it is tested by
   `removing_the_dummy_nodes_and_assigning_the_file_restores_their_taxa` (`src/tree/tests.rs`).
   `scripts/convert_python_inputs.py` converts the Python inputs to this format. On real data, check it with
-  `--debug` and `scripts/check_round_trip.py` (see the README): the r226 and r232 Python trees and the r237 inputs all
-  round trip with 0 differences, and any change to how the inputs are loaded must keep it that way.
+  `--debug` and `scripts/check_round_trip.py` (see `docs/testing.md`, "Round trip"): the r226 and r232 Python trees
+  and the r237 inputs all round trip with 0 differences, and any change to how the inputs are loaded must keep it that way.
 - Every leaf holds at least one taxon, and one of them is always its named species (never a placeholder, never on an
   internal node). This is checked by `Tree::check_leaves_have_species` (`src/tree.rs`) once the taxonomy file is
   assigned and again before any output is written, failing the run with `CuratomaticError::LeafWithoutSpecies`. This
