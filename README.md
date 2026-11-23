@@ -26,12 +26,6 @@ Run `curatomatic --help` for every option. `OUT_DIR` must not already exist (unl
 A static Linux binary (`x86_64-unknown-linux-musl`) is attached to every
 [release](https://github.com/Ecogenomics/curatomatic/releases), with its changes in [CHANGELOG.md](CHANGELOG.md):
 
-```shell
-sha256sum -c curatomatic-vVERSION-x86_64-unknown-linux-musl.tar.gz.sha256
-tar xzf curatomatic-vVERSION-x86_64-unknown-linux-musl.tar.gz
-./curatomatic-vVERSION-x86_64-unknown-linux-musl/curatomatic --version
-```
-
 ### Building from source
 
 ```shell
