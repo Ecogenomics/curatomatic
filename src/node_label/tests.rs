@@ -2,7 +2,8 @@ use super::*;
 
 // Expected values in this file come from the Python implementation
 // (`curatomatic/model/node_label.py`, `NodeLabel.from_node` and `to_string`), run with dendropy
-// on the same labels.
+// on the same labels, apart from the RED and bootstrap of a written label: Python rounds them (RED
+// `.3f`, bootstrap `.1f`), and Rust writes them exactly as read (`docs/differences.md`).
 
 /// The label of the root of a two leaf tree whose root is labelled `label`.
 fn internal(label: &str) -> CuratomaticResult<NodeLabel> {
@@ -34,19 +35,14 @@ fn round_trip(label: &str) -> String {
 fn leaf_has_a_gid_and_a_red_of_one() {
     let label = leaf("G1|RED=1.0").unwrap();
     assert_eq!(
-        label,
-        NodeLabel {
-            red: RedValue::LEAF,
-            bootstrap: None,
-            taxonomy: None,
-            gid: Some(GenomeId::new("G1")),
-        }
+        (label.red(), label.bootstrap(), label.taxonomy, label.gid),
+        (RedValue::LEAF, None, None, Some(GenomeId::new("G1")))
     );
 }
 
 #[test]
 fn leaf_red_may_be_written_as_an_integer() {
-    assert_eq!(leaf("G1|RED=1").unwrap().red, RedValue::LEAF);
+    assert_eq!(leaf("G1|RED=1").unwrap().red(), RedValue::LEAF);
 }
 
 #[test]
@@ -62,7 +58,7 @@ fn leaf_with_a_red_other_than_one_is_an_error() {
 fn leaf_without_a_red_has_a_red_of_one() {
     let label = leaf("G1").unwrap();
     assert_eq!(
-        (label.red, label.gid),
+        (label.red(), label.gid),
         (RedValue::LEAF, Some(GenomeId::new("G1")))
     );
     assert_eq!(label.taxonomy, None);
@@ -88,69 +84,106 @@ fn leaf_with_a_bad_red_is_an_error() {
 #[test]
 fn bootstrap_only() {
     let label = internal("100.0|RED=0.5").unwrap();
-    assert_eq!(label.red, RedValue::new(0.5));
-    assert_eq!(label.bootstrap, Some(BootstrapValue::new(100.0)));
+    assert_eq!(label.red(), RedValue::new(0.5));
+    assert_eq!(label.bootstrap(), Some(BootstrapValue::new(100.0)));
     assert_eq!(label.taxonomy, None);
     assert_eq!(label.gid, None);
-    assert_eq!(label.to_label().unwrap(), "100.0|RED=0.500");
+    assert_eq!(label.to_label().unwrap(), "100.0|RED=0.5");
 }
 
 #[test]
 fn bootstrap_may_be_written_as_an_integer() {
-    assert_eq!(round_trip("90|RED=0.25"), "90.0|RED=0.250");
+    let label = internal("90|RED=0.25").unwrap();
+    assert_eq!(label.bootstrap(), Some(BootstrapValue::new(90.0)));
+    assert_eq!(label.to_label().unwrap(), "90|RED=0.25");
 }
 
 #[test]
 fn taxonomy_only() {
     let label = internal("f__X; g__Y|RED=0.5").unwrap();
-    assert_eq!(label.red, RedValue::new(0.5));
-    assert_eq!(label.bootstrap, None);
+    assert_eq!(label.red(), RedValue::new(0.5));
+    assert_eq!(label.bootstrap(), None);
     assert_eq!(
         label.taxonomy,
         Some(Taxonomy::from_string("f__X; g__Y").unwrap())
     );
     assert_eq!(label.gid, None);
-    assert_eq!(label.to_label().unwrap(), "f__X; g__Y|RED=0.500");
+    assert_eq!(label.to_label().unwrap(), "f__X; g__Y|RED=0.5");
 }
 
 #[test]
 fn bootstrap_and_taxonomy() {
     let label = internal("99.0:f__X|RED=0.5").unwrap();
-    assert_eq!(label.red, RedValue::new(0.5));
-    assert_eq!(label.bootstrap, Some(BootstrapValue::new(99.0)));
+    assert_eq!(label.red(), RedValue::new(0.5));
+    assert_eq!(label.bootstrap(), Some(BootstrapValue::new(99.0)));
     assert_eq!(label.taxonomy, Some(Taxonomy::from_string("f__X").unwrap()));
     assert_eq!(label.gid, None);
-    assert_eq!(label.to_label().unwrap(), "99.0:f__X|RED=0.500");
+    assert_eq!(label.to_label().unwrap(), "99.0:f__X|RED=0.5");
 }
 
 #[test]
 fn a_red_of_one_on_an_internal_node_is_allowed() {
-    assert_eq!(round_trip("100.0|RED=1.0"), "100.0|RED=1.000");
-    assert_eq!(round_trip("f__X|RED=1"), "f__X|RED=1.000");
+    assert_eq!(round_trip("100.0|RED=1.0"), "100.0|RED=1.0");
+    assert_eq!(round_trip("f__X|RED=1"), "f__X|RED=1");
 }
 
 #[test]
 fn surrounding_whitespace_is_ignored() {
-    assert_eq!(round_trip(" 95.0|RED=0.5"), "95.0|RED=0.500");
+    assert_eq!(round_trip(" 95.0|RED=0.5"), "95.0|RED=0.5");
+    assert_eq!(round_trip("95.0 :f__X|RED= 0.5 "), "95.0:f__X|RED=0.5");
 }
 
 #[test]
-fn red_is_formatted_to_three_decimals_like_python() {
-    // Python `'%.3f' % x`, an exact tie rounds to even.
-    assert_eq!(round_trip("95.0|RED=0.0625"), "95.0|RED=0.062");
-    assert_eq!(round_trip("95.0|RED=0.0635"), "95.0|RED=0.064");
-    assert_eq!(round_trip("95.0|RED=0.957017"), "95.0|RED=0.957");
-    assert_eq!(round_trip("95.0|RED=0.9995"), "95.0|RED=1.000");
-    assert_eq!(round_trip("95.0|RED=0.0005"), "95.0|RED=0.001");
-    assert_eq!(round_trip("95.0|RED=0.0015"), "95.0|RED=0.002");
-    assert_eq!(round_trip("95.0|RED=0.0025"), "95.0|RED=0.003");
+fn red_is_written_exactly_as_read() {
+    // Python rounds to `'%.3f' % x`: Rust never changes a RED value.
+    for red in [
+        "0.0625",
+        "0.0635",
+        "0.957017",
+        "0.9995",
+        "0.0005",
+        "0.000",
+        "1.000",
+        "0.88912345678901234",
+        "8.894e-1",
+    ] {
+        assert_eq!(
+            round_trip(&format!("95.0|RED={red}")),
+            format!("95.0|RED={red}")
+        );
+    }
 }
 
 #[test]
-fn bootstrap_is_formatted_to_one_decimal_like_python() {
-    // Python `f'{x:.1f}'`.
-    assert_eq!(round_trip("99.95|RED=0.5"), "100.0|RED=0.500");
-    assert_eq!(round_trip("87.25|RED=0.5"), "87.2|RED=0.500");
+fn bootstrap_is_written_exactly_as_read() {
+    // Python rounds to `f'{x:.1f}'`: Rust never changes a bootstrap value.
+    for bootstrap in ["99.95", "87.25", "100", "100.000", "0.9", "1e2"] {
+        assert_eq!(
+            round_trip(&format!("{bootstrap}:f__X|RED=0.5")),
+            format!("{bootstrap}:f__X|RED=0.5")
+        );
+    }
+}
+
+#[test]
+fn the_red_and_bootstrap_are_read_in_full() {
+    // The values used by the refinement passes, which are never rounded.
+    let label = internal("94.96:f__X|RED=0.88949").unwrap();
+    assert_eq!(label.red(), RedValue::new(0.88949));
+    assert_eq!(label.bootstrap(), Some(BootstrapValue::new(94.96)));
+}
+
+#[test]
+fn a_rewritten_label_is_read_back_with_the_same_values() {
+    let mut label = internal("94.96:f__X|RED=0.88949").unwrap();
+    label.taxonomy = Some(Taxonomy::from_string("f__X; g__Y").unwrap());
+    let text = label.to_label().unwrap();
+    assert_eq!(text, "94.96:f__X; g__Y|RED=0.88949");
+    let reread = internal(&text).unwrap();
+    assert_eq!(
+        (reread.red(), reread.bootstrap()),
+        (label.red(), label.bootstrap())
+    );
 }
 
 #[test]
@@ -192,12 +225,8 @@ fn a_taxon_with_an_unknown_rank_is_an_error() {
 #[test]
 fn to_label_of_a_node_with_neither_bootstrap_nor_taxonomy_is_an_error() {
     // Python: `AssertionError`.
-    let label = NodeLabel {
-        red: RedValue::new(0.5),
-        bootstrap: None,
-        taxonomy: None,
-        gid: None,
-    };
+    let mut label = internal("f__X|RED=0.5").unwrap();
+    label.taxonomy = None;
     assert!(matches!(
         label.to_label(),
         Err(CuratomaticError::InvalidNodeLabel(_))
@@ -207,14 +236,10 @@ fn to_label_of_a_node_with_neither_bootstrap_nor_taxonomy_is_an_error() {
 #[test]
 fn leaf_is_read_as_its_genome_id() {
     for text in ["G1", "G1|RED=1.000", "G1|red=1.0"] {
+        let label = leaf(text).unwrap();
         assert_eq!(
-            leaf(text).unwrap(),
-            NodeLabel {
-                red: RedValue::LEAF,
-                bootstrap: None,
-                taxonomy: None,
-                gid: Some(GenomeId::new("G1")),
-            },
+            (label.red(), label.bootstrap(), label.taxonomy, label.gid),
+            (RedValue::LEAF, None, None, Some(GenomeId::new("G1"))),
             "label {text:?}"
         );
     }
@@ -249,11 +274,11 @@ fn the_label_of_a_leaf_is_never_written() {
 fn internal_red_may_be_written_in_lower_case() {
     assert_eq!(
         round_trip("100:g__A;f__B|red=0.8386"),
-        "100.0:f__B; g__A|RED=0.839"
+        "100:f__B; g__A|RED=0.8386"
     );
     assert_eq!(
         round_trip("d__Bacteria|red=0.0000"),
-        "d__Bacteria|RED=0.000"
+        "d__Bacteria|RED=0.0000"
     );
 }
 
@@ -261,10 +286,11 @@ fn internal_red_may_be_written_in_lower_case() {
 fn a_bootstrap_followed_by_a_red_without_a_taxonomy_is_read() {
     // The r237 trees label a node with only a bootstrap `<bootstrap>:red=<red>`.
     let label = internal("100:red=0.8894").unwrap();
-    assert_eq!(label.bootstrap, Some(BootstrapValue::new(100.0)));
+    assert_eq!(label.bootstrap(), Some(BootstrapValue::new(100.0)));
     assert_eq!(label.taxonomy, None);
-    assert_eq!(label.red, RedValue::new(0.8894));
-    assert_eq!(round_trip("79:RED=0.5"), "79.0|RED=0.500");
+    assert_eq!(label.red(), RedValue::new(0.8894));
+    assert_eq!(label.to_label().unwrap(), "100|RED=0.8894");
+    assert_eq!(round_trip("79:RED=0.5"), "79|RED=0.5");
 }
 
 #[test]

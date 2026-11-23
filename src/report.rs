@@ -209,8 +209,8 @@ impl<'a> TreeIndex<'a> {
         let label = self.tree.label(node)?;
         Ok(NodeStats {
             n_genomes: self.n_genomes(node),
-            bootstrap: label.bootstrap,
-            red: label.red,
+            bootstrap: label.bootstrap(),
+            red: label.red(),
         })
     }
 
@@ -309,7 +309,7 @@ fn sister_join(
             .subtree(ancestor)
             .saturating_sub(counts.subtree(child));
         if other > 0 {
-            if index.tree.label(ancestor)?.red.value() > thresholds.child {
+            if index.tree.label(ancestor)?.red().value() > thresholds.child {
                 let mut stack: Vec<NodeId> = newick
                     .children(ancestor)
                     .iter()

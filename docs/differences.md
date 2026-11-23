@@ -227,6 +227,7 @@ their output.
 | Leaf taxonomy | Not written: the taxa of a leaf are on its dummy node in the tree | `<stem>.curatomatic.leaf-taxonomy.tsv`: the taxa held by each leaf, which the tree can't hold (`Tree::leaf_own_taxonomies`) |
 | Moves | `process_refinement` returns nothing | Returns each `Move`, which feeds the report |
 | Log | — | Also logs how many tree genomes have a prior taxonomy, and warns when downward refinement is disabled |
+| Rewritten labels | The bootstrap is rounded to `.1f` and the RED to `.3f` (`100` becomes `100.0`, `0.8894` becomes `0.889`), and the later passes read the rounded RED back | The bootstrap and RED are written exactly as read, so every pass (and the report) uses the full value. Only the RED key is written `\|RED=` |
 
 The Rust Newick writer quotes labels that contain `_` or protected characters, and turns spaces
 into `_` in unquoted labels, to match dendropy with `preserve_underscores=True`. Branch lengths are
@@ -255,7 +256,8 @@ documented in [refinement.md](refinement.md).
   then RED delta ascending, then bootstrap descending. A missing bootstrap counts as `100`. The
   sort is stable, with ties in insertion order. Nothing happens if the original node is best.
 - **Transferring a taxon**: remove it from the old node, add it to the new one, rewrite both
-  labels (bootstrap `.1f`, RED `.3f`).
+  labels. Python rounds the bootstrap and RED of both, Rust doesn't (see
+  [Output changes](#output-changes)).
 - **Leaves missing ranks**: walk up from each leaf, collecting taxa until every rank is
   assigned.
 - **Novel rank placement**: stop at the first ancestor that has any taxon of the rank below it

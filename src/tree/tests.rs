@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::*;
+use crate::red::RedValue;
 
 fn tree(newick: &str) -> CuratomaticResult<Tree> {
     Tree::from_newick(NewickTree::parse(newick)?)
@@ -60,6 +61,28 @@ fn transfer_taxon_moves_the_taxon_and_rewrites_both_labels() {
     transfer_taxon(&mut tree, root, species, &Taxon::new("f__F")).unwrap();
     assert_eq!(label(&tree, 5), "90.0|RED=0.700");
     assert_eq!(label(&tree, 4), "f__F; s__B b|RED=1.000");
+}
+
+#[test]
+fn transfer_taxon_keeps_the_red_and_bootstrap_exactly_as_read() {
+    // Rounded like Python (bootstrap `.1f`, RED `.3f`), the bootstrap would become 95.0 (supported
+    // at `--min-bs 95`) and the RED 0.889.
+    let mut tree = tree(
+        "((G1:0.1,G2:0.1)'94.96:g__A|red=0.88949':0.1,(G3:0.1,G4:0.1)'100:red=0.8894':0.1)\
+         'd__D|red=0.0';",
+    )
+    .unwrap();
+    let (from, to) = (node(&tree, 2), node(&tree, 5));
+    transfer_taxon(&mut tree, from, to, &Taxon::new("g__A")).unwrap();
+    assert_eq!(label(&tree, 2), "94.96|RED=0.88949");
+    assert_eq!(label(&tree, 5), "100:g__A|RED=0.8894");
+
+    // The later passes read the values in full.
+    tree.reload().unwrap();
+    let from_label = tree.label(from).unwrap();
+    assert_eq!(from_label.bootstrap(), Some(BootstrapValue::new(94.96)));
+    assert_eq!(from_label.red(), RedValue::new(0.88949));
+    assert_eq!(tree.label(to).unwrap().red(), RedValue::new(0.8894));
 }
 
 #[test]
@@ -1426,7 +1449,7 @@ fn a_genus_is_moved_down_onto_a_leaf() {
     let (tree, moves) = genus_moved_down_onto_a_leaf();
     assert_eq!(moves.len(), 1);
     assert_eq!(leaf_taxa(&tree, 0), "g__A; s__A one");
-    assert_eq!(label(&tree, 2), "50.0|RED=0.950");
+    assert_eq!(label(&tree, 2), "50|RED=0.95");
 }
 
 /// Neither node above G1 is supported, so the novel genus `g__G1` can only go on the leaf (as
@@ -1744,7 +1767,7 @@ fn a_missing_genus_above_only_unresolved_species_is_created() {
         &[(0, "s__{unresolved} G1"), (1, "s__{unresolved} G2")],
     );
     assert_eq!(novel, BTreeSet::from([Taxon::new("g__G1")]));
-    assert_eq!(label(&tree, 2), "100.0:g__G1|RED=0.950");
+    assert_eq!(label(&tree, 2), "100:g__G1|RED=0.95");
 }
 
 #[test]
@@ -2152,8 +2175,8 @@ fn a_genus_is_moved_down_away_from_a_new_genome_whose_species_names_another_genu
     for species in ["s__B sp3", "s__{unresolved} Alpha sp3"] {
         let (tree, moves) = genus_above_a_new_genome(species, None);
         assert_eq!(moves.len(), 1, "{species}");
-        assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970", "{species}");
-        assert_eq!(label(&tree, 4), "91.0|RED=0.940", "{species}");
+        assert_eq!(label(&tree, 2), "100:g__Alpha|RED=0.97", "{species}");
+        assert_eq!(label(&tree, 4), "91|RED=0.940", "{species}");
     }
 }
 
@@ -2162,7 +2185,7 @@ fn the_species_of_a_genome_in_the_prior_taxonomy_does_not_override_its_prior_gen
     // G3 was in the prior release, in `g__B`: its species is not used.
     let (tree, moves) = genus_above_a_new_genome("s__Alpha sp3", Some("f__F;g__B;s__Alpha sp3"));
     assert_eq!(moves.len(), 1);
-    assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970");
+    assert_eq!(label(&tree, 2), "100:g__Alpha|RED=0.97");
 }
 
 #[test]
@@ -2173,7 +2196,7 @@ fn an_unsupported_genus_with_a_placeholder_name_is_moved_down_away_from_a_new_ge
     let (tree, moves) =
         genus_above_a_new_genome_at("g__JANWYU01", "91", "0.940", "s__JANWYU01 sp3", None);
     assert_eq!(moves.len(), 1);
-    assert_eq!(label(&tree, 2), "100.0:g__JANWYU01|RED=0.970");
+    assert_eq!(label(&tree, 2), "100:g__JANWYU01|RED=0.97");
 }
 
 #[test]
@@ -2195,8 +2218,8 @@ fn a_supported_genus_with_a_placeholder_name_outside_the_red_window_is_moved_dow
     let (tree, moves) =
         genus_above_a_new_genome_at("g__JAHELV01", "100", "0.790", "s__JAHELV01 sp3", None);
     assert_eq!(moves.len(), 1);
-    assert_eq!(label(&tree, 2), "100.0:g__JAHELV01|RED=0.970");
-    assert_eq!(label(&tree, 4), "100.0|RED=0.790");
+    assert_eq!(label(&tree, 2), "100:g__JAHELV01|RED=0.97");
+    assert_eq!(label(&tree, 4), "100|RED=0.790");
 }
 
 #[test]
@@ -2207,6 +2230,6 @@ fn a_genus_outside_the_red_window_is_moved_down_away_from_a_new_genome_its_speci
         let (tree, moves) =
             genus_above_a_new_genome_at("g__Alpha", "91", red, "s__Alpha sp3", None);
         assert_eq!(moves.len(), 1, "{red}");
-        assert_eq!(label(&tree, 2), "100.0:g__Alpha|RED=0.970", "{red}");
+        assert_eq!(label(&tree, 2), "100:g__Alpha|RED=0.97", "{red}");
     }
 }

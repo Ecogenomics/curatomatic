@@ -37,22 +37,6 @@ run count. Skipping only skips that rank (as for the existing check, `docs/refin
 4. Measure the curator workload on the four datasets (see `docs/testing.md`), and count the rank inversions left in
    r237 bac120.
 
-## Job 17: Keep RED and bootstrap values as they were read when a label is rewritten
-
-**Status: needs the user's decision.**
-
-### Problem
-
-`NodeLabel::to_label` (`src/node_label.rs`) writes the RED with 3 decimal places and the bootstrap with 1
-(`100.0`), so a rewritten label differs from the input in format and precision (1,574 nodes in the r237 bac120
-output with Jobs 10 to 13). The later refinement passes read the rounded RED back. This copies the Python behaviour,
-but `AGENTS.md` says curatomatic never changes RED or bootstrap values.
-
-### Question for the user
-
-Should a rewritten label keep the RED and bootstrap exactly as read (no rounding), and should the later passes use
-the unrounded RED? Either answer changes some outputs, so measure it on the four datasets.
-
 ## Job 18: Benchmark with a prior taxonomy and score the curator workload
 
 **Status: not started. Confirm with the user before starting.**

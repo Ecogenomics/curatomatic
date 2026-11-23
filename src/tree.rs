@@ -731,13 +731,14 @@ impl Tree {
 
         for (node, node_label) in self.newick.ids().zip(&self.node_labels) {
             // Skip nodes without a bootstrap (i.e. leaf nodes), which are never refined.
-            let (Some(taxonomy), Some(original_bs)) = (&node_label.taxonomy, node_label.bootstrap)
+            let (Some(taxonomy), Some(original_bs)) =
+                (&node_label.taxonomy, node_label.bootstrap())
             else {
                 continue;
             };
-            let original_red_delta = median_red.distance(node_label.red);
+            let original_red_delta = median_red.distance(node_label.red());
             let in_window =
-                parent_red_thresh <= node_label.red && node_label.red <= child_red_thresh;
+                parent_red_thresh <= node_label.red() && node_label.red() <= child_red_thresh;
 
             for taxon in taxonomy.get_rank(rank) {
                 // The species of new genomes only keep a genus whose original node is inside the
@@ -758,7 +759,7 @@ impl Tree {
                 };
                 while let Some(cur_node) = current {
                     let cur_label = self.label(cur_node)?;
-                    let cur_red = cur_label.red;
+                    let cur_red = cur_label.red();
 
                     // Stop once the maximum RED range is exceeded.
                     if cur_red < parent_red_thresh {
@@ -809,7 +810,7 @@ impl Tree {
 
                 // A well supported taxon is not moved down if it would move the RED further
                 // away from the median.
-                if original_bs >= min_bs && node_label.red > child_red_thresh {
+                if original_bs >= min_bs && node_label.red() > child_red_thresh {
                     continue;
                 }
 
@@ -826,7 +827,7 @@ impl Tree {
                 while let Some(cur_node) = queue.pop_front() {
                     let cur_label = self.label(cur_node)?;
 
-                    match cur_label.bootstrap {
+                    match cur_label.bootstrap() {
                         // A leaf node is included regardless of the RED range, given that the
                         // prior node had bad support. Do not go down any further.
                         None => {
@@ -838,7 +839,7 @@ impl Tree {
 
                             // Given that a good node was found, stop if straying further from
                             // the median.
-                            if median_red.distance(cur_label.red) > original_red_delta {
+                            if median_red.distance(cur_label.red()) > original_red_delta {
                                 continue;
                             }
                         }
@@ -1010,14 +1011,14 @@ impl Tree {
             let Some(&(_, original_node)) = node_changes.first() else {
                 continue;
             };
-            let original_red_delta = median_red.distance(self.label(original_node)?.red);
+            let original_red_delta = median_red.distance(self.label(original_node)?.red());
 
             // The (RED delta, bootstrap, supported) of each node, in the order they were added.
             let mut changes: Vec<(NodeId, (f64, BootstrapValue, bool))> = Vec::new();
             for &(to_node, from_node) in node_changes {
                 let target_label = self.label(to_node)?;
-                let target_red_delta = median_red.distance(target_label.red);
-                let target_bs = target_label.bootstrap.unwrap_or(BootstrapValue::LEAF);
+                let target_red_delta = median_red.distance(target_label.red());
+                let target_bs = target_label.bootstrap().unwrap_or(BootstrapValue::LEAF);
                 let original_bs = required_bootstrap(self.label(from_node)?)?;
 
                 for (node, change) in [
@@ -1080,7 +1081,7 @@ fn transfer_taxon(
     // been changed at this point.
     if !tree.leaves.contains_key(&old_node)
         && NodeLabel::from_node(&tree.newick, old_node)?
-            .bootstrap
+            .bootstrap()
             .is_none()
         && old_taxonomy.iter_ranks().next().is_none()
     {
@@ -1166,8 +1167,8 @@ pub(crate) fn fill_in_missing_ranks(
 
                 // Check RED and bootstrap support.
                 let label = tree.label(node)?;
-                let bs_supported = label.bootstrap.is_none_or(|bs| bs >= min_bs);
-                if bs_supported && label.red >= midpoint_red {
+                let bs_supported = label.bootstrap().is_none_or(|bs| bs >= min_bs);
+                if bs_supported && label.red() >= midpoint_red {
                     candidates.push(node);
                 }
                 current = tree.newick.parent(node);
@@ -1263,7 +1264,7 @@ fn parent_rank(rank: Rank) -> CuratomaticResult<Rank> {
 
 /// The bootstrap support of a node, which an internal node must have to be compared.
 fn required_bootstrap(label: &NodeLabel) -> CuratomaticResult<BootstrapValue> {
-    label.bootstrap.ok_or_else(|| {
+    label.bootstrap().ok_or_else(|| {
         CuratomaticError::Invariant("expected a node with bootstrap support".to_owned())
     })
 }

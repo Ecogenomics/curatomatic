@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::bootstrap::BootstrapValue;
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::GenomeId;
@@ -11,6 +13,28 @@ pub(crate) const RED_SEPARATOR: &str = "|RED=";
 /// The spellings of the RED key that are read, which follow a `|` or a `:`.
 const RED_KEYS: [&str; 2] = ["RED=", "red="];
 
+/// A number read from a node label, with the text it was read from (surrounding whitespace
+/// removed).
+///
+/// A rewritten label writes the text, never the number, so a RED or bootstrap is written exactly as
+/// it was read: curatomatic never changes them (`AGENTS.md`, "Rules"). Every pass reads the full
+/// value, never a rounded one.
+#[derive(Debug, Clone, PartialEq)]
+struct AsRead<T> {
+    value: T,
+    text: String,
+}
+
+impl<T: FromStr> AsRead<T> {
+    fn parse(text: &str) -> Result<Self, T::Err> {
+        let text = text.trim();
+        Ok(AsRead {
+            value: text.parse()?,
+            text: text.to_owned(),
+        })
+    }
+}
+
 /// The information held in the label of a node.
 ///
 /// A leaf is labelled `<gid>[|RED=<red>]`, a leaf without a RED has a RED of [`RedValue::LEAF`].
@@ -19,15 +43,27 @@ const RED_KEYS: [&str; 2] = ["RED=", "red="];
 /// at least one of the bootstrap and taxonomy. The taxonomy holds named taxa only: a placeholder
 /// (e.g. `100:g__|RED=0.9`) is [`CuratomaticError::PlaceholderOnTree`]. The RED key may also be written `|red=`, or `:red=`
 /// straight after a bootstrap (e.g. `100:red=0.889`).
+///
+/// The RED and bootstrap keep the text they were read from, see [`NodeLabel::to_label`].
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NodeLabel {
-    pub(crate) red: RedValue,
-    pub(crate) bootstrap: Option<BootstrapValue>,
+    red: AsRead<RedValue>,
+    bootstrap: Option<AsRead<BootstrapValue>>,
     pub(crate) taxonomy: Option<Taxonomy>,
     pub(crate) gid: Option<GenomeId>,
 }
 
 impl NodeLabel {
+    /// The RED value, exactly as read.
+    pub(crate) fn red(&self) -> RedValue {
+        self.red.value
+    }
+
+    /// The bootstrap value, exactly as read.
+    pub(crate) fn bootstrap(&self) -> Option<BootstrapValue> {
+        self.bootstrap.as_ref().map(|bootstrap| bootstrap.value)
+    }
+
     /// Read the label of a node. The `taxonomy` of a leaf is always `None`, its taxa are kept on
     /// [`crate::tree::Leaf`].
     pub(crate) fn from_node(tree: &NewickTree, node: NodeId) -> CuratomaticResult<Self> {
@@ -55,7 +91,12 @@ impl NodeLabel {
         })
     }
 
-    /// Format as the label of an internal node, the inverse of [`NodeLabel::from_node`].
+    /// Format as the label of an internal node, the inverse of [`NodeLabel::from_node`]:
+    /// `[<bootstrap>][:][<taxonomy>]|RED=<red>`.
+    ///
+    /// The RED and bootstrap are written with the text they were read from, so they are never
+    /// rounded or reformatted (`100` stays `100`, `0.8894` stays `0.8894`). Only the RED key is
+    /// written as `|RED=` whichever spelling was read, and the taxonomy in rank order.
     ///
     /// A leaf label is never written (it is always the genome ID it was read with), so formatting
     /// the label of a leaf is an error.
@@ -66,13 +107,14 @@ impl NodeLabel {
             )));
         }
         let tax_string = self.taxonomy.as_ref().map_or_default(ToString::to_string);
-        let red = self.red;
-        match (self.bootstrap, tax_string.is_empty()) {
+        let red = &self.red.text;
+        match (&self.bootstrap, tax_string.is_empty()) {
             (None, true) => Err(invalid("node has neither a bootstrap nor a taxonomy")),
-            (None, false) => Ok(format!("{tax_string}{RED_SEPARATOR}{red:.3}")),
-            (Some(bootstrap), true) => Ok(format!("{bootstrap:.1}{RED_SEPARATOR}{red:.3}")),
+            (None, false) => Ok(format!("{tax_string}{RED_SEPARATOR}{red}")),
+            (Some(bootstrap), true) => Ok(format!("{}{RED_SEPARATOR}{red}", bootstrap.text)),
             (Some(bootstrap), false) => Ok(format!(
-                "{bootstrap:.1}:{tax_string}{RED_SEPARATOR}{red:.3}"
+                "{}:{tax_string}{RED_SEPARATOR}{red}",
+                bootstrap.text
             )),
         }
     }
@@ -82,8 +124,11 @@ impl NodeLabel {
 /// taxonomy, `<gid>|g__A`) is an error.
 fn parse_leaf_label(label: &str) -> CuratomaticResult<NodeLabel> {
     let (gid, red) = split_red(label)?;
-    let red = red.unwrap_or(RedValue::LEAF);
-    if red != RedValue::LEAF || gid.is_empty() {
+    let red = red.unwrap_or_else(|| AsRead {
+        value: RedValue::LEAF,
+        text: RedValue::LEAF.to_string(),
+    });
+    if red.value != RedValue::LEAF || gid.is_empty() {
         return Err(invalid(label));
     }
     if gid.contains('|') {
@@ -106,15 +151,15 @@ fn parse_taxonomy(taxonomy: &str) -> CuratomaticResult<Option<Taxonomy>> {
     }
 }
 
+type ParsedNodeLabel<'a> = (
+    AsRead<RedValue>,
+    Option<AsRead<BootstrapValue>>,
+    Option<&'a str>,
+);
+
 /// Parse an internal node label into its RED, bootstrap and taxonomy (if they are set).
-fn parse_node_label(
-    label: &str,
-) -> CuratomaticResult<(RedValue, Option<BootstrapValue>, Option<&str>)> {
-    let float = |value: &str| {
-        value
-            .parse::<BootstrapValue>()
-            .map_err(|_not_a_float| invalid(label))
-    };
+fn parse_node_label(label: &str) -> CuratomaticResult<ParsedNodeLabel<'_>> {
+    let float = |value: &str| AsRead::parse(value).map_err(|_not_a_float| invalid(label));
 
     let (prefix, red) = split_red(label)?;
     let red = red.ok_or_else(|| invalid(label))?;
@@ -139,7 +184,7 @@ fn parse_node_label(
 /// The RED follows `|RED=` or `|red=`, and the `|` is not part of the prefix. It can also follow
 /// `:RED=` or `:red=`, where the `:` separates a bootstrap from an empty taxonomy, and is kept in
 /// the prefix (`100:red=0.5` gives `100:`). A label with more than one RED is invalid.
-fn split_red(label: &str) -> CuratomaticResult<(&str, Option<RedValue>)> {
+fn split_red(label: &str) -> CuratomaticResult<(&str, Option<AsRead<RedValue>>)> {
     let label = label.trim();
     let mut found = RED_KEYS
         .iter()
@@ -154,7 +199,7 @@ fn split_red(label: &str) -> CuratomaticResult<(&str, Option<RedValue>)> {
 
     let (before, rest) = label.split_at_checked(idx).ok_or_else(|| invalid(label))?;
     let value = rest.get(key_len..).ok_or_else(|| invalid(label))?;
-    let red = value.parse().map_err(|_not_a_float| invalid(label))?;
+    let red = AsRead::parse(value).map_err(|_not_a_float| invalid(label))?;
     let prefix = if let Some(prefix) = before.strip_suffix('|') {
         prefix
     } else if before.ends_with(':') {

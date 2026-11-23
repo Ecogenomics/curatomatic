@@ -584,11 +584,17 @@ Changes since the table was made:
   filled. Rust still makes no novel taxon above a named taxon of a lower rank, other than a species.
 - **L8** (Job 10, `9a6125a`): Rust no longer moves `f__Sporomusaceae` above `o__Sporomusales` in
   r226_bac120. Python has this gap.
+- **Job 17** (rewritten labels keep the RED and bootstrap as read, `docs/differences.md` "Output
+  changes"): with the priors, the taxonomy and leaf taxonomy files are byte-identical before and
+  after on all four datasets and on the r237 example. The four trees are byte-identical too, as
+  their bootstraps are already written `100.0`. In the r237 tree (`100`), 2,193 of 229,306
+  bootstraps were rewritten as `100.0` before, and none are now. The report's flags now see the
+  full RED: `novel_low_red` is dropped from 2 novel genera in r226_bac120 and 3 in r237, and
+  `sister_join_past_child_thresh` is added to `g__JAKCWP01` and `g__JAXQNM01` in r226_bac120.
 
 ### Open issues
 
 - Novel taxa can break rank order (`TODO.md` Job 16, needs approval).
-- Rewritten labels round the RED and bootstrap (`TODO.md` Job 17).
 - `scripts/benchmark.sh` doesn't use a prior, re-run Python with it, or score the curator workload
   (`TODO.md` Job 18).
 
