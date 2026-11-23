@@ -30,13 +30,29 @@ fn metadata(rows: &[(&str, &str)]) -> Metadata {
     .unwrap()
 }
 
+fn generate_name(
+    rank: Rank,
+    leaf_gids: &[&str],
+    metadata: &Metadata,
+    known_taxa: &[&str],
+) -> CuratomaticResult<NovelName> {
+    generate_unique_rank(rank, &gids(leaf_gids), metadata, &known(known_taxa))
+}
+
+/// The name generated for a novel taxon. An unresolvable name is an error, so that the tests of a
+/// name compare taxa.
 fn generate(
     rank: Rank,
     leaf_gids: &[&str],
     metadata: &Metadata,
     known_taxa: &[&str],
 ) -> CuratomaticResult<Taxon> {
-    generate_unique_rank(rank, &gids(leaf_gids), metadata, &known(known_taxa))
+    match generate_name(rank, leaf_gids, metadata, known_taxa)? {
+        NovelName::Named(taxon) => Ok(taxon),
+        NovelName::Unresolvable(namesakes) => Err(CuratomaticError::Invariant(format!(
+            "unresolvable: {namesakes:?}"
+        ))),
+    }
 }
 
 #[test]
@@ -164,31 +180,43 @@ fn a_gid_name_of_another_rank_does_not_conflict() {
 }
 
 #[test]
-fn when_every_gid_name_is_known_the_taxon_is_unresolvable() {
-    let known_taxa = ["g__G1", "g__G2"];
-    let taxon = generate(
+fn when_every_gid_name_is_known_the_taxon_is_unresolvable_with_its_namesakes() {
+    let name = generate_name(
         Rank::Genus,
         &["G2", "G1"],
         &Metadata::default(),
-        &known_taxa,
+        &["g__G1", "g__G2", "g__G3", "f__G1"],
     )
     .unwrap();
-    assert_eq!(taxon, Taxon::new("g__UNRESOLVABLE"));
-    assert!(taxon.is_unresolvable());
+    assert_eq!(name, NovelName::Unresolvable(known(&["g__G1", "g__G2"])));
 }
 
 #[test]
-fn only_the_sentinel_is_unresolvable() {
-    for name in [
-        "g__G1",
-        "g__",
-        "s__{unresolved} sp1",
-        "f__UNRESOLVABLE_A",
-        "x__UNRESOLVABLE",
-    ] {
-        assert!(!Taxon::new(name).is_unresolvable(), "{name}");
-    }
-    assert!(Taxon::new("s__UNRESOLVABLE").is_unresolvable());
+fn the_namesakes_of_an_unresolvable_taxon_include_its_known_wgs_names() {
+    let meta = metadata(&[("G1", "ABC"), ("G2", "DEF")]);
+    let name = generate_name(
+        Rank::Family,
+        &["G1", "G2"],
+        &meta,
+        &["f__ABC", "f__DEF", "f__G1", "f__G2"],
+    )
+    .unwrap();
+    assert_eq!(
+        name,
+        NovelName::Unresolvable(known(&["f__ABC", "f__DEF", "f__G1", "f__G2"]))
+    );
+}
+
+#[test]
+fn the_unresolvable_name_is_only_the_rank_and_unresolvable() {
+    assert_eq!(
+        Taxon::unresolvable(Rank::Genus),
+        Taxon::new("g__UNRESOLVABLE")
+    );
+    assert_eq!(
+        Taxon::unresolvable(Rank::Species),
+        Taxon::new("s__UNRESOLVABLE")
+    );
 }
 
 #[test]
@@ -272,29 +300,22 @@ fn a_valid_name_is_named_and_not_an_unresolved_species() {
 
 #[test]
 fn taxon_counts_count_each_named_taxon_and_skip_placeholders() {
-    let taxa: Vec<Taxon> = [
-        "g__A",
-        "g__",
-        "g__UNRESOLVABLE",
-        "s__A one",
-        "g__UNRESOLVABLE",
-        "p__",
-    ]
-    .into_iter()
-    .map(Taxon::new)
-    .collect();
+    let taxa: Vec<Taxon> = ["g__A", "g__", "g__B", "s__A one", "g__B", "p__"]
+        .into_iter()
+        .map(Taxon::new)
+        .collect();
     let counts = TaxonCounts::from_taxa(&taxa);
     assert_eq!(counts.get(&Taxon::new("g__A")), 1);
-    assert_eq!(counts.get(&Taxon::new("g__UNRESOLVABLE")), 2);
+    assert_eq!(counts.get(&Taxon::new("g__B")), 2);
     assert_eq!(counts.get(&Taxon::new("s__A one")), 1);
     assert_eq!(counts.get(&Taxon::new("g__")), 0);
-    assert_eq!(counts.get(&Taxon::new("g__B")), 0);
+    assert_eq!(counts.get(&Taxon::new("g__C")), 0);
     assert_eq!(
         counts
             .iter()
             .map(|(taxon, n)| (taxon.as_str(), n))
             .collect::<Vec<_>>(),
-        [("g__A", 1), ("g__UNRESOLVABLE", 2), ("s__A one", 1)]
+        [("g__A", 1), ("g__B", 2), ("s__A one", 1)]
     );
 }
 

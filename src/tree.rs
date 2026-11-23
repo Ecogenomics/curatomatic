@@ -12,7 +12,7 @@ use crate::newick::{NewickTree, NodeId, escape_label};
 use crate::node_label::{NodeLabel, strip_red};
 use crate::rank::Rank;
 use crate::red::Red;
-use crate::taxon::{Taxon, TaxonCounts, generate_unique_rank};
+use crate::taxon::{NovelName, Taxon, TaxonCounts, generate_unique_rank};
 use crate::taxonomy::Taxonomy;
 use crate::taxonomy_file::TaxonomyFile;
 
@@ -166,7 +166,7 @@ impl Tree {
         self.set_node_taxonomy(node, taxonomy)
     }
 
-    /// Every taxon on the tree, which must be on one node only (except [`Taxon::unresolvable`]).
+    /// Every taxon on the tree, which must be on one node only.
     fn get_taxon_labels(node_labels: &[NodeLabel]) -> CuratomaticResult<BTreeSet<Taxon>> {
         let mut out = BTreeSet::new();
         for taxonomy in node_labels
@@ -174,7 +174,7 @@ impl Tree {
             .filter_map(|label| label.taxonomy.as_ref())
         {
             for taxon in taxonomy.iter_ranks() {
-                if !out.insert(taxon.clone()) && !taxon.is_unresolvable() {
+                if !out.insert(taxon.clone()) {
                     return Err(CuratomaticError::NonUniqueTaxon(taxon.to_string()));
                 }
             }
@@ -193,9 +193,8 @@ impl Tree {
         &self.newick
     }
 
-    /// Every taxon on the tree and the node that holds it, in node order. A taxon on more than one
-    /// node (only [`Taxon::unresolvable`]) is listed once for each. Call [`Tree::reload`] first if
-    /// the tree was changed.
+    /// Every taxon on the tree and the node that holds it, in node order. Call [`Tree::reload`]
+    /// first if the tree was changed.
     pub(crate) fn taxon_nodes(&self) -> Vec<(Taxon, NodeId)> {
         self.newick
             .ids()
@@ -1098,6 +1097,26 @@ fn non_empty(taxonomy: Taxonomy) -> Option<Taxonomy> {
     has_taxa.then_some(taxonomy)
 }
 
+/// A novel taxon that could not be named (see [`NovelName::Unresolvable`]), so it was not placed:
+/// its genomes keep the placeholder of its rank, and it is only reported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnresolvableTaxon {
+    pub(crate) rank: Rank,
+    /// The candidate node it would have been placed on.
+    pub(crate) node: NodeId,
+    /// The taxa named after its genomes, which refused each name it could have had.
+    pub(crate) namesakes: BTreeSet<Taxon>,
+}
+
+/// The outcome of [`fill_in_missing_ranks`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct NovelTaxa {
+    /// The novel taxa that were created and placed on the tree.
+    pub(crate) created: BTreeSet<Taxon>,
+    /// The novel taxa that could not be named, which were not placed.
+    pub(crate) unresolvable: Vec<UnresolvableTaxon>,
+}
+
 /// Create a novel taxon for every rank that a leaf is missing, and place them on the tree.
 ///
 /// Each is placed on the highest node (the leaf included) that holds no other taxon of the rank
@@ -1105,11 +1124,16 @@ fn non_empty(taxonomy: Taxonomy) -> Option<Taxonomy> {
 /// bootstrap support, and has a RED that is past the midpoint between the rank and its parent.
 /// Leaves that share the highest node share the taxon. The ranks are filled from highest to
 /// lowest. `known_taxa` are the taxa that already exist, and are not reused. Returns the taxa
-/// that were created.
+/// that were created, and those that could not be named.
 ///
 /// A novel taxon is only created when no valid name (see [`Taxon::is_valid_name`]) of a lower
 /// rank, other than a species, is on the highest node or below it. Otherwise its leaves keep the
 /// placeholder for that rank only: each lower missing rank is decided on its own candidate node.
+///
+/// A novel taxon that can't be given a name that is not already a taxon (see
+/// [`generate_unique_rank`]) is not created either: its leaves keep the placeholder for that rank,
+/// and it is returned as [`UnresolvableTaxon`] for the report. As the candidates and the names
+/// below each node are worked out before any novel taxon is created, no other novel taxon moves.
 ///
 /// The tree must be up to date: call [`Tree::reload`] first.
 pub(crate) fn fill_in_missing_ranks(
@@ -1119,7 +1143,7 @@ pub(crate) fn fill_in_missing_ranks(
     red_dict: &Red,
     metadata: &Metadata,
     mut known_taxa: BTreeSet<Taxon>,
-) -> CuratomaticResult<BTreeSet<Taxon>> {
+) -> CuratomaticResult<NovelTaxa> {
     // For each rank, the candidate nodes (lowest to highest) of each leaf missing it.
     let mut rank_to_leaf_candidates: BTreeMap<Rank, Vec<(NodeId, Vec<NodeId>)>> = BTreeMap::new();
 
@@ -1158,7 +1182,7 @@ pub(crate) fn fill_in_missing_ranks(
     let lowest_valid_below = tree.lowest_valid_rank_below()?;
 
     // Process higher to lower ranks.
-    let mut new_taxa_created = BTreeSet::new();
+    let mut novel = NovelTaxa::default();
     for (rank, leaf_candidates) in &rank_to_leaf_candidates {
         // Leaves share a taxon if they share the highest candidate node.
         let mut candidate_to_leaves: Vec<(NodeId, BTreeSet<NodeId>)> = Vec::new();
@@ -1184,7 +1208,7 @@ pub(crate) fn fill_in_missing_ranks(
         }
 
         // Create a novel group for the highest candidate node that covers the descendant taxa.
-        let mut n_skipped: usize = 0;
+        let (mut n_skipped, mut n_unresolvable): (usize, usize) = (0, 0);
         for (candidate, leaves) in &candidate_to_leaves {
             // A curator never places a novel taxon above a valid name of a lower rank. Only this
             // rank is skipped: each lower rank is decided on its own candidate node.
@@ -1198,20 +1222,35 @@ pub(crate) fn fill_in_missing_ranks(
                 .iter()
                 .filter_map(|&leaf| tree.leaf_gid(leaf).cloned())
                 .collect::<BTreeSet<GenomeId>>();
-            let new_taxon = generate_unique_rank(*rank, &gids, metadata, &known_taxa)?;
-            known_taxa.insert(new_taxon.clone());
-            new_taxa_created.insert(new_taxon.clone());
-
-            // Add the taxon to the node (the leaf itself may be the candidate).
-            tree.add_node_taxon(*candidate, new_taxon)?;
+            match generate_unique_rank(*rank, &gids, metadata, &known_taxa)? {
+                NovelName::Named(new_taxon) => {
+                    known_taxa.insert(new_taxon.clone());
+                    novel.created.insert(new_taxon.clone());
+                    // Add the taxon to the node (the leaf itself may be the candidate).
+                    tree.add_node_taxon(*candidate, new_taxon)?;
+                }
+                NovelName::Unresolvable(namesakes) => {
+                    n_unresolvable = n_unresolvable.saturating_add(1);
+                    novel.unresolvable.push(UnresolvableTaxon {
+                        rank: *rank,
+                        node: *candidate,
+                        namesakes,
+                    });
+                }
+            }
         }
         info!(
             "Skipped {n_skipped} novel {} taxa that have a valid name below them.",
             rank.prefix()
         );
+        info!(
+            "Did not create {n_unresolvable} novel {} taxa that are unresolvable: every name they \
+             could have is already a taxon (see the report).",
+            rank.prefix()
+        );
     }
 
-    Ok(new_taxa_created)
+    Ok(novel)
 }
 
 /// The rank above `rank`, which every rank but the domain has.

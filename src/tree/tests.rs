@@ -1456,7 +1456,8 @@ fn novel_genus_on_a_leaf() -> (Tree, BTreeSet<Taxon>) {
     )
     .unwrap();
     tree.reload().unwrap();
-    (tree, novel)
+    assert_eq!(novel.unresolvable, []);
+    (tree, novel.created)
 }
 
 #[test]
@@ -1650,19 +1651,17 @@ fn the_newick_tree_and_the_leaf_taxonomies_give_back_the_full_taxonomies() {
 }
 
 #[test]
-fn an_unresolvable_taxon_may_be_on_more_than_one_node() {
-    let tree = tree_with_leaf_taxa(
-        "((G1:0.1,G2:0.1)'100:f__F|red=0.7')'d__D|red=0.0';",
-        &[
-            (0, "g__UNRESOLVABLE; s__A one"),
-            (1, "g__UNRESOLVABLE; s__A two"),
-        ],
-    )
-    .unwrap();
-    assert!(
-        tree.taxon_labels
-            .contains(&Taxon::unresolvable(Rank::Genus))
-    );
+fn the_unresolvable_name_on_more_than_one_node_is_an_error_like_any_other_taxon() {
+    assert!(matches!(
+        tree_with_leaf_taxa(
+            "((G1:0.1,G2:0.1)'100:f__F|red=0.7')'d__D|red=0.0';",
+            &[
+                (0, "g__UNRESOLVABLE; s__A one"),
+                (1, "g__UNRESOLVABLE; s__A two"),
+            ],
+        ),
+        Err(CuratomaticError::NonUniqueTaxon(taxon)) if taxon == "g__UNRESOLVABLE"
+    ));
 }
 
 #[test]
@@ -1679,8 +1678,8 @@ fn any_other_taxon_on_more_than_one_node_is_an_error() {
 // ---- Novel taxa are only created where nothing below is named ----
 
 /// Fill in the missing ranks of a tree whose leaves hold the given taxa, as `main` does after
-/// refinement. Returns the tree and the novel taxa.
-fn fill_novel(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, BTreeSet<Taxon>) {
+/// refinement. Returns the tree and the novel taxa, created and unresolvable.
+fn fill_novel_taxa(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, NovelTaxa) {
     let mut tree = tree_with_leaf_taxa(newick, leaf_taxa).unwrap();
     let missing = tree.get_leaf_nodes_missing_rank().unwrap();
     let known = tree.taxon_labels.clone();
@@ -1695,6 +1694,13 @@ fn fill_novel(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, BTreeSet<Taxo
     .unwrap();
     tree.reload().unwrap();
     (tree, novel)
+}
+
+/// As [`fill_novel_taxa`], where every novel taxon could be named. Returns the novel taxa created.
+fn fill_novel(newick: &str, leaf_taxa: &[(usize, &str)]) -> (Tree, BTreeSet<Taxon>) {
+    let (tree, novel) = fill_novel_taxa(newick, leaf_taxa);
+    assert!(novel.unresolvable.is_empty(), "{:?}", novel.unresolvable);
+    (tree, novel.created)
 }
 
 /// The taxonomy written for each genome, joined by `;`.
@@ -1863,6 +1869,93 @@ fn a_genome_that_is_not_skipped_still_gets_its_lower_ranks() {
     );
     assert!(novel.contains(&Taxon::new("p__G1")));
     assert!(novel.contains(&Taxon::new("f__G1")));
+}
+
+// ---- A novel taxon that can't be named is reported, never placed ----
+
+/// Post-order: G1 (0), G2 (1), X (2, RED 0.95), Y (3, RED 0.75), G3 (4), its node (5), G4 (6), its
+/// node (7), their parent (8), the root (9). G1 and G2 are missing their family and genus: the
+/// highest family candidate is Y, and the highest genus candidate is X. G3 and G4 hold the
+/// taxa `three` and `four`.
+fn namesake_tree(three: &str, four: &str) -> String {
+    format!(
+        "(((G1:0.1,G2:0.1)'100|red=0.95':0.1)'100|red=0.75':0.1,\
+         ((G3:0.1)'100:{three}|red=0.9':0.1,(G4:0.1)'100:{four}|red=0.9':0.1)'100|red=0.6')\
+         'd__D;p__P;c__C;o__O|red=0.0';"
+    )
+}
+
+const NAMESAKE_SPECIES: [(usize, &str); 4] = [
+    (0, "s__{unresolved} G1"),
+    (1, "s__{unresolved} G2"),
+    (4, "s__Three three"),
+    (6, "s__Four four"),
+];
+
+#[test]
+fn an_unresolvable_genus_is_not_placed_and_the_other_ranks_are_still_filled() {
+    // `g__G1` and `g__G2` are already on the tree, around G3 and G4.
+    let (tree, novel) = fill_novel_taxa(
+        &namesake_tree("f__X;g__G1", "f__Y;g__G2"),
+        &NAMESAKE_SPECIES,
+    );
+    assert_eq!(novel.created, BTreeSet::from([Taxon::new("f__G1")]));
+    assert_eq!(
+        novel.unresolvable,
+        [UnresolvableTaxon {
+            rank: Rank::Genus,
+            node: node(&tree, 2),
+            namesakes: BTreeSet::from([Taxon::new("g__G1"), Taxon::new("g__G2")]),
+        }]
+    );
+    // Nothing is placed on X, and the leaves hold only their species.
+    assert_eq!(label(&tree, 2), "100|red=0.95");
+    assert_eq!(leaf_taxa(&tree, 0), "s__{unresolved} G1");
+    assert!(
+        !tree
+            .taxon_labels
+            .iter()
+            .any(|t| t.as_str().contains("UNRESOLVABLE"))
+    );
+    assert_eq!(
+        written_taxonomies(&tree),
+        [
+            "G1\td__D;p__P;c__C;o__O;f__G1;g__;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__O;f__G1;g__;s__{unresolved} G2",
+            "G3\td__D;p__P;c__C;o__O;f__X;g__G1;s__Three three",
+            "G4\td__D;p__P;c__C;o__O;f__Y;g__G2;s__Four four",
+        ]
+    );
+    assert_eq!(
+        own_rows(&tree)[..2],
+        ["G1\ts__{unresolved} G1", "G2\ts__{unresolved} G2"]
+    );
+}
+
+#[test]
+fn the_genus_below_an_unresolvable_family_is_still_created() {
+    // `f__G1` and `f__G2` are already on the tree, around G3 and G4.
+    let (tree, novel) = fill_novel_taxa(
+        &namesake_tree("f__G1;g__X", "f__G2;g__Y"),
+        &NAMESAKE_SPECIES,
+    );
+    assert_eq!(novel.created, BTreeSet::from([Taxon::new("g__G1")]));
+    assert_eq!(
+        novel.unresolvable,
+        [UnresolvableTaxon {
+            rank: Rank::Family,
+            node: node(&tree, 3),
+            namesakes: BTreeSet::from([Taxon::new("f__G1"), Taxon::new("f__G2")]),
+        }]
+    );
+    assert_eq!(label(&tree, 3), "100|red=0.75");
+    assert_eq!(
+        written_taxonomies(&tree)[..2],
+        [
+            "G1\td__D;p__P;c__C;o__O;f__;g__G1;s__{unresolved} G1",
+            "G2\td__D;p__P;c__C;o__O;f__;g__G1;s__{unresolved} G2",
+        ]
+    );
 }
 
 #[test]

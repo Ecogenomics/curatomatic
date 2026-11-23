@@ -136,8 +136,10 @@ GB_GCA_123456789.1	FOO
 - Genome IDs are trimmed and matched to the tree in their canonical form (`GB_GCA_000008885.1` is `G000008885`).
 - A value of `none`, `n/a`, `null` or empty (after trimming, in any case) means the genome has no name.
 - A missing genome ID or name column, or a row too short to hold either, is an error.
-- Genomes without a name are given novel taxa named after their genome ID. If that name is already taken, the novel
-  taxon is `<rank>__UNRESOLVABLE` (e.g. `g__UNRESOLVABLE`), for a curator to name.
+- Genomes without a name are given novel taxa named after their genome ID. If every name a novel taxon could have is
+  already taken, it is unresolvable: it is not created (its genomes keep the placeholder of the rank, e.g. `g__`), and
+  it is only a row of the report, `<rank>__UNRESOLVABLE` with action `unresolvable`, for a curator to name (see
+  [docs/refinement.md](docs/refinement.md), "Novel taxa").
 
 ### Example
 
@@ -167,10 +169,27 @@ GB_GCA_123456789.1	FOO
 The following files are written to `OUT_DIR`:
 
 - `<tree stem>.curatomatic.tree` = The curated tree, where `<tree stem>` is the file name of `TREE` without its last extension (e.g. `gtdb_r226_ar53.decorated.scaled.red.curatomatic.tree`). Leaf labels are written exactly as they were read (the genome ID): the taxa a leaf holds are only in the taxonomy and leaf taxonomy files below.
-- `<tree stem>.curatomatic.report.tsv` = One row per taxon that curatomatic moved or created, with flags for the changes to review.
+- `<tree stem>.curatomatic.report.tsv` = One row per taxon that curatomatic moved or created, and one per novel taxon it could not name, with flags for the changes to review (see below).
 - `<tree stem>.curatomatic.taxonomy.tsv` = The curated taxonomy of each genome, in the format of the [taxonomy file](#taxonomy-file---taxonomy), one row per genome in tree order. Each rank is the taxon nearest the leaf on its path in the curated tree. A rank with no named taxon is written as a placeholder (`p__`), so every row has all 7 ranks: this happens when a novel taxon was not created because a valid name of a lower rank is below it (see [docs/refinement.md](docs/refinement.md), "Novel taxa"), and the rank is left for a curator to fill.
 - `<tree stem>.curatomatic.leaf-taxonomy.tsv` = The taxa held by each leaf, which the Newick tree can't hold, one row per genome in tree order (see below).
 - `curatomatic.log` = The log of the run.
+
+The report has a header row and these columns (several values in one column are joined by `,`):
+
+- `taxon`, `rank` = The taxon, and its rank prefix (`g`). An unresolvable novel taxon is `<rank>__UNRESOLVABLE`.
+- `action` = `moved_up`, `moved_down`, `novel` (created), or `unresolvable` (a novel taxon that was not created,
+  because every name it could have is already a taxon).
+- `flag` = The flags to review: `nested_in_same_rank`, `novel_low_red`, `sister_join_past_child_thresh`,
+  `unsupported_label`, `large_gain`, `displaced_from_prior`, `new_in_decoration`, and `namesake_outside_taxon` (an
+  unresolvable taxon, whose namesakes are elsewhere on the tree).
+- `n_genomes_before`, `n_genomes_after`, `bootstrap_before`, `bootstrap_after`, `red_before`, `red_after` = The node
+  of the taxon on the input tree (empty for a novel or unresolvable taxon), and on the curated tree. For an
+  unresolvable taxon, `*_after` is the node it would have been placed on.
+- `prior_taxon` = The taxa of this rank that the genomes of a novel taxon had in `--prior-taxonomy`.
+- `nested_in`, `sister_taxa` = The closest taxon of the same rank it is nested in, and the closest that join it past
+  the child threshold.
+- `namesakes` = For an unresolvable taxon, the taxa named after its genomes that refused each name (e.g.
+  `g__G020350785`), which also say which genomes it is.
 
 The leaf taxonomy file has no header and two columns, the genome ID (as the leaf is labelled) and the taxa that the
 leaf itself holds, joined by `;`:

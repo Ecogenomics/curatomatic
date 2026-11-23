@@ -13,7 +13,7 @@ See [refinement.md](refinement.md) for the full rules that the Rust version foll
 | L1 | Refining up | A nested taxon can move up | A nested taxon never moves up | **Yes** |
 | L2 | Refining down | Prior taxonomy from the `gtdb_taxonomy` column of `--meta` | Prior taxonomy from `--prior-taxonomy` | **Yes**, if a prior taxonomy was given |
 | L3 | Species placeholder | Replaces the **whole** label of the node with `s__{unresolved} <gid>` | Not rewritten: species come from `--taxonomy`, onto the leaves | **Yes**, for trees with an `s__` placeholder |
-| L4 | Novel names without WGS | `<rank>__NOVEL-<lowest gid>`, may duplicate an existing taxon | `<rank>__<lowest gid not already used>`, else `<rank>__UNRESOLVABLE` | **Yes** |
+| L4 | Novel names without WGS | `<rank>__NOVEL-<lowest gid>`, may duplicate an existing taxon | `<rank>__<lowest gid not already used>`, else nothing is written and the taxon is reported as `unresolvable` | **Yes** |
 | L5 | Novel domain | Uses the species median as the parent | Error | Stops the run instead of a wrong placement |
 | L6 | Leaf taxa | Leaves can't hold a taxon, the tree needs a species node above each leaf | `--taxonomy` assigns the ranks the tree can't hold to the leaves | **Yes**, a new input |
 | L7 | Novel taxa above names | A novel taxon is created for every missing rank, even above named taxa | Only created where no valid name of a lower rank is below it | **Yes** |
@@ -74,7 +74,7 @@ curated r226 taxonomy), so the r232 Python outputs did move taxa down.
 | --- | --- | --- |
 | A WGS prefix is available | Most readable, then alphabetical, excluding known taxa | Same |
 | No WGS prefix | `<rank>__NOVEL-<lowest gid>` | `<rank>__<gid>`: the lowest genome ID whose name isn't already a known taxon |
-| Every genome ID already taken | (not checked; may duplicate) | `<rank>__UNRESOLVABLE`, the only taxon that may be on more than one node |
+| Every genome ID already taken | `<rank>__NOVEL-<gid>` (not checked; may duplicate) | Not created: its genomes keep the placeholder (`g__`), and the report has a row `<rank>__UNRESOLVABLE` with action `unresolvable` and its `namesakes` |
 
 The `NOVEL-` prefix was removed in commit `598ac97` ("remove __NOVEL"). Python doesn't check the
 fallback name against the known taxa. If two novel taxa of the same rank have the same lowest

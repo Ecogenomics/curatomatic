@@ -1,5 +1,5 @@
-//! The review table for curators: one row per taxon that curatomatic moved or created, with
-//! flags for the changes a curator should check.
+//! The review table for curators: one row per taxon that curatomatic moved or created, and per
+//! novel taxon it could not name, with flags for the changes a curator should check.
 //!
 //! The report is computed from data already in memory and never changes the tree.
 
@@ -18,7 +18,7 @@ use crate::newick::{NewickTree, NodeId};
 use crate::rank::Rank;
 use crate::red::{Red, RedValue};
 use crate::taxon::Taxon;
-use crate::tree::{Move, Tree};
+use crate::tree::{Move, NovelTaxa, Tree, UnresolvableTaxon};
 
 /// A move that multiplies the number of genomes by this much or more is a `large_gain`.
 const LARGE_GAIN_FACTOR: usize = 5;
@@ -29,7 +29,7 @@ const LOW_Q: f64 = 0.5;
 /// Separates multiple values in one column.
 const LIST_SEPARATOR: &str = ",";
 
-const HEADER: [&str; 13] = [
+const HEADER: [&str; 14] = [
     "taxon",
     "rank",
     "action",
@@ -43,15 +43,22 @@ const HEADER: [&str; 13] = [
     "prior_taxon",
     "nested_in",
     "sister_taxa",
+    "namesakes",
 ];
 
 /// What curatomatic did to a taxon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[strum(serialize_all = "snake_case")]
 pub(crate) enum Action {
+    /// A taxon of the input tree that was moved to an ancestor of its node.
     MovedUp,
+    /// A taxon of the input tree that was moved to a node that is not an ancestor of its node.
     MovedDown,
+    /// A novel taxon that was created and placed on the tree.
     Novel,
+    /// A novel taxon that was not created, as every name it could have is already a taxon. Its
+    /// genomes keep the placeholder of its rank, for a curator to name.
+    Unresolvable,
 }
 
 /// Something about a taxon that a curator should review.
@@ -72,6 +79,9 @@ pub(crate) enum Flag {
     DisplacedFromPrior,
     /// A taxon on the input tree that is in no `gtdb_taxonomy` of the metadata.
     NewInDecoration,
+    /// An unresolvable novel taxon: a taxon named after each of its genomes (its `namesakes`) is
+    /// already on the tree, outside it.
+    NamesakeOutsideTaxon,
 }
 
 /// The node that holds a taxon, as reported.
@@ -98,6 +108,8 @@ pub(crate) struct ReportRow {
     pub(crate) nested_in: Option<Taxon>,
     /// The closest taxa of the same rank that join this one past `child_thresh`.
     pub(crate) sister_taxa: BTreeSet<Taxon>,
+    /// The taxa named after the genomes of an unresolvable novel taxon.
+    pub(crate) namesakes: BTreeSet<Taxon>,
 }
 
 /// Everything the report is computed from.
@@ -106,8 +118,8 @@ pub(crate) struct ReportInput<'a> {
     pub(crate) tree: &'a Tree,
     /// The moves made by refinement.
     pub(crate) moves: &'a [Move],
-    /// The novel taxa that were created.
-    pub(crate) novel: &'a BTreeSet<Taxon>,
+    /// The novel taxa that were created, and those that could not be named.
+    pub(crate) novel: &'a NovelTaxa,
     /// The metadata, subset to the genomes on the tree.
     pub(crate) metadata: &'a Metadata,
     /// Every taxon in a `gtdb_taxonomy` of the full metadata file.
@@ -324,8 +336,9 @@ fn sister_join(
     Ok(out)
 }
 
-/// Build the rows of the report, one for each taxon that was moved or created, sorted by rank and
-/// then taxon. A taxon that was not changed has no row, whatever its flags would be.
+/// Build the rows of the report, one for each taxon that was moved or created and one for each
+/// novel taxon that could not be named, sorted by rank and then taxon. A taxon that was not
+/// changed has no row, whatever its flags would be.
 pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<ReportRow>> {
     let index = TreeIndex::new(input.tree)?;
     let taxa_after = input.tree.taxon_nodes();
@@ -343,7 +356,7 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
     let mut rows = Vec::new();
     for &(ref taxon, node) in &taxa_after {
         let rank = taxon.rank()?;
-        let is_novel = input.novel.contains(taxon);
+        let is_novel = input.novel.created.contains(taxon);
         let after = index.stats(node)?;
 
         let (action, before) = if is_novel {
@@ -369,6 +382,7 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
             prior_taxa: BTreeSet::new(),
             nested_in: None,
             sister_taxa: BTreeSet::new(),
+            namesakes: BTreeSet::new(),
         };
 
         if taxon.is_named()
@@ -418,35 +432,77 @@ pub(crate) fn build_report(input: &ReportInput<'_>) -> CuratomaticResult<Vec<Rep
 
         rows.push(row);
     }
+    for unresolvable in &input.novel.unresolvable {
+        rows.push(unresolvable_row(&index, unresolvable)?);
+    }
     check_every_change_has_a_row(&rows, input)?;
 
     rows.sort_by(|a, b| a.rank.cmp(&b.rank).then_with(|| a.taxon.cmp(&b.taxon)));
     Ok(rows)
 }
 
-/// The report is the record of what curatomatic did, so every move and every novel taxon must have
-/// a row.
+/// The row of a novel taxon that could not be named: nothing was placed, so its `*_after` columns
+/// are those of the candidate node it would have been placed on.
+fn unresolvable_row(
+    index: &TreeIndex<'_>,
+    unresolvable: &UnresolvableTaxon,
+) -> CuratomaticResult<ReportRow> {
+    Ok(ReportRow {
+        taxon: Taxon::unresolvable(unresolvable.rank),
+        rank: unresolvable.rank,
+        action: Action::Unresolvable,
+        flags: BTreeSet::from([Flag::NamesakeOutsideTaxon]),
+        before: None,
+        after: index.stats(unresolvable.node)?,
+        prior_taxa: BTreeSet::new(),
+        nested_in: None,
+        sister_taxa: BTreeSet::new(),
+        namesakes: unresolvable.namesakes.clone(),
+    })
+}
+
+/// The report is the record of what curatomatic did, so every move, every novel taxon and every
+/// novel taxon that could not be named must have a row.
 fn check_every_change_has_a_row(
     rows: &[ReportRow],
     input: &ReportInput<'_>,
 ) -> CuratomaticResult<()> {
-    let moved: BTreeSet<&Taxon> = rows
+    let rows_of = |is_action: fn(Action) -> bool| -> BTreeSet<&Taxon> {
+        rows.iter()
+            .filter(|row| is_action(row.action))
+            .map(|row| &row.taxon)
+            .collect()
+    };
+    let moved = rows_of(|action| matches!(action, Action::MovedUp | Action::MovedDown));
+    let novel = rows_of(|action| action == Action::Novel);
+    // The namesakes of an unresolvable taxon include a taxon named after each of its genomes,
+    // which no other unresolvable taxon has, so they tell its row apart.
+    let unresolvable: BTreeSet<(Rank, &BTreeSet<Taxon>)> = rows
         .iter()
-        .filter(|row| row.action != Action::Novel)
-        .map(|row| &row.taxon)
-        .collect();
-    let novel: BTreeSet<&Taxon> = rows
-        .iter()
-        .filter(|row| row.action == Action::Novel)
-        .map(|row| &row.taxon)
+        .filter(|row| row.action == Action::Unresolvable)
+        .map(|row| (row.rank, &row.namesakes))
         .collect();
     let missing: Vec<String> = input
         .moves
         .iter()
         .map(|m| &m.taxon)
         .filter(|taxon| !moved.contains(taxon))
-        .chain(input.novel.iter().filter(|taxon| !novel.contains(taxon)))
+        .chain(
+            input
+                .novel
+                .created
+                .iter()
+                .filter(|taxon| !novel.contains(taxon)),
+        )
         .map(ToString::to_string)
+        .chain(
+            input
+                .novel
+                .unresolvable
+                .iter()
+                .filter(|u| !unresolvable.contains(&(u.rank, &u.namesakes)))
+                .map(|u| format!("{} ({})", Taxon::unresolvable(u.rank), join(&u.namesakes))),
+        )
         .collect();
     if missing.is_empty() {
         return Ok(());
@@ -490,6 +546,7 @@ pub(crate) fn to_tsv(rows: &[ReportRow]) -> String {
             join(&row.prior_taxa),
             optional(row.nested_in.as_ref(), ToString::to_string),
             join(&row.sister_taxa),
+            join(&row.namesakes),
         ];
         out.push_str(&fields.join("\t"));
         out.push('\n');

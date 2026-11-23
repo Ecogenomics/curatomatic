@@ -441,13 +441,16 @@ fn taxa_check_accepts_novel_taxa() {
 }
 
 #[test]
-fn taxa_check_accepts_an_unresolvable_novel_taxon_on_more_than_one_node() {
-    let before = counts(&["d__D"]);
-    let after = counts(&["d__D", "g__UNRESOLVABLE", "g__UNRESOLVABLE"]);
-    assert_eq!(
-        check_taxa_unchanged(&before, &after, &novel(&["g__UNRESOLVABLE"])),
-        Ok(())
-    );
+fn taxa_check_fails_when_a_novel_taxon_is_on_more_than_one_node() {
+    // The unresolvable name is never placed, so it has no exception.
+    for name in ["g__G1", "g__UNRESOLVABLE"] {
+        let before = counts(&["d__D"]);
+        let after = counts(&["d__D", name, name]);
+        assert_eq!(
+            check_taxa_unchanged(&before, &after, &novel(&[name])),
+            taxa_changed(&format!("novel, but on more than one node: [{name} (2)]"))
+        );
+    }
 }
 
 #[test]
@@ -511,11 +514,11 @@ fn taxa_check_fails_when_a_moved_taxon_is_left_behind() {
 
 #[test]
 fn taxa_check_fails_when_one_copy_of_a_taxon_is_removed() {
-    let before = counts(&["d__D", "g__UNRESOLVABLE", "g__UNRESOLVABLE"]);
-    let after = counts(&["d__D", "g__UNRESOLVABLE"]);
+    let before = counts(&["d__D", "g__A", "g__A"]);
+    let after = counts(&["d__D", "g__A"]);
     assert_eq!(
         check_taxa_unchanged(&before, &after, &novel(&[])),
-        taxa_changed("on a different number of nodes: [g__UNRESOLVABLE (2 -> 1)]")
+        taxa_changed("on a different number of nodes: [g__A (2 -> 1)]")
     );
 }
 

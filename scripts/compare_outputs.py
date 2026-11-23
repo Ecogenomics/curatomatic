@@ -223,6 +223,17 @@ def read_report(path):
         return {row['taxon']: row for row in csv.DictReader(fh, delimiter='\t')}
 
 
+def read_unresolvable_namesakes(path):
+    """The namesakes of every novel taxon Rust could not name (report action ``unresolvable``).
+
+    These taxa are not written to the tree, only reported, so they have no taxon of their own.
+    """
+    with open(path, newline='') as fh:
+        return {name for row in csv.DictReader(fh, delimiter='\t')
+                if row['action'] == 'unresolvable'
+                for name in row.get('namesakes', '').split(',') if name}
+
+
 def read_moves(path):
     """The "Moving" lines of a log, per rank, in order."""
     out = collections.defaultdict(list)
@@ -295,6 +306,8 @@ def compare(args):
     t_rsin = Tree(next(Path(args.rs_input).glob('*.nwk')))
     t_rsin.add_leaf_taxa(next(Path(args.rs_input).glob('*.decorated_taxonomy.tsv')))
     report = read_report(next(Path(args.rs_out).glob('*.report.tsv')))
+    unresolvable_namesakes = read_unresolvable_namesakes(
+        next(Path(args.rs_out).glob('*.report.tsv')))
 
     sanity = []
     for name, t in (('python output', t_py), ('rust output', t_rs), ('rust input', t_rsin)):
@@ -449,11 +462,12 @@ def compare(args):
             r['cause'] = r['possible_cascade_from'] = ''
             continue
         if cat == 'both_different_name':
-            if NOVEL_GID_RE.match(r['python']) or r['rust'].endswith('__UNRESOLVABLE') \
-                    or NOVEL_GID_RE.match(r['rust']):
+            if NOVEL_GID_RE.match(r['python']) or NOVEL_GID_RE.match(r['rust']):
                 cause = 'L4 (novel name without a WGS prefix)'
         elif cat == 'python_only':
-            if r['valid_lower_ranks_below_in_rust']:
+            if r['python'].replace('NOVEL-', '') in unresolvable_namesakes:
+                cause = 'L4 (unresolvable in Rust: every name is taken, so it is only reported)'
+            elif r['valid_lower_ranks_below_in_rust']:
                 cause = 'L7 (novel taxon above a named taxon)'
             elif r['other_rust_novel']:
                 cause = 'placed on another node by Rust'

@@ -226,6 +226,13 @@ window, `docs/differences.md` L9), accepting +156, to keep genera such as `g__No
 (r237) whole. Without `--prior-taxonomy`, Jobs 10 to 13 give the same output as Jobs
 10 to 12.
 
+Job 14 (an unresolvable novel taxon is reported, never written) changes only the genomes that got
+`<rank>__UNRESOLVABLE`: G020350785 (`g__`) and G030406045 (`o__`, `f__`, `g__`) in r226_bac120,
+and G020350445 (`g__`) in r232_bac120 (none in the ar53 datasets). Each is now a placeholder and
+one `unresolvable` report row, and every other output is unchanged. With the `wip/bench_v3`
+priors, the total falls from 8,547 to 8,543 (r226_bac120 2,758 to 2,755, r232_bac120 5,128 to
+5,127): the sentinels were taxa to delete.
+
 Caveat: the r232 prior is the curated r226, and the r232 truth was probably curated from the Python
 output, which made the same moves down (146 / 1,451 taxa, equal to Rust's). So r232 favours Job 13.
 r226 (prior probably r220; Python made no moves down there) is the less biased evidence: Jobs 10 to
@@ -259,9 +266,12 @@ Each run takes a few seconds. The output directory must not exist (unless `--log
   G053840885's is `g__Neosphaerochaeta;s__Neosphaerochaeta fermentans`, the tree plus this file give
   back `<stem>.curatomatic.taxonomy.tsv` for every genome, and the taxa they hold are the input taxa
   plus the 5,447 novel taxa of the report. The tree, report and taxonomy files were unchanged by Job 24.
-- `<stem>.curatomatic.report.tsv`: one row per taxon that was moved or created, and nothing else
-  (`taxon, rank, action, flag, n_genomes_before/after, bootstrap_before/after, red_before/after,
-  prior_taxon, nested_in, sister_taxa`). `action` is `moved_up`, `moved_down` or `novel`.
+  Since Job 14 the report has 5,446 novel taxa and one `unresolvable` row (G965247515, namesake
+  `g__G965247515`), which is no longer written as `g__UNRESOLVABLE`.
+- `<stem>.curatomatic.report.tsv`: one row per taxon that was moved or created, one per novel taxon
+  that could not be named, and nothing else (`taxon, rank, action, flag, n_genomes_before/after,
+  bootstrap_before/after, red_before/after, prior_taxon, nested_in, sister_taxa, namesakes`).
+  `action` is `moved_up`, `moved_down`, `novel` or `unresolvable`.
 - `curatomatic.log`.
 
 ## Running the Python version

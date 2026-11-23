@@ -184,20 +184,61 @@ fn a_novel_taxon_of_new_genomes_is_not_displaced() {
     assert!(row(&rows, "g__ABC01").prior_taxa.is_empty());
 }
 
-#[test]
-fn every_node_given_the_unresolvable_sentinel_has_a_row() {
-    // G1 and G2 each need a novel genus, but the genus named after each genome is taken.
-    let newick = format!(
+/// G1 and G2 each need a novel genus (on the node above their species, RED 0.9), but the genus
+/// named after each genome is already on the tree, around G3 and G4.
+fn unresolvable_tree() -> String {
+    format!(
         "(((G1|RED=1.000)'s__{{unresolved}} G1|RED=1.000')'100.0|RED=0.900',\
          ((G2|RED=1.000)'s__{{unresolved}} G2|RED=1.000')'100.0|RED=0.900',\
          (G3|RED=1.000)'g__G1; s__X three|RED=1.000',\
          (G4|RED=1.000)'g__G2; s__Y four|RED=1.000'){ROOT};"
+    )
+}
+
+#[test]
+fn every_unresolvable_novel_taxon_has_a_row_with_its_namesakes() {
+    let rows = report(&unresolvable_tree(), &Metadata::default());
+    assert_eq!(rows.len(), 2, "{rows:#?}");
+    for (row, namesake) in rows.iter().zip(["g__G1", "g__G2"]) {
+        assert_eq!(row.taxon, Taxon::new("g__UNRESOLVABLE"));
+        assert_eq!(row.rank, Rank::Genus);
+        assert_eq!(row.action, Action::Unresolvable);
+        assert_eq!(row.flags, BTreeSet::from([Flag::NamesakeOutsideTaxon]));
+        assert_eq!(row.namesakes, taxa(&[namesake]));
+        assert_eq!(row.before, None);
+        assert_eq!(
+            (row.after.n_genomes, row.after.red),
+            (1, RedValue::new(0.9))
+        );
+    }
+}
+
+#[test]
+fn an_unresolvable_novel_taxon_without_a_row_is_an_error() {
+    let tree = Tree::from_newick(NewickTree::parse(&unresolvable_tree()).unwrap()).unwrap();
+    let novel = NovelTaxa {
+        created: BTreeSet::new(),
+        unresolvable: vec![UnresolvableTaxon {
+            rank: Rank::Genus,
+            node: tree.newick().ids().next().unwrap(),
+            namesakes: taxa(&["g__G1"]),
+        }],
+    };
+    let input = ReportInput {
+        tree: &tree,
+        moves: &[],
+        novel: &novel,
+        metadata: &Metadata::default(),
+        prior_taxa: &BTreeSet::new(),
+        min_bs: BootstrapValue::new(95.0),
+        red_dict: &red_dict(),
+    };
+    assert_eq!(
+        check_every_change_has_a_row(&[], &input),
+        Err(CuratomaticError::Invariant(
+            "the report has no row for these changed taxa: [g__UNRESOLVABLE (g__G1)]".to_owned()
+        ))
     );
-    let rows = report(&newick, &Metadata::default());
-    let sentinel = Taxon::unresolvable(Rank::Genus);
-    let placed: Vec<_> = rows.iter().filter(|row| row.taxon == sentinel).collect();
-    assert_eq!(placed.len(), 2, "{rows:#?}");
-    assert!(placed.iter().all(|row| row.action == Action::Novel));
 }
 
 #[test]
@@ -272,7 +313,10 @@ fn a_change_without_a_row_is_an_error() {
         NewickTree::parse(&format!("((G1|RED=1.000)'s__A one|RED=1.000'){ROOT};")).unwrap(),
     )
     .unwrap();
-    let novel = taxa(&["g__Missing"]);
+    let novel = NovelTaxa {
+        created: taxa(&["g__Missing"]),
+        unresolvable: Vec::new(),
+    };
     let result = build_report(&ReportInput {
         tree: &tree,
         moves: &[],
@@ -306,12 +350,27 @@ fn the_tsv_has_a_header_and_leaves_unset_values_empty() {
         prior_taxa: taxa(&["g__Old", "g__Older"]),
         nested_in: None,
         sister_taxa: BTreeSet::new(),
+        namesakes: BTreeSet::new(),
     }];
     assert_eq!(
         to_tsv(&rows),
         "taxon\trank\taction\tflag\tn_genomes_before\tn_genomes_after\tbootstrap_before\t\
-         bootstrap_after\tred_before\tred_after\tprior_taxon\tnested_in\tsister_taxa\n\
+         bootstrap_after\tred_before\tred_after\tprior_taxon\tnested_in\tsister_taxa\t\
+         namesakes\n\
          g__ABC01\tg\tnovel\tnovel_low_red,displaced_from_prior\t\t2\t\t100.0\t\t0.840\t\
-         g__Old,g__Older\t\t\n"
+         g__Old,g__Older\t\t\t\n"
+    );
+}
+
+#[test]
+fn the_tsv_of_an_unresolvable_taxon_lists_its_namesakes() {
+    let rows = report(&unresolvable_tree(), &Metadata::default());
+    let tsv = to_tsv(&rows[..1]);
+    assert_eq!(
+        tsv.lines().nth(1),
+        Some(
+            "g__UNRESOLVABLE\tg\tunresolvable\tnamesake_outside_taxon\t\t1\t\t100.0\t\t0.900\t\
+             \t\t\tg__G1"
+        )
     );
 }

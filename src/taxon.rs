@@ -9,7 +9,8 @@ use crate::rank::Rank;
 /// Characters that are easily confused with one another when a name is read by a person.
 const BAD_PAIRS: [(char, char); 5] = [('I', 'l'), ('0', 'O'), ('1', 'I'), ('5', 'S'), ('2', 'Z')];
 
-/// The name of a novel taxon that could not be given a unique name, after its rank prefix.
+/// The name of a novel taxon that could not be given a unique name, after its rank prefix. It is
+/// only written to the report, never placed on the tree.
 const UNRESOLVABLE: &str = "UNRESOLVABLE";
 
 /// The start of a species name that curatomatic must not change, e.g. `s__{unresolved} NAME`.
@@ -34,16 +35,11 @@ impl Taxon {
         Rank::of_taxon(self.as_str())
     }
 
-    /// The sentinel for a novel taxon of `rank` that could not be given a unique name, e.g.
-    /// `g__UNRESOLVABLE`. Unlike every other taxon, it may be on more than one node.
+    /// The name the report gives a novel taxon of `rank` that could not be named (see
+    /// [`NovelName::Unresolvable`]), e.g. `g__UNRESOLVABLE`. It is never placed on the tree, so on
+    /// an input tree it is a taxon like any other.
     pub(crate) fn unresolvable(rank: Rank) -> Self {
         Taxon(format!("{}__{UNRESOLVABLE}", rank.prefix()))
-    }
-
-    /// True if this is the sentinel of [`Taxon::unresolvable`].
-    pub(crate) fn is_unresolvable(&self) -> bool {
-        self.rank()
-            .is_ok_and(|rank| self == &Taxon::unresolvable(rank))
     }
 
     /// True if this is a name: a valid taxon with text after its `<prefix>__` (see
@@ -117,8 +113,8 @@ impl From<&str> for Taxon {
 
 /// The number of nodes that hold each named taxon (placeholders, e.g. `g__`, are not counted).
 ///
-/// A taxon is on one node only, except [`Taxon::unresolvable`], so a count is above `1` only for
-/// that sentinel, or when a taxon has been copied instead of moved.
+/// A taxon is on one node only, so a count is above `1` only when a taxon has been copied instead
+/// of moved.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct TaxonCounts(BTreeMap<Taxon, usize>);
 
@@ -154,50 +150,63 @@ fn score_candidate_taxon(taxon: &Taxon) -> u8 {
     )
 }
 
+/// The name that [`generate_unique_rank`] gives a novel taxon.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NovelName {
+    /// A taxon that is not already known.
+    Named(Taxon),
+    /// Every name the taxon could be given is already a taxon (e.g. the input tree named a taxon
+    /// after one of its genomes, but that genome is not in it). Holds those taxa, its namesakes:
+    /// each name of a WGS prefix and of a genome ID that was refused. The novel taxon is not
+    /// created, and a curator names it.
+    Unresolvable(BTreeSet<Taxon>),
+}
+
 /// Generate a taxon for `rank` that is not already in `known_taxa`.
 ///
 /// The NCBI WGS prefix of the genomes is used when there is one, preferring the most readable. If
 /// none is available then the taxon is named after the lowest genome ID whose name is not already
-/// known (e.g. `g__G963674675`). If every genome ID is taken (e.g. the input tree named a taxon
-/// after a genome that is not in it), the taxon is the sentinel [`Taxon::unresolvable`].
+/// known (e.g. `g__G963674675`). If every name is taken, it is [`NovelName::Unresolvable`].
 pub(crate) fn generate_unique_rank(
     rank: Rank,
     leaf_node_gids: &BTreeSet<GenomeId>,
     metadata: &Metadata,
     known_taxa: &BTreeSet<Taxon>,
-) -> CuratomaticResult<Taxon> {
-    let wgs_available: BTreeSet<Taxon> = leaf_node_gids
-        .iter()
-        .filter_map(|gid| metadata.rows.get(gid)?.wgs.as_ref())
-        .map(|wgs| Taxon::new(format!("{}__{wgs}", rank.prefix())))
-        .filter(|taxon| !known_taxa.contains(taxon))
-        .collect();
-
-    // Score the WGS sequences by how readable they are, the sets are sorted so the first of the
-    // best scoring is also the lowest.
-    if let Some(taxon) = wgs_available
-        .iter()
-        .min_by_key(|taxon| score_candidate_taxon(taxon))
-    {
-        return Ok(taxon.clone());
-    }
-
-    // Genome IDs are sorted, so this tries the lowest first.
-    let gid_taxon = |gid: &GenomeId| Taxon::new(format!("{}__{gid}", rank.prefix()));
-    if let Some(taxon) = leaf_node_gids
-        .iter()
-        .map(gid_taxon)
-        .find(|taxon| !known_taxa.contains(taxon))
-    {
-        return Ok(taxon);
-    }
-
+) -> CuratomaticResult<NovelName> {
     if leaf_node_gids.is_empty() {
         return Err(CuratomaticError::Invariant(
             "no genomes to name a taxon after".to_owned(),
         ));
     }
-    Ok(Taxon::unresolvable(rank))
+
+    let wgs_taxa: BTreeSet<Taxon> = leaf_node_gids
+        .iter()
+        .filter_map(|gid| metadata.rows.get(gid)?.wgs.as_ref())
+        .map(|wgs| Taxon::new(format!("{}__{wgs}", rank.prefix())))
+        .collect();
+
+    // Score the WGS sequences by how readable they are, the sets are sorted so the first of the
+    // best scoring is also the lowest.
+    if let Some(taxon) = wgs_taxa
+        .iter()
+        .filter(|taxon| !known_taxa.contains(taxon))
+        .min_by_key(|taxon| score_candidate_taxon(taxon))
+    {
+        return Ok(NovelName::Named(taxon.clone()));
+    }
+
+    // Genome IDs are sorted, so this tries the lowest first.
+    let gid_taxa: Vec<Taxon> = leaf_node_gids
+        .iter()
+        .map(|gid| Taxon::new(format!("{}__{gid}", rank.prefix())))
+        .collect();
+    if let Some(taxon) = gid_taxa.iter().find(|taxon| !known_taxa.contains(taxon)) {
+        return Ok(NovelName::Named(taxon.clone()));
+    }
+
+    Ok(NovelName::Unresolvable(
+        wgs_taxa.into_iter().chain(gid_taxa).collect(),
+    ))
 }
 
 #[cfg(test)]

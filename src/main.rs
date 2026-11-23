@@ -190,8 +190,9 @@ fn read_metadata(
 /// `before` counts the named taxa on the tree before refinement, and `after` the named taxa at the
 /// end of the run. Every taxon of `before` must still be on the tree, on as many nodes as before
 /// (it was moved, not removed or copied), with its text unchanged. Every other taxon on the tree
-/// must be one of the `novel` taxa that were created, and a novel taxon must not reuse a name that
-/// was already on the tree. Placeholders (e.g. `g__`) are not counted, they can be refined freely.
+/// must be one of the `novel` taxa that were created, on one node only, and a novel taxon must not
+/// reuse a name that was already on the tree. Placeholders (e.g. `g__`) are not counted, they can
+/// be refined freely.
 fn check_taxa_unchanged(
     before: &TaxonCounts,
     after: &TaxonCounts,
@@ -213,6 +214,12 @@ fn check_taxa_unchanged(
         .filter(|taxon| before.get(taxon) != 0)
         .map(ToString::to_string)
         .collect();
+    let novel_copied: Vec<String> = novel
+        .iter()
+        // A reused name is already reported, as reused and on a different number of nodes.
+        .filter(|taxon| before.get(taxon) == 0 && after.get(taxon) > 1)
+        .map(|taxon| format!("{taxon} ({})", after.get(taxon)))
+        .collect();
     let gained: Vec<String> = after
         .iter()
         .filter(|&(taxon, _)| before.get(taxon) == 0 && !novel.contains(taxon))
@@ -231,6 +238,12 @@ fn check_taxa_unchanged(
     }
     if !reused.is_empty() {
         problems.push(format!("reused by a novel taxon: [{}]", join(reused)));
+    }
+    if !novel_copied.is_empty() {
+        problems.push(format!(
+            "novel, but on more than one node: [{}]",
+            join(novel_copied)
+        ));
     }
     if !gained.is_empty() {
         problems.push(format!(
@@ -347,7 +360,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
 
     info!("Creating novel ranks");
     let known_taxa = tree.taxon_labels.clone();
-    let new_taxa_created = fill_in_missing_ranks(
+    let novel = fill_in_missing_ranks(
         &mut tree,
         &leaf_to_ranks_missing,
         cli.min_bs,
@@ -357,13 +370,20 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     )?;
     info!(
         "Created {} novel ranks.",
-        new_taxa_created.len().separate_with_commas()
+        novel.created.len().separate_with_commas()
     );
+    if !novel.unresolvable.is_empty() {
+        warn!(
+            "Did not create {} unresolvable novel ranks, their genomes keep the placeholder of \
+             the rank (see the report).",
+            novel.unresolvable.len().separate_with_commas()
+        );
+    }
 
     // Refinement and novel taxa are the only steps that change the taxa, so this is checked
     // before anything is written: a run that breaks the rule fails without any output.
     info!("Checking that taxa were only moved or created");
-    check_taxa_unchanged(&tree_taxa_before, &tree.taxon_counts()?, &new_taxa_created)?;
+    check_taxa_unchanged(&tree_taxa_before, &tree.taxon_counts()?, &novel.created)?;
     info!("Checking that every leaf holds its species and has a domain");
     tree.check_leaves_have_species()?;
     tree.check_leaves_have_domain()?;
@@ -373,7 +393,7 @@ fn curate(cli: &Cli) -> CuratomaticResult<()> {
     let report = build_report(&ReportInput {
         tree: &tree,
         moves: &moves,
-        novel: &new_taxa_created,
+        novel: &novel,
         metadata: &metadata,
         prior_taxa: &prior_taxa,
         min_bs: cli.min_bs,

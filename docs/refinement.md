@@ -199,8 +199,9 @@ Neither node is changed in that case.
 
 These are checked during or after the refinement, and break the run if violated:
 
-- Every taxon is on **exactly one** node (checked whenever the labels are loaded). The only
-  exception is the sentinel `<rank>__UNRESOLVABLE` (see [Novel taxa](#novel-taxa)).
+- Every taxon is on **exactly one** node (checked whenever the labels are loaded), with no
+  exception: an input tree with `g__UNRESOLVABLE` on two nodes is a `NonUniqueTaxon` error like any
+  other. A novel taxon on more than one node fails `check_taxa_unchanged`.
 - Assigning the taxonomy file to the leaves only adds taxa, it never removes one, and afterwards
   each genome's taxa on the tree are exactly those of its row (`TaxonomyFileConflict`).
 - Every leaf holds its named species and has a named domain, after the leaf assignment and again
@@ -274,9 +275,24 @@ Before refinement, when the tree is read:
 
 Novel taxa are placed by `fill_in_missing_ranks` after refinement. The leaf itself is a candidate
 node, as is every node above it. A novel taxon without a WGS name is named after the lowest genome
-ID under it whose name is not already a taxon (`g__G963674675`). If every genome ID is taken (e.g.
-the input tree named a taxon after a genome that is not in it), it is the sentinel
-`<rank>__UNRESOLVABLE`, which may be on more than one node, for a curator to name.
+ID under it whose name is not already a taxon (`g__G963674675`).
+
+If every name is taken (every WGS name and every genome ID of its genomes is already a taxon, e.g.
+the input tree named a taxon after a genome that is not in it), the novel taxon is
+**unresolvable**, and is **never written**:
+
+- Nothing is placed on its candidate node. Its genomes keep the placeholder of that rank (e.g.
+  `g__`) in `<stem>.curatomatic.taxonomy.tsv`, exactly as for a skipped taxon, and nothing is added
+  to the curated tree or the leaf taxonomy file.
+- Only that rank is affected. The candidates and the names below each node are worked out before
+  any novel taxon is created, so every other novel taxon is placed as before, including the lower
+  ranks of its genomes.
+- It is a row of the report: taxon `<rank>__UNRESOLVABLE`, action `unresolvable`, flag
+  `namesake_outside_taxon`, the `*_after` columns of the candidate node it would have been placed
+  on, and the `namesakes` column listing the taxa that refused each name (e.g. `g__G020350785`),
+  which also says which genomes it is. A curator names it. The run logs the number of unresolvable
+  taxa for each rank, beside the number skipped.
+- `<rank>__UNRESOLVABLE` is only a label of the report, never a taxon on the tree.
 
 A novel taxon is only created where **no valid name is below it**. A curator never places a novel
 rank above existing names:
