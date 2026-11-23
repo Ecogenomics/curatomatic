@@ -23,7 +23,7 @@ fn red_error(result: CuratomaticResult<Red>) -> String {
 
 #[test]
 fn reads_the_median_column_by_name_and_ignores_the_others() {
-    // The header and rows of `test_data/r237/median_red_rank_distribution.tsv`, trimmed.
+    // The header and rows of `example/gtdb_r237_median_red_rank_distribution.tsv`, trimmed.
     let text = "rank\tnum_taxa\tnum_taxa_pass_filter\tmedian\tmean\n\
                 Phylum\t161\t46\t0.3095\t0.3314\n\
                 Genus\t20066\t19408\t0.9189\t0.9175\n";
@@ -196,7 +196,7 @@ fn from_file_with_a_missing_file_is_an_io_error() {
 #[test]
 fn from_file_reads_the_r237_file() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("test_data/r237/median_red_rank_distribution.tsv");
+        .join("example/gtdb_r237_median_red_rank_distribution.tsv");
     let red = Red::from_file(&path).unwrap();
     let expected = [0.0, 0.3095, 0.4428, 0.5962, 0.7519, 0.9189, 1.0];
     for (rank, value) in Rank::iter().zip(expected) {
