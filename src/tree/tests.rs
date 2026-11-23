@@ -744,6 +744,441 @@ G4\td__D;c__C;s__C four
     );
 }
 
+/// One tree for the cases of the taxonomy file: `A` and `B` below `c__C1`, `C` and `D` below a
+/// node with two classes, all of them below `p__P1`, and `E` directly below the root.
+const FIXTURE: &str = "(((A:0.1,B:0.1)'100:c__C1|red=0.60':0.1,\
+     (C:0.1,D:0.1)'100:c__C2;c__C3|red=0.60':0.1)'100:p__P1|red=0.30':0.1,\
+     E:0.1)'d__D1|red=0.00';";
+
+/// The minimal row of each genome of [`FIXTURE`]: the taxa on its path, then its species.
+const FIXTURE_ROWS: [(&str, &str); 5] = [
+    ("A", "d__D1;p__P1;c__C1;s__A 1"),
+    ("B", "d__D1;p__P1;c__C1;s__B 1"),
+    ("C", "d__D1;p__P1;c__C2;c__C3;s__C 1"),
+    ("D", "d__D1;p__P1;c__C2;c__C3;s__D 1"),
+    ("E", "d__D1;s__E 1"),
+];
+
+/// Changes to [`FIXTURE_ROWS`]: the new row of a genome, or `None` to drop it.
+type RowChanges<'a> = &'a [(&'a str, Option<&'a str>)];
+
+/// The taxonomy file of [`FIXTURE_ROWS`] with `changes` made, then the lines of `extra`.
+fn fixture_file(changes: RowChanges<'_>, extra: &str) -> String {
+    let mut out: String = FIXTURE_ROWS
+        .into_iter()
+        .filter_map(|(gid, row)| {
+            let row = match changes.iter().find(|(other, _)| *other == gid) {
+                Some((_, new_row)) => (*new_row)?,
+                None => row,
+            };
+            Some(format!("{gid}\t{row}\n"))
+        })
+        .collect();
+    out.push_str(extra);
+    out
+}
+
+/// Load [`FIXTURE`] with `taxonomy` as `main` does: read the file, give the leaves their taxa,
+/// and check that every leaf has its species and domain. The taxa of each leaf, in tree order.
+fn load_fixture(taxonomy: &str) -> CuratomaticResult<Vec<(String, String)>> {
+    let file = TaxonomyFile::from_reader(taxonomy.as_bytes(), Path::new("taxonomy.tsv"))?;
+    let mut tree = tree(FIXTURE)?;
+    tree.assign_leaf_taxonomy(&file)?;
+    tree.check_leaves_have_species()?;
+    tree.check_leaves_have_domain()?;
+    Ok(leaf_taxa_by_gid(&tree))
+}
+
+/// Load [`FIXTURE`] with the taxonomy file of `changes` and `extra` (see [`fixture_file`]), and
+/// check the taxa of leaves A to E.
+fn assert_fixture_leaves(changes: RowChanges<'_>, extra: &str, expected: [&str; 5]) {
+    let leaves = load_fixture(&fixture_file(changes, extra)).unwrap();
+    let expected: Vec<(String, String)> = ["A", "B", "C", "D", "E"]
+        .into_iter()
+        .zip(expected)
+        .map(|(gid, taxa)| (gid.to_owned(), taxa.to_owned()))
+        .collect();
+    assert_eq!(leaves, expected);
+}
+
+/// Load [`FIXTURE`] with the taxonomy file of `changes` (see [`fixture_file`]), which must stop
+/// the run with `expected`.
+fn assert_fixture_error(changes: RowChanges<'_>, extra: &str, expected: &CuratomaticError) {
+    assert_eq!(
+        load_fixture(&fixture_file(changes, extra)).as_ref(),
+        Err(expected)
+    );
+}
+
+/// An error of the taxonomy file of [`fixture_file`], where A is line 1, C line 3 and E line 5.
+fn fixture_file_error(line: usize, message: &str) -> CuratomaticError {
+    CuratomaticError::TaxonomyFile {
+        path: "taxonomy.tsv".to_owned(),
+        line,
+        message: message.to_owned(),
+    }
+}
+
+fn disagrees(gid: &str, message: &str) -> CuratomaticError {
+    CuratomaticError::TaxonomyFileConflict {
+        gid: GenomeId::new(gid),
+        message: message.to_owned(),
+    }
+}
+
+fn not_in_row(gid: &str, taxon: &str) -> CuratomaticError {
+    disagrees(
+        gid,
+        &format!("the tree places it in {taxon}, which is not in its row of the taxonomy file"),
+    )
+}
+
+fn already_on_tree(gid: &str, taxon: &str) -> CuratomaticError {
+    disagrees(
+        gid,
+        &format!("{taxon} is for this genome only, but it is already on the tree"),
+    )
+}
+
+const FIXTURE_SPECIES_ONLY: [&str; 5] = ["s__A 1", "s__B 1", "s__C 1", "s__D 1", "s__E 1"];
+
+#[test]
+fn fixture_minimal_rows_give_each_leaf_its_species_only() {
+    assert_fixture_leaves(&[], "", FIXTURE_SPECIES_ONLY);
+}
+
+#[test]
+fn fixture_leaves_get_two_orders_the_ranks_below_a_class_and_a_phylum_below_the_root() {
+    assert_fixture_leaves(
+        &[
+            ("A", Some("d__D1;p__P1;c__C1;o__OA1;o__OA2;s__SA 1")),
+            ("B", Some("d__D1;p__P1;c__C1;o__OB;f__FB;g__GB;s__SB 1")),
+            ("E", Some("d__D1;p__PE;s__E 1")),
+        ],
+        "",
+        [
+            "o__OA1; o__OA2; s__SA 1",
+            "o__OB; f__FB; g__GB; s__SB 1",
+            "s__C 1",
+            "s__D 1",
+            "p__PE; s__E 1",
+        ],
+    );
+}
+
+#[test]
+fn fixture_rows_with_placeholders_give_the_same_leaves() {
+    assert_fixture_leaves(
+        &[
+            ("A", Some("d__D1;p__P1;c__C1;o__;f__;g__;s__A 1")),
+            ("C", Some("d__D1;p__P1;c__C2;c__C3;o__;f__;g__;s__C 1")),
+            ("E", Some("d__D1;p__;c__;o__;f__;g__;s__E 1")),
+        ],
+        "",
+        FIXTURE_SPECIES_ONLY,
+    );
+}
+
+#[test]
+fn fixture_unresolved_species_reaches_its_leaf() {
+    assert_fixture_leaves(
+        &[("A", Some("d__D1;p__P1;c__C1;s__{unresolved} sp1"))],
+        "",
+        [
+            "s__{unresolved} sp1",
+            "s__B 1",
+            "s__C 1",
+            "s__D 1",
+            "s__E 1",
+        ],
+    );
+}
+
+#[test]
+fn fixture_single_genome_class_nested_in_the_trees_class_is_the_leafs() {
+    assert_fixture_leaves(
+        &[("A", Some("d__D1;p__P1;c__C1;c__CA;o__OA;s__A 1"))],
+        "",
+        [
+            "c__CA; o__OA; s__A 1",
+            "s__B 1",
+            "s__C 1",
+            "s__D 1",
+            "s__E 1",
+        ],
+    );
+}
+
+#[test]
+fn fixture_phylum_below_the_trees_class_is_the_leafs() {
+    // Matched by taxon, not by rank.
+    assert_fixture_leaves(
+        &[("A", Some("d__D1;p__P1;p__PA;c__C1;s__A 1"))],
+        "",
+        ["p__PA; s__A 1", "s__B 1", "s__C 1", "s__D 1", "s__E 1"],
+    );
+}
+
+#[test]
+fn fixture_leaf_directly_below_the_root_gets_every_rank() {
+    assert_fixture_leaves(
+        &[("E", Some("d__D1;p__PE;c__CE;o__OE;f__FE;g__GE;s__E 1"))],
+        "",
+        [
+            "s__A 1",
+            "s__B 1",
+            "s__C 1",
+            "s__D 1",
+            "p__PE; c__CE; o__OE; f__FE; g__GE; s__E 1",
+        ],
+    );
+}
+
+#[test]
+fn fixture_leaf_gets_the_same_name_at_several_ranks() {
+    assert_fixture_leaves(
+        &[("B", Some("d__D1;p__P1;c__C1;o__X;f__X;g__X;s__X 1"))],
+        "",
+        [
+            "s__A 1",
+            "o__X; f__X; g__X; s__X 1",
+            "s__C 1",
+            "s__D 1",
+            "s__E 1",
+        ],
+    );
+}
+
+#[test]
+fn fixture_class_nested_below_a_node_with_two_classes_is_the_leafs() {
+    assert_fixture_leaves(
+        &[("C", Some("d__D1;p__P1;c__C2;c__C3;c__CC;s__C 1"))],
+        "",
+        ["s__A 1", "s__B 1", "c__CC; s__C 1", "s__D 1", "s__E 1"],
+    );
+}
+
+#[test]
+fn fixture_spaces_around_the_taxa_are_ignored() {
+    assert_fixture_leaves(
+        &[("A", Some(" d__D1 ; p__P1 ; c__C1 ; s__A 1 "))],
+        "",
+        FIXTURE_SPECIES_ONLY,
+    );
+}
+
+#[test]
+fn fixture_row_for_a_genome_not_on_the_tree_is_ignored() {
+    // `main` warns about it (`read_taxonomy_file`).
+    assert_fixture_leaves(&[], "F\td__D1;s__F 1\n", FIXTURE_SPECIES_ONLY);
+}
+
+#[test]
+fn fixture_row_out_of_rank_order_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("s__A 1;c__C1;p__P1;d__D1"))],
+        "",
+        &fixture_file_error(1, "the taxa are not in rank order: c__C1 is after s__A 1"),
+    );
+}
+
+#[test]
+fn fixture_taxon_given_twice_in_a_row_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1;o__OA;o__OA;s__A 1"))],
+        "",
+        &fixture_file_error(1, "o__OA is given more than once"),
+    );
+}
+
+#[test]
+fn fixture_row_with_two_species_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1;s__A 1;s__A 2"))],
+        "",
+        &fixture_file_error(
+            1,
+            "a genome has one species only, but the row has s__A 1 and s__A 2",
+        ),
+    );
+}
+
+#[test]
+fn fixture_row_with_two_domains_is_an_error() {
+    assert_fixture_error(
+        &[("E", Some("d__D1;d__D2;s__E 1"))],
+        "",
+        &fixture_file_error(
+            5,
+            "a genome has one domain only, but the row has d__D1 and d__D2",
+        ),
+    );
+}
+
+#[test]
+fn fixture_genome_without_a_row_is_an_error() {
+    assert_fixture_error(
+        &[("E", None)],
+        "",
+        &CuratomaticError::MissingFromTaxonomyFile {
+            n: 1,
+            first: GenomeId::new("E"),
+        },
+    );
+}
+
+#[test]
+fn fixture_row_without_the_nearest_tree_taxon_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__CX;s__A 1"))],
+        "",
+        &not_in_row("A", "c__C1"),
+    );
+}
+
+#[test]
+fn fixture_row_without_one_taxon_of_a_node_with_two_is_an_error() {
+    assert_fixture_error(
+        &[("C", Some("d__D1;p__P1;c__C2;s__C 1"))],
+        "",
+        &not_in_row("C", "c__C3"),
+    );
+}
+
+#[test]
+fn fixture_row_without_a_tree_taxon_above_the_nearest_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P2;c__C1;s__A 1"))],
+        "",
+        &not_in_row("A", "p__P1"),
+    );
+}
+
+#[test]
+fn fixture_row_placeholder_where_the_tree_has_a_name_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__;s__A 1"))],
+        "",
+        &not_in_row("A", "c__C1"),
+    );
+}
+
+#[test]
+fn fixture_row_without_the_domain_is_an_error() {
+    assert_fixture_error(
+        &[("E", Some("p__PE;s__E 1"))],
+        "",
+        &not_in_row("E", "d__D1"),
+    );
+}
+
+#[test]
+fn fixture_row_taxon_elsewhere_on_the_tree_is_an_error() {
+    assert_fixture_error(
+        &[("E", Some("d__D1;c__C1;s__E 1"))],
+        "",
+        &already_on_tree("E", "c__C1"),
+    );
+}
+
+#[test]
+fn fixture_row_taxon_from_the_sibling_subtree_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1;c__C2;s__A 1"))],
+        "",
+        &already_on_tree("A", "c__C2"),
+    );
+}
+
+#[test]
+fn fixture_taxon_two_leaves_would_get_is_an_error() {
+    assert_fixture_error(
+        &[
+            ("A", Some("d__D1;p__P1;c__C1;o__O1;s__A 1")),
+            ("B", Some("d__D1;p__P1;c__C1;o__O1;s__B 1")),
+        ],
+        "",
+        &disagrees("B", "o__O1 would be given to both A and B"),
+    );
+}
+
+#[test]
+fn fixture_species_shared_by_two_genomes_is_an_error() {
+    assert_fixture_error(
+        &[("B", Some("d__D1;p__P1;c__C1;s__A 1"))],
+        "",
+        &disagrees("B", "s__A 1 would be given to both A and B"),
+    );
+}
+
+#[test]
+fn fixture_placeholder_and_name_in_one_rank_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1;g__;g__GA;s__A 1"))],
+        "",
+        &fixture_file_error(
+            1,
+            "the genus rank holds both the placeholder g__ and the name g__GA",
+        ),
+    );
+}
+
+#[test]
+fn fixture_row_without_a_species_is_an_error() {
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1"))],
+        "",
+        &CuratomaticError::LeafWithoutSpecies {
+            n: 1,
+            first: GenomeId::new("A"),
+        },
+    );
+}
+
+#[test]
+fn fixture_unknown_rank_prefix_is_an_error() {
+    let message = format!(
+        "invalid taxonomy: {}",
+        CuratomaticError::UnknownRank("x__Foo".to_owned())
+    );
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1;x__Foo;s__A 1"))],
+        "",
+        &fixture_file_error(1, &message),
+    );
+}
+
+#[test]
+fn fixture_name_starting_with_an_underscore_is_an_error() {
+    let message = format!(
+        "invalid taxonomy: {}",
+        CuratomaticError::InvalidTaxon("g___GA".to_owned())
+    );
+    assert_fixture_error(
+        &[("A", Some("d__D1;p__P1;c__C1;g___GA;s__A 1"))],
+        "",
+        &fixture_file_error(1, &message),
+    );
+}
+
+#[test]
+fn fixture_genome_given_twice_is_an_error() {
+    assert_fixture_error(
+        &[],
+        "A\td__D1;p__P1;c__C1;s__A 1\n",
+        &fixture_file_error(6, "A is given more than once"),
+    );
+}
+
+#[test]
+fn fixture_row_without_a_taxonomy_column_is_an_error() {
+    assert_fixture_error(
+        &[],
+        "F\n",
+        &fixture_file_error(6, "expected two tab separated columns"),
+    );
+}
+
 /// An old style tree, with a dummy node above each genome. Below `f__F` is a single genome
 /// genus nested in a genus, a single genome order nested in a family, and a family nested in a
 /// genus (out of rank order).

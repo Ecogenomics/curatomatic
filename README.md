@@ -90,6 +90,9 @@ G003697165	d__Bacteria;p__Pseudomonadota;c__Gammaproteobacteria;o__Enterobactera
   `d__Bacteria;p__;c__;o__;f__;g__;s__Escherichia coli` holds only the domain and species. A rank that holds both a
   placeholder and a name (`g__;g__Escherichia`) is an error. The same applies to `--prior-taxonomy`. A placeholder in
   a label of the tree (e.g. `100:g__|RED=0.9`) is an error that stops the run.
+- Each row must be in rank order (domain first, species last), give each taxon once, and have at most one domain and
+  one species. A row that does not is an error that stops the run, in both `--taxonomy` and `--prior-taxonomy`. A rank
+  other than the domain and species can hold several taxa (nested taxa, e.g. `g__JAAYFO01;g__Neosphaerochaeta`).
 - Genome IDs are matched to the tree the same way as the novel name file (`GB_GCA_003697165.1` is `G003697165`).
 - The file holds what the dummy nodes of the old trees held. Each row is the full taxonomy of the genome: the taxa on
   its path in the tree, plus its own. Each leaf is given every named taxon of its row that is **not on its path** in

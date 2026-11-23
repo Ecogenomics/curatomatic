@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::error::{CuratomaticError, CuratomaticResult};
 use crate::genome::{GenomeId, gid_to_canonical};
+use crate::rank::Rank;
 use crate::taxon::Taxon;
 use crate::taxonomy::Taxonomy;
 
@@ -35,7 +36,9 @@ impl TaxonomyFile {
     /// Genome IDs are made canonical (see [`gid_to_canonical`]). Blank lines are skipped. A line
     /// without exactly two columns, an invalid taxonomy and a genome given twice are errors.
     /// Placeholders (e.g. `g__`) are not names: they are stripped, so each row holds named taxa
-    /// only. A rank that holds both a placeholder and a name (`g__;g__X`) is an error.
+    /// only. A rank that holds both a placeholder and a name (`g__;g__X`) is an error, as is a row
+    /// whose taxa are not in rank order, that gives a named taxon twice, or that has more than one
+    /// named domain or species.
     pub(crate) fn from_reader(reader: impl BufRead, path: &Path) -> CuratomaticResult<Self> {
         let error = |line: usize, message: String| CuratomaticError::TaxonomyFile {
             path: path.display().to_string(),
@@ -107,6 +110,40 @@ fn parse_row(tax_string: &str) -> Result<Taxonomy, String> {
         let taxon = Taxon::new(taxon.trim());
         let rank = taxon.rank().map_err(|e| format!("invalid taxonomy: {e}"))?;
         taxa.push((rank, taxon));
+    }
+
+    // The row must be in rank order (placeholders included), checked before anything is kept.
+    if let Some(((_, before), (_, after))) = taxa
+        .iter()
+        .zip(taxa.iter().skip(1))
+        .find(|((before, _), (after, _))| before > after)
+    {
+        return Err(format!(
+            "the taxa are not in rank order: {after} is after {before}"
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    if let Some((_, taxon)) = taxa
+        .iter()
+        .find(|(_, taxon)| taxon.is_named() && !seen.insert(taxon))
+    {
+        return Err(format!("{taxon} is given more than once"));
+    }
+
+    for rank in [Rank::Domain, Rank::Species] {
+        let named: Vec<&str> = taxa
+            .iter()
+            .filter(|(other, taxon)| *other == rank && taxon.is_named())
+            .map(|(_, taxon)| taxon.as_str())
+            .collect();
+        if named.len() > 1 {
+            return Err(format!(
+                "a genome has one {} only, but the row has {}",
+                rank.name().to_lowercase(),
+                named.join(" and ")
+            ));
+        }
     }
 
     // Checked before stripping, which would hide the placeholder.

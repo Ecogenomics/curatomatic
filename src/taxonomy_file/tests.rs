@@ -150,3 +150,66 @@ fn a_row_with_a_malformed_taxon_is_an_error_on_its_line() {
         "{error}"
     );
 }
+
+/// The message of the error of reading `row` as the second line, after a valid first line.
+fn row_error(row: &str) -> String {
+    match read(&format!("G1\td__B;s__A b\nG2\t{row}\n")) {
+        Err(CuratomaticError::TaxonomyFile {
+            line: 2, message, ..
+        }) => message,
+        other => panic!("{row}: expected an error on line 2, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_row_out_of_rank_order_is_an_error() {
+    // The file must come in rank order: it is never reordered.
+    assert_eq!(
+        row_error("s__A b;c__C;p__P;d__B"),
+        "the taxa are not in rank order: c__C is after s__A b"
+    );
+    assert_eq!(
+        row_error("d__B;g__G;f__F;s__A b"),
+        "the taxa are not in rank order: f__F is after g__G"
+    );
+}
+
+#[test]
+fn a_placeholder_out_of_rank_order_is_an_error() {
+    assert_eq!(
+        row_error("d__B;g__;f__;s__A b"),
+        "the taxa are not in rank order: f__ is after g__"
+    );
+}
+
+#[test]
+fn a_taxon_given_twice_in_a_row_is_an_error() {
+    assert_eq!(
+        row_error("d__B;o__O;o__O;s__A b"),
+        "o__O is given more than once"
+    );
+}
+
+#[test]
+fn a_row_with_two_domains_is_an_error() {
+    assert_eq!(
+        row_error("d__B;d__C;s__A b"),
+        "a genome has one domain only, but the row has d__B and d__C"
+    );
+}
+
+#[test]
+fn a_row_with_two_species_is_an_error() {
+    assert_eq!(
+        row_error("d__B;s__A b;s__A c"),
+        "a genome has one species only, but the row has s__A b and s__A c"
+    );
+}
+
+#[test]
+fn several_taxa_of_a_rank_other_than_the_domain_or_species_are_kept() {
+    let file = read("G1\td__B;o__O1;o__O2;f__F;g__G1;g__G2;s__A b\n").unwrap();
+    let taxonomy = file.get(&GenomeId::new("G1")).unwrap();
+    assert_eq!(taxonomy.o, vec![Taxon::new("o__O1"), Taxon::new("o__O2")]);
+    assert_eq!(taxonomy.g, vec![Taxon::new("g__G1"), Taxon::new("g__G2")]);
+}

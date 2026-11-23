@@ -49,6 +49,9 @@ in a `Taxonomy`: `Taxonomy::add_taxon` (`src/taxonomy.rs`) refuses one with `Cur
 - **Taxonomy files** (`--taxonomy` and `--prior-taxonomy`, read by `TaxonomyFile::from_reader`): a rank of a row that
   holds both a placeholder and a name (`g__;g__X`) is a `CuratomaticError::TaxonomyFile` error on that line. Otherwise
   the placeholders are stripped, so each row holds named taxa only.
+- A row must come properly formatted: its taxa in rank order (placeholders included), no named taxon twice, and at
+  most one named domain and one named species. Anything else is a `CuratomaticError::TaxonomyFile` error on that line:
+  a row is never reordered or deduplicated. Several taxa of any other rank are allowed (nested taxa).
 - The output taxonomy files still write a placeholder for a rank with no named taxon (see TODO Job 22).
 
 The domain and species never have a placeholder: every genome always has a named domain (`d__`), and its species
